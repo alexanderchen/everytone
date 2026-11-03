@@ -1,5 +1,7 @@
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const ACCIDENTAL_SEMITONES = new Set([1, 3, 6, 8, 10]);
+const MIN_MIDI = 24; // C1 (Start of 12-key Percussion Octave C1–B1; Tonal C2–G7 starts at 36)
+const MAX_MIDI = 103; // G7
 
 // Standard chromatic QWERTY layout (18 keys starting at baseOctaveMidi)
 const QWERTY_MAP = [
@@ -25,26 +27,21 @@ const QWERTY_MAP = [
 
 const state = {
   catalog: null,
-  selectedMidi: 60, // Currently inspected piano key (defaults to C4)
+  selectedMidi: 60, // Defaults to C4
   auditionIndex: 0,
-  keyCandidateFilter: '',
-  kbHighlightMode: 'all', // 'all' | 'new' | 'gaps'
   kbZoomMode: 'fit', // 'fit' | 'wide'
   wurliEnabled: false, // Strictly OFF by default
-  releaseSec: 0.65, // Smooth decay duration upon lifting finger
+  releaseSec: 0.65,
   highpassHz: 85,
-  baseOctaveMidi: 60, // C4
+  baseOctaveMidi: 60, // C4 (press Z down to C1 for Percussion Octave)
   sustainPedalDown: false,
   lastPlayedVideoId: null,
   lastPlayedSliceId: null,
-  assetBust: 0,
-  // Secondary Library / Slicer state
-  selectedCategory: 'all',
-  searchQuery: '',
-  sortBy: 'index',
-  selectedVideoId: null,
-  selectedSliceId: null
+  assetBust: 0
 };
+
+// Track last-played slice per MIDI key for no-immediate-repeat randomization when 2+ clips are ON
+const lastPlayedSliceByMidi = new Map();
 
 function midiToName(midi) {
   return NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
@@ -61,6 +58,15 @@ function midiToFreq(midi) {
   return (440 * Math.pow(2, (midi - 69) / 12)).toFixed(1);
 }
 
+function isPercussionSlice(video, slice) {
+  return (
+    video?.category === 'percussion' ||
+    slice?.percBucket === 'kick' ||
+    slice?.percBucket === 'snare' ||
+    slice?.percBucket === 'hihat'
+  );
+}
+
 // ============================================================================
 // Web Audio Engine + Hold-to-Sustain / Key-Up Release Voice Manager
 // ============================================================================
@@ -69,7 +75,6 @@ let masterBus = null;
 let sampleHighpass = null;
 const audioBufferCache = new Map();
 
-// Active held voices keyed by triggerId (e.g. 'qwerty_KeyA', 'midi_60', 'mouse', 'arrow_preview')
 const activeVoices = new Map();
 const sustainedVoicesPendingRelease = new Set();
 
@@ -117,7 +122,8 @@ async function loadAudioBuffer(url) {
 }
 
 function startWurlitzerVoice(midi, velocity = 0.8) {
-  if (!state.wurliEnabled) return null;
+  // Never layer pitched Wurlitzer on the low Percussion Octave (MIDI 24..35)
+  if (!state.wurliEnabled || midi === null || midi < 36) return null;
   const ctx = ensureAudioContext();
   const now = ctx.currentTime;
   const freq = 440 * Math.pow(2, (midi - 69) / 12);
@@ -177,12 +183,12 @@ function startWurlitzerVoice(midi, velocity = 0.8) {
 }
 
 // ============================================================================
-// Fixed 3-Slot 1:1 Square Stage + Per-Slot Visual Mini Spectrogram Strips
+// Fixed 3-Slot 1:1 Square Stage + Left-to-Right Unveiling Spectrogram Strips
 // ============================================================================
 const STAGE_SLOT_COUNT = 3;
 const MINI_SPEC_H = 54;
 let stageSlotSeq = 0;
-let currentStageTileSize = 220;
+let currentStageTileSize = 260;
 let miniSpecAnimId = null;
 const miniSpecBitmapCache = new Map();
 
@@ -197,9 +203,9 @@ function updateStageTileSizes() {
   const grid = document.getElementById('polyVideoGrid');
   if (!stageEl || !grid) return;
 
-  const gap = 22;
+  const gap = 24;
   const availW = Math.max(240, stageEl.clientWidth - 56 - gap * (STAGE_SLOT_COUNT - 1));
-  const availH = Math.max(120, stageEl.clientHeight - 24 - (MINI_SPEC_H + 6));
+  const availH = Math.max(120, stageEl.clientHeight - 28 - (MINI_SPEC_H + 6));
   const side = Math.max(96, Math.floor(Math.min(availH, availW / STAGE_SLOT_COUNT)));
   currentStageTileSize = side;
   grid.style.setProperty('--tile-size', `${side}px`);
@@ -208,11 +214,9 @@ function updateStageTileSizes() {
 window.addEventListener('resize', updateStageTileSizes);
 
 function allocateStageSlotIndex() {
-  // 1. Fill empty slots strictly left-to-right (0 -> 1 -> 2)
   for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
     if (!stageSlots[i].occupied) return i;
   }
-  // 2. If > 3 polyphony, steal the earliest/first occupied slot and continue left-to-right!
   let oldestIdx = 0;
   for (let i = 1; i < STAGE_SLOT_COUNT; i++) {
     if (stageSlots[i].seq < stageSlots[oldestIdx].seq) {
@@ -240,7 +244,6 @@ function createStageSquareTile(slice, playbackRate = 1.0) {
   const videoWrap = unitEl?.querySelector('.stage-slot-video');
   if (!unitEl || !videoWrap) return null;
 
-  // Pause & clean up any stolen clip currently in this slot
   if (stageSlots[slotIdx].videoEl) {
     try {
       stageSlots[slotIdx].videoEl.pause();
@@ -278,7 +281,6 @@ function removeStageTile(tileObj) {
   if (!tileObj || tileObj.slotIdx === undefined) return;
   const { slotIdx, token } = tileObj;
   const slotState = stageSlots[slotIdx];
-  // If a newer note already stole this slot, do NOT clear the newer note!
   if (!slotState || slotState.token !== token) return;
 
   try {
@@ -312,7 +314,7 @@ function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0) {
 
   const ch = buffer.getChannelData(0);
   const effectiveSr = buffer.sampleRate * playbackRate;
-  const minFreq = 65;
+  const minFreq = 55;
   const maxFreq = 4200;
   const logMin = Math.log(minFreq);
   const logMax = Math.log(maxFreq);
@@ -452,19 +454,13 @@ function ensureMiniSpecAnimLoop() {
   miniSpecAnimId = requestAnimationFrame(tick);
 }
 
-/**
- * Start a held audio + square video voice (sustains until releaseVoice or natural clip end)
- */
 async function startHeldVoice({
   triggerId,
   midi = null,
   slice = null,
-  noteLabel = '',
-  shiftCents = 0,
   playbackRate = 1.0,
   velocity = 0.92
 }) {
-  // If this exact triggerId was already active, release it cleanly first
   if (activeVoices.has(triggerId)) {
     releaseHeldVoice(triggerId, 0.08);
   }
@@ -482,11 +478,14 @@ async function startHeldVoice({
         wurliVoice,
         released: false
       });
+    } else if (midi !== null) {
+      setTimeout(() => {
+        if (!isMidiStillHeld(midi)) setKeyActiveClass(midi, false);
+      }, 120);
     }
     return;
   }
 
-  // Spawn pure borderless 1:1 square video tile immediately for zero visual latency
   const tileObj = createStageSquareTile(slice, playbackRate);
 
   const voice = {
@@ -510,7 +509,6 @@ async function startHeldVoice({
 
   try {
     const buffer = await loadAudioBuffer(slice.audioUrl);
-    // Check if user already lifted finger while buffer was decoding (first-play cache miss)
     const now = ctx.currentTime;
     const dbOffset = slice.peakDb !== undefined ? Math.max(0, Math.min(8, (-22 - slice.peakDb) * 0.35)) : 0;
     const boost = Math.pow(10, dbOffset / 20);
@@ -525,7 +523,6 @@ async function startHeldVoice({
 
     gainNode.gain.setValueAtTime(0.0001, now);
     gainNode.gain.linearRampToValueAtTime(peakGain, now + 0.006);
-    // Natural end-of-file fade only at the very tail of the clip
     gainNode.gain.setValueAtTime(peakGain, now + Math.max(0.02, dur - 0.12));
     gainNode.gain.linearRampToValueAtTime(0.0001, now + dur);
 
@@ -539,14 +536,11 @@ async function startHeldVoice({
     voice.startedAt = now;
     voice.naturalDur = dur;
 
-    // Attach visual-only left-to-right unveiling spectrogram underneath this clip's slot
     attachSlotMiniSpectrogram(tileObj, slice, buffer, voice);
 
     if (voice.released) {
-      // Finger already lifted during async decode -> immediately apply smooth release!
       applyVoiceReleaseRamp(voice, voice.releaseDur);
     } else {
-      // If held past the entire natural sample length, remove tile instantly when sound stops
       voice.naturalTimer = setTimeout(() => {
         if (!voice.released) {
           voice.released = true;
@@ -568,7 +562,6 @@ function applyVoiceReleaseRamp(voice, customReleaseSec = null) {
   const now = ctx.currentTime;
   const requestedRel = customReleaseSec ?? state.releaseSec;
 
-  // Never extend past the natural end of the sample buffer
   const elapsed = voice.startedAt ? Math.max(0, now - voice.startedAt) : 0;
   const remainingNatural = voice.naturalDur ? Math.max(0.03, voice.naturalDur - elapsed) : requestedRel;
   const rel = Math.min(requestedRel, remainingNatural);
@@ -585,7 +578,6 @@ function applyVoiceReleaseRamp(voice, customReleaseSec = null) {
     voice.removeTimer = null;
   }
 
-  // 1. Smoothly ramp out sample audio over `rel` seconds (e.g. 0.65s)
   if (voice.gainNode && voice.src) {
     const g = voice.gainNode.gain;
     const curVal = Math.max(0.0002, g.value || voice.peakGain * 0.85);
@@ -599,7 +591,6 @@ function applyVoiceReleaseRamp(voice, customReleaseSec = null) {
     } catch {}
   }
 
-  // 2. Smoothly release Wurli synth if active
   if (voice.wurliVoice) {
     const wg = voice.wurliVoice.env.gain;
     const wCur = Math.max(0.0002, wg.value || voice.wurliVoice.peakGain);
@@ -609,7 +600,6 @@ function applyVoiceReleaseRamp(voice, customReleaseSec = null) {
     voice.wurliVoice.stopAt(now + rel + 0.02);
   }
 
-  // 3. Keep square video at 100% full opacity until the exact moment the sound stops, then remove instantly!
   if (voice.tileObj?.tile) {
     voice.removeTimer = setTimeout(() => {
       removeStageTile(voice.tileObj);
@@ -621,7 +611,6 @@ function releaseHeldVoice(triggerId, customReleaseSec = null) {
   const voice = activeVoices.get(triggerId);
   if (!voice) return;
 
-  // Respect MIDI sustain pedal for MIDI-triggered notes
   if (state.sustainPedalDown && triggerId.startsWith('midi_')) {
     sustainedVoicesPendingRelease.add(triggerId);
     return;
@@ -647,7 +636,7 @@ function setKeyActiveClass(midi, active) {
 }
 
 // ============================================================================
-// High-Resolution Live Stage Spectrogram + f0 Line + Animated Playhead
+// Spectrogram FFT & Offscreen Renderer
 // ============================================================================
 const fftSizeSpec = 1024;
 const hannSpec = new Float32Array(fftSizeSpec);
@@ -712,7 +701,6 @@ function magmaColor(norm) {
   }
 }
 
-// Cache offscreen spectrogram canvases per (audioUrl + playbackRate + size) for instant redraws
 const spectrogramBitmapCache = new Map();
 
 function buildSpectrogramOffscreen(
@@ -722,12 +710,12 @@ function buildSpectrogramOffscreen(
   cssW = 520,
   cssH = 148,
   dpr = 1,
-  playbackRate = 1.0
+  playbackRate = 1.0,
+  showHarmonics = true
 ) {
   const W = Math.max(200, Math.round(cssW));
   const H = Math.max(90, Math.round(cssH));
 
-  // 1. Build 1:1 CSS-pixel STFT bitmap (zero stretching, crisp pixel cells)
   const stftCanvas = document.createElement('canvas');
   stftCanvas.width = W;
   stftCanvas.height = H;
@@ -735,7 +723,7 @@ function buildSpectrogramOffscreen(
 
   const ch = buffer.getChannelData(0);
   const effectiveSr = buffer.sampleRate * playbackRate;
-  const minFreq = 65;
+  const minFreq = 55;
   const maxFreq = 4200;
   const logMin = Math.log(minFreq);
   const logMax = Math.log(maxFreq);
@@ -786,7 +774,6 @@ function buildSpectrogramOffscreen(
   }
   stftCtx.putImageData(imgData, 0, 0);
 
-  // 2. Composite crisp nearest-neighbor STFT pixels + Retina-sharp vector overlay
   const offCanvas = document.createElement('canvas');
   offCanvas.width = Math.round(W * dpr);
   offCanvas.height = Math.round(H * dpr);
@@ -795,8 +782,7 @@ function buildSpectrogramOffscreen(
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(stftCanvas, 0, 0, W, H);
 
-  // Subtle log-frequency grid lines
-  const gridFreqs = [100, 200, 440, 1000, 2000, 3500];
+  const gridFreqs = [80, 200, 440, 1000, 2000, 3500];
   ctx.font = '10px "SF Mono", Menlo, monospace';
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
@@ -811,8 +797,7 @@ function buildSpectrogramOffscreen(
     ctx.fillText(`${gf}Hz`, 5, Math.max(9, y - 2));
   }
 
-  // Fundamental pitch line f0 (solid emerald) + harmonics 2f0, 3f0, 4f0 (dashed amber)
-  if (f0Hz >= minFreq && f0Hz <= maxFreq) {
+  if (showHarmonics && f0Hz >= minFreq && f0Hz <= maxFreq) {
     const yF0 = H - 1 - ((Math.log(f0Hz) - logMin) / (logMax - logMin)) * (H - 1);
     ctx.strokeStyle = '#10b981';
     ctx.lineWidth = 1.75;
@@ -851,21 +836,36 @@ function buildSpectrogramOffscreen(
 }
 
 // ============================================================================
-// Piano Key & Candidate Trigger Helpers
+// Piano Key & Multi-Candidate Randomization Trigger Helpers
 // ============================================================================
+function pickEnabledCandidateForMidi(midi, entry) {
+  const enabledCands = (entry?.candidates || []).filter(c => c.enabled);
+  if (enabledCands.length === 0) return null;
+  if (enabledCands.length === 1) {
+    lastPlayedSliceByMidi.set(midi, enabledCands[0].sliceId);
+    return enabledCands[0];
+  }
+  const lastId = lastPlayedSliceByMidi.get(midi);
+  const nonRepeatPool = enabledCands.filter(c => c.sliceId !== lastId);
+  const pool = nonRepeatPool.length > 0 ? nonRepeatPool : enabledCands;
+  const chosen = pool[Math.floor(Math.random() * pool.length)];
+  lastPlayedSliceByMidi.set(midi, chosen.sliceId);
+  return chosen;
+}
+
 function startPianoKeyHold(triggerId, midi, velocity = 0.92, selectInDeck = true) {
-  if (midi < 36 || midi > 103) return;
+  if (midi < MIN_MIDI || midi > MAX_MIDI) return;
   if (selectInDeck && state.selectedMidi !== midi) {
     selectKeyForConfig(midi, false);
   }
 
   const entry = state.catalog?.keyboardMap?.[midi];
-  if (!entry || !entry.primary) {
+  const cand = pickEnabledCandidateForMidi(midi, entry);
+  if (!cand) {
     startHeldVoice({ triggerId, midi, slice: null, velocity });
     return;
   }
 
-  const cand = entry.primary;
   state.lastPlayedVideoId = cand.videoId;
   state.lastPlayedSliceId = cand.sliceId;
 
@@ -873,9 +873,7 @@ function startPianoKeyHold(triggerId, midi, velocity = 0.92, selectInDeck = true
     triggerId,
     midi,
     slice: cand,
-    noteLabel: entry.targetName,
-    shiftCents: cand.shiftCents,
-    playbackRate: cand.playbackRate,
+    playbackRate: cand.playbackRate || 1.0,
     velocity
   });
 }
@@ -885,8 +883,6 @@ function startCandidateHold(triggerId, midi, cand, idx = 0) {
   state.lastPlayedVideoId = cand.videoId;
   state.lastPlayedSliceId = cand.sliceId;
 
-  const noteName = midiToName(midi);
-
   document.querySelectorAll('.candidate-card').forEach((el, i) => {
     el.classList.toggle('audition-focus', i === idx);
   });
@@ -895,24 +891,19 @@ function startCandidateHold(triggerId, midi, cand, idx = 0) {
     triggerId,
     midi,
     slice: cand,
-    noteLabel: noteName,
-    shiftCents: cand.shiftCents,
-    playbackRate: cand.playbackRate,
+    playbackRate: cand.playbackRate || 1.0,
     velocity: 0.94
   });
 }
 
 function selectKeyForConfig(midi, shouldTapPreview = false) {
-  const clamped = Math.max(36, Math.min(103, midi));
+  const clamped = Math.max(MIN_MIDI, Math.min(MAX_MIDI, midi));
   state.selectedMidi = clamped;
-  state.keyCandidateFilter = '';
-  const filterInput = document.getElementById('keyCandidateFilter');
-  if (filterInput) filterInput.value = '';
 
   const entry = state.catalog?.keyboardMap?.[clamped];
   if (entry && entry.candidates?.length) {
-    const activeIdx = entry.candidates.findIndex(c => c.sliceId === entry.activeSliceId);
-    state.auditionIndex = activeIdx >= 0 ? activeIdx : 0;
+    const firstEnabledIdx = entry.candidates.findIndex(c => c.enabled);
+    state.auditionIndex = firstEnabledIdx >= 0 ? firstEnabledIdx : 0;
   } else {
     state.auditionIndex = 0;
   }
@@ -936,108 +927,7 @@ function selectKeyForConfig(midi, shouldTapPreview = false) {
 }
 
 // ============================================================================
-// Percussion Buckets (Kick [1], Snare [2], Hi-Hat / Click [3])
-// ============================================================================
-function startPercussionHold(triggerId, bucketId, specificSliceId = null, velocity = 0.98) {
-  const bucket = state.catalog?.percussionMap?.[bucketId];
-  if (!bucket || !bucket.slots?.length) return;
-
-  const targetId = specificSliceId || bucket.activeSliceId || bucket.slots[0].sliceId;
-  const slot = bucket.slots.find(s => s.sliceId === targetId) || bucket.slots[0];
-
-  state.lastPlayedVideoId = slot.videoId;
-  state.lastPlayedSliceId = slot.sliceId;
-
-  const padEl = document.querySelector(`.perc-bucket[data-bucket="${bucketId}"]`);
-  if (padEl) {
-    padEl.classList.add('active-play');
-    setTimeout(() => padEl.classList.remove('active-play'), 180);
-  }
-
-  startHeldVoice({
-    triggerId,
-    midi: null,
-    slice: slot,
-    noteLabel: bucket.label.toUpperCase(),
-    shiftCents: 0,
-    playbackRate: 1.0,
-    velocity
-  });
-}
-
-function renderPercussionRack() {
-  const rack = document.getElementById('percussionRack');
-  if (!rack) return;
-  rack.innerHTML = '';
-
-  const percMap = state.catalog?.percussionMap || {};
-  for (const bKey of ['kick', 'snare', 'hihat']) {
-    const bucket = percMap[bKey] || {
-      id: bKey,
-      label: bKey.toUpperCase(),
-      keyShortcut: bKey === 'kick' ? '1' : bKey === 'snare' ? '2' : '3',
-      slots: []
-    };
-    const activeSlot =
-      bucket.slots.find(s => s.sliceId === bucket.activeSliceId) || bucket.slots[0] || null;
-
-    const el = document.createElement('div');
-    el.className = 'perc-bucket';
-    el.dataset.bucket = bKey;
-
-    el.innerHTML = `
-      <div class="perc-pad-top" title="Press & hold [${bucket.keyShortcut}] or click to trigger ${bucket.label}">
-        ${
-          activeSlot
-            ? `<img class="perc-thumb" src="${activeSlot.thumbUrl}" alt="${bucket.label}" />`
-            : `<div class="perc-thumb"></div>`
-        }
-        <div style="flex:1;min-width:0">
-          <div class="perc-title-row">
-            <span class="perc-title">${bucket.label}</span>
-            <span class="perc-key-badge">Key ${bucket.keyShortcut}</span>
-          </div>
-          <div class="perc-active-name">
-            ${activeSlot ? `${activeSlot.percLabel} (${activeSlot.videoSlug})` : 'No takes'}
-          </div>
-        </div>
-      </div>
-      <div class="perc-slots"></div>
-    `;
-
-    el.querySelector('.perc-pad-top').addEventListener('mousedown', () => {
-      startPercussionHold('mouse_hold', bKey);
-    });
-
-    const slotsWrap = el.querySelector('.perc-slots');
-    bucket.slots.forEach((slot, idx) => {
-      const btn = document.createElement('button');
-      const isSelected = activeSlot && slot.sliceId === activeSlot.sliceId;
-      btn.className = `perc-slot-btn ${isSelected ? 'selected' : ''}`;
-      btn.innerHTML = `
-        <span>T${idx + 1} · ${slot.percLabel}</span>
-        <span style="opacity:0.65">${slot.videoSlug}</span>
-      `;
-      btn.addEventListener('mousedown', e => {
-        e.stopPropagation();
-        startPercussionHold('mouse_hold', bKey, slot.sliceId);
-      });
-      btn.addEventListener('click', async e => {
-        e.stopPropagation();
-        await apiPost('/api/percussion/select', {
-          bucket: bKey,
-          sliceId: slot.sliceId
-        });
-      });
-      slotsWrap.appendChild(btn);
-    });
-
-    rack.appendChild(el);
-  }
-}
-
-// ============================================================================
-// Rendering: Equal-Width Keyline Keyboard & Streamlined Candidate Strip
+// Rendering: Slim Minimal Note-Name Keyboard Bars & ON/OFF Candidate Strip
 // ============================================================================
 function renderPianoKeyboard() {
   const container = document.getElementById('pianoKeyboard');
@@ -1053,24 +943,29 @@ function renderPianoKeyboard() {
   for (const q of QWERTY_MAP) {
     qwertyByMidi.set(state.baseOctaveMidi + q.offset, q.label);
   }
-  const endOctName = midiToName(state.baseOctaveMidi + 17);
+  const endOctName = midiToName(Math.min(MAX_MIDI, state.baseOctaveMidi + 17));
   document.getElementById('octaveLabel').textContent =
     `QWERTY: ${midiToName(state.baseOctaveMidi)} – ${endOctName}`;
   document.getElementById('midiText').textContent =
     `QWERTY ${midiToName(state.baseOctaveMidi)} (Z/X)`;
 
-  for (let midi = 36; midi <= 103; midi++) {
+  for (let midi = MIN_MIDI; midi <= MAX_MIDI; midi++) {
     const pc = ((midi % 12) + 12) % 12;
     const isAccidental = ACCIDENTAL_SEMITONES.has(pc);
     const isOctaveStart = pc === 0;
+    const isPercKey = midi < 36;
+    const isTonalStart = midi === 36;
+
     const entry = keyMap[midi];
     const candCount = entry?.candidateCount || 0;
-    const primary = entry?.primary || null;
-    const isEmpty = !primary;
+    const enabledCount = entry?.enabledCount || 0;
+    const isEmpty = enabledCount === 0;
 
     const cell = document.createElement('div');
     cell.className = [
       'key-cell',
+      isPercKey ? 'perc-key' : 'tonal-key',
+      isTonalStart ? 'tonal-start' : '',
       isAccidental ? 'accidental' : 'natural',
       isOctaveStart ? 'octave-start' : '',
       isEmpty ? 'empty-key' : 'configured-key',
@@ -1084,34 +979,32 @@ function renderPianoKeyboard() {
     const fullNoteName = midiToName(midi);
     const shortNote = midiToShortLabel(midi, isWide);
     const qLabel = qwertyByMidi.get(midi);
-    const countText = candCount > 0 ? `${candCount}` : '·';
+
+    let pipsHtml = '';
+    if (enabledCount === 1) {
+      pipsHtml = `<span class="key-pip"></span>`;
+    } else if (enabledCount >= 2) {
+      pipsHtml = `<span class="key-pip"></span><span class="key-pip"></span>`;
+    }
 
     cell.innerHTML = `
-      <div class="key-top-meta">
-        <span class="key-cand-count">${countText}</span>
-        ${
-          primary?.thumbUrl
-            ? `<img class="key-thumb-square" src="${primary.thumbUrl}" alt="${fullNoteName}" loading="lazy" />`
-            : ''
-        }
-      </div>
-      <div class="key-slug-vertical">${primary ? primary.videoSlug : ''}</div>
+      <div class="key-pips">${pipsHtml}</div>
       <div class="key-bottom-footer">
         ${qLabel ? `<span class="key-qwerty-tag">${qLabel}</span>` : ''}
         <span class="key-note-label">${shortNote}</span>
       </div>
     `;
 
-    if (primary) {
-      const shiftStr = primary.shiftCents >= 0 ? `+${primary.shiftCents}c` : `${primary.shiftCents}c`;
-      cell.title =
-        `${fullNoteName} (${midiToFreq(midi)} Hz)\n` +
-        `Active Go-To: ${primary.videoSlug} (@${primary.startSec}s, ${shiftStr})\n` +
-        `Clips: ${candCount}`;
+    const roleMeta = isPercKey
+      ? entry?.percRole || 'Percussion'
+      : `${midiToFreq(midi)} Hz`;
+
+    if (enabledCount > 0) {
+      cell.title = `${fullNoteName} · ${roleMeta} — ${enabledCount} / ${candCount} ON`;
     } else if (candCount > 0) {
-      cell.title = `${fullNoteName} — Cleared (${candCount} clips available)`;
+      cell.title = `${fullNoteName} · ${roleMeta} — All OFF (${candCount} candidates)`;
     } else {
-      cell.title = `${fullNoteName} (${midiToFreq(midi)} Hz) — Empty`;
+      cell.title = `${fullNoteName} (${roleMeta}) — Empty`;
     }
 
     cell.addEventListener('mousedown', e => {
@@ -1124,30 +1017,39 @@ function renderPianoKeyboard() {
   }
 }
 
-function getFilteredCandidatesForSelectedKey() {
+function getCandidatesForSelectedKey() {
   const entry = state.catalog?.keyboardMap?.[state.selectedMidi];
   return entry?.candidates || [];
 }
 
 function renderSelectedKeyDeck() {
   const midi = state.selectedMidi;
+  const isPercKey = midi < 36;
   const noteName = midiToName(midi);
   const freqStr = midiToFreq(midi);
   const entry = state.catalog?.keyboardMap?.[midi];
 
   document.getElementById('selectedKeyName').textContent = noteName;
-  document.getElementById('selectedKeyMeta').textContent = `${freqStr} Hz`;
+  const metaEl = document.getElementById('selectedKeyMeta');
+  if (isPercKey) {
+    metaEl.textContent = entry?.percRole || 'Percussion';
+    metaEl.classList.add('perc-role');
+  } else {
+    metaEl.textContent = `${freqStr} Hz`;
+    metaEl.classList.remove('perc-role');
+  }
 
   const totalCands = entry?.candidateCount || 0;
+  const enabledCount = entry?.enabledCount || 0;
   document.getElementById('candidateSummaryLabel').textContent =
-    `${totalCands} Clip${totalCands === 1 ? '' : 's'}`;
-
-  document.getElementById('clearKeyBtn').classList.toggle('hidden', !entry?.primary);
+    totalCands > 0
+      ? `${enabledCount} / ${totalCands} ON${enabledCount >= 2 ? ' · Random' : ''}`
+      : '0 Clips';
 
   const grid = document.getElementById('candidatesGrid');
   grid.innerHTML = '';
 
-  const candidates = getFilteredCandidatesForSelectedKey();
+  const candidates = getCandidatesForSelectedKey();
   if (candidates.length === 0) {
     const emptyDiv = document.createElement('div');
     emptyDiv.className = 'empty-key-state';
@@ -1160,76 +1062,60 @@ function renderSelectedKeyDeck() {
   }
 
   candidates.forEach((cand, idx) => {
-    const isActive = entry.activeSliceId === cand.sliceId && !entry.isCleared;
+    const isEnabled = !!cand.enabled;
     const card = document.createElement('div');
     card.className = [
       'candidate-card',
-      isActive ? 'is-active' : '',
+      isEnabled ? 'is-enabled' : '',
       idx === state.auditionIndex ? 'audition-focus' : ''
     ]
       .filter(Boolean)
       .join(' ');
 
     const shiftStr = cand.shiftCents >= 0 ? `+${cand.shiftCents}c` : `${cand.shiftCents}c`;
-    const numStr = String(cand.videoIndex || 0).padStart(2, '0');
+    const techText = cand.isPerc
+      ? `@${cand.startSec}s (${cand.durSec}s)`
+      : `@${cand.startSec}s (${cand.durSec}s) · ${shiftStr}`;
 
     card.innerHTML = `
       <div class="cand-top">
-        <div class="cand-thumb-wrap" title="Press & hold to audition at ${noteName}">
-          <img src="${cand.thumbUrl}" alt="${cand.videoSlug}" loading="lazy" />
+        <div class="cand-thumb-wrap" title="Press & hold to audition on ${noteName}">
+          <img src="${withBust(cand.thumbUrl)}" alt="${cand.videoSlug}" loading="lazy" />
           <div class="cand-play-overlay">▶</div>
         </div>
         <div class="cand-info">
-          <div class="cand-badges-row">
-            ${isActive ? `<span class="pill-badge active-go-to">✓ Go-To</span>` : ''}
-            <span class="pill-badge cat-flag">#${numStr} ${cand.category}</span>
-          </div>
-          <input
-            type="text"
-            class="cand-slug-input"
-            value="${cand.videoSlug}"
-            title="Rename shorthand on disk (Enter to save)"
-          />
-          <div class="cand-tech-meta">@${cand.startSec}s (${cand.durSec}s) · Tune ${shiftStr}</div>
+          <div class="cand-slug-title" title="${cand.videoSlug}">${cand.videoSlug}</div>
+          <div class="cand-tech-meta">${techText}</div>
         </div>
       </div>
 
       <div class="cand-actions">
-        <button class="set-goto-btn ${isActive ? 'current' : ''}">
-          ${isActive ? `✓ Active on ${noteName}` : `Use as Go-To`}
+        <button class="toggle-on-btn ${isEnabled ? 'is-on' : 'is-off'}" type="button" title="Toggle candidate ON / OFF (multiple ON clips randomize)">
+          ${isEnabled ? '● ON' : '○ OFF'}
         </button>
-        <div class="cand-mini-tools">
-          <button class="icon-tool-btn trim-btn" title="Inspect spectrogram &amp; trim In/Out">Inspect</button>
-          <button class="icon-tool-btn danger trash-cand-btn" title="Move clip to _trash/">🗑</button>
-        </div>
+        <button class="icon-tool-btn trim-btn" type="button" title="Inspect spectrogram, rename, override pitch, trim, or trash">
+          Inspect
+        </button>
       </div>
     `;
 
-    // Hold mouse button on card to sustain audition; lifting mouse triggers smooth release!
     card.addEventListener('mousedown', e => {
-      if (e.button !== 0 || e.target.tagName === 'INPUT' || e.target.closest('button')) return;
+      if (e.button !== 0 || e.target.closest('button')) return;
       startCandidateHold('mouse_hold', midi, cand, idx);
     });
 
-    const slugInput = card.querySelector('.cand-slug-input');
-    slugInput.addEventListener('mousedown', e => e.stopPropagation());
-    slugInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') e.target.blur();
-    });
-    slugInput.addEventListener('blur', async () => {
-      const nextSlug = slugInput.value.trim();
-      if (nextSlug && nextSlug !== cand.videoSlug) {
-        await apiPost('/api/video/rename', { videoId: cand.videoId, slug: nextSlug });
-      }
-    });
-
-    card.querySelector('.set-goto-btn').addEventListener('click', async e => {
+    card.querySelector('.toggle-on-btn').addEventListener('click', async e => {
       e.stopPropagation();
-      startCandidateHold('tap_commit', midi, cand, idx);
-      setTimeout(() => releaseHeldVoice('tap_commit'), 220);
-      if (!isActive) {
-        await apiPost('/api/keyboard/select', { midi, sliceId: cand.sliceId });
+      const nextEnabled = !isEnabled;
+      if (nextEnabled) {
+        startCandidateHold('tap_commit', midi, cand, idx);
+        setTimeout(() => releaseHeldVoice('tap_commit'), 220);
       }
+      await apiPost('/api/keyboard/toggle', {
+        midi,
+        sliceId: cand.sliceId,
+        enabled: nextEnabled
+      });
     });
 
     card.querySelector('.trim-btn').addEventListener('click', e => {
@@ -1237,295 +1123,12 @@ function renderSelectedKeyDeck() {
       openTrimModal(cand.videoId, cand.sliceId, cand.playbackRate || 1.0);
     });
 
-    card.querySelector('.trash-cand-btn').addEventListener('click', async e => {
-      e.stopPropagation();
-      await apiPost('/api/slice/trash', { videoId: cand.videoId, sliceId: cand.sliceId });
-    });
-
     grid.appendChild(card);
   });
 }
 
 // ============================================================================
-// Secondary Drawer: Raw Video Library, Waveform & Slicer Spectrogram
-// ============================================================================
-async function renderDrawerSpectrogram(slice, existingBuffer = null) {
-  const canvas = document.getElementById('spectrogramCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const buffer = existingBuffer || (await loadAudioBuffer(slice.audioUrl));
-  if (!buffer) return;
-  const off = buildSpectrogramOffscreen(
-    buffer,
-    slice.freq || 261.6,
-    slice.name,
-    canvas.width,
-    canvas.height,
-    1,
-    1.0
-  );
-  ctx.drawImage(off, 0, 0);
-}
-
-function renderSourceWaveform(video, activeSlice) {
-  const canvas = document.getElementById('waveformCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width;
-  const H = canvas.height;
-
-  ctx.fillStyle = '#040507';
-  ctx.fillRect(0, 0, W, H);
-  if (!video || !video.waveformPeaks) return;
-
-  const peaks = video.waveformPeaks;
-  const maxPeak = Math.max(...peaks, 0.05);
-  const dur = video.duration || 1;
-
-  if (activeSlice) {
-    const x0 = (activeSlice.startSec / dur) * W;
-    const wSlice = (activeSlice.durSec / dur) * W;
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
-    ctx.fillRect(x0, 0, wSlice, H);
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(x0, 1, wSlice, H - 2);
-  }
-
-  const barW = W / peaks.length;
-  for (let i = 0; i < peaks.length; i++) {
-    const x = i * barW;
-    const tSec = (i / peaks.length) * dur;
-    const inActive =
-      activeSlice &&
-      tSec >= activeSlice.startSec &&
-      tSec <= activeSlice.startSec + activeSlice.durSec;
-    ctx.fillStyle = inActive ? '#ffffff' : '#475569';
-    const normH = (peaks[i] / maxPeak) * (H * 0.82);
-    ctx.fillRect(x, (H - normH) / 2, Math.max(1.5, barW - 1), normH);
-  }
-
-  for (const onset of video.allDetectedOnsets || []) {
-    const x = (onset.startSec / dur) * W;
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.75)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, H);
-    ctx.stroke();
-  }
-}
-
-function getFilteredVideos() {
-  if (!state.catalog) return [];
-  const q = state.searchQuery.toLowerCase().trim();
-  const list = state.catalog.videos.filter(v => {
-    if (state.selectedCategory === 'trash') return !!v.deleted;
-    if (v.deleted) return false;
-    if (state.selectedCategory !== 'all' && v.category !== state.selectedCategory) return false;
-    if (!q) return true;
-    const matchName =
-      v.slug.toLowerCase().includes(q) ||
-      (v.label || '').toLowerCase().includes(q) ||
-      v.category.toLowerCase().includes(q);
-    const matchSlice = (v.slices || []).some(s => !s.deleted && s.name.toLowerCase().includes(q));
-    return matchName || matchSlice;
-  });
-
-  list.sort((a, b) => {
-    const slicesA = (a.slices || []).filter(s => !s.deleted);
-    const slicesB = (b.slices || []).filter(s => !s.deleted);
-    if (state.sortBy === 'pitch-asc') {
-      return Math.min(...slicesA.map(s => s.midi), 999) - Math.min(...slicesB.map(s => s.midi), 999);
-    }
-    if (state.sortBy === 'pitch-desc') {
-      return Math.max(...slicesB.map(s => s.midi), 0) - Math.max(...slicesA.map(s => s.midi), 0);
-    }
-    if (state.sortBy === 'slices') {
-      return slicesB.length - slicesA.length;
-    }
-    return a.index - b.index;
-  });
-  return list;
-}
-
-function renderVideoGrid() {
-  const grid = document.getElementById('videoGrid');
-  if (!grid) return;
-  grid.innerHTML = '';
-  const videos = getFilteredVideos();
-
-  for (const video of videos) {
-    const activeSlices = (video.slices || []).filter(s => !s.deleted);
-    const card = document.createElement('div');
-    card.className = `video-card ${video.id === state.selectedVideoId ? 'selected' : ''}`;
-    const numStr = String(video.index).padStart(2, '0');
-    const cacheBust = video.extraRotateDeg ? `?r=${video.extraRotateDeg}` : '';
-
-    card.innerHTML = `
-      <div class="card-top">
-        <div class="thumb-box" title="Audition first slice">
-          <img src="${video.thumbUrl}${cacheBust}" alt="${video.slug}" loading="lazy" />
-          <span class="thumb-index">#${numStr}</span>
-        </div>
-        <div class="card-meta">
-          <input type="text" class="slug-input" value="${video.slug}" />
-          <div class="meta-row">
-            <select class="cat-select">
-              ${['strings', 'winds', 'glass', 'metal', 'keys', 'toms', 'percussion']
-                .map(c => `<option value="${c}" ${video.category === c ? 'selected' : ''}>${c}</option>`)
-                .join('')}
-            </select>
-            <div class="card-actions">
-              ${
-                video.deleted
-                  ? `<button class="icon-btn restore-btn">↩ Restore</button>`
-                  : `<button class="icon-btn rot-btn" title="Rotate 90°">↻ 90°</button>
-                     <button class="icon-btn danger trash-video-btn" title="Move video to _trash/">🗑</button>`
-              }
-            </div>
-          </div>
-          <div class="folder-path-hint">samples/${video.folderName}/ (${video.duration}s)</div>
-        </div>
-      </div>
-      <div class="slices-wrap"></div>
-    `;
-
-    card.querySelector('.thumb-box').addEventListener('click', () => {
-      selectVideoAndSlice(video, activeSlices[0] || null, null, true);
-    });
-
-    const slugInput = card.querySelector('.slug-input');
-    const commitRename = async () => {
-      const nextSlug = slugInput.value.trim();
-      const nextCat = card.querySelector('.cat-select').value;
-      if ((nextSlug && nextSlug !== video.slug) || nextCat !== video.category) {
-        await apiPost('/api/video/rename', { videoId: video.id, slug: nextSlug, category: nextCat });
-      }
-    };
-    slugInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') e.target.blur();
-    });
-    slugInput.addEventListener('blur', commitRename);
-    card.querySelector('.cat-select').addEventListener('change', commitRename);
-
-    const rotBtn = card.querySelector('.rot-btn');
-    if (rotBtn) {
-      rotBtn.addEventListener('click', async e => {
-        e.stopPropagation();
-        rotBtn.textContent = '...';
-        await apiPost('/api/video/rotate', { videoId: video.id, deltaDeg: 90 });
-      });
-    }
-
-    const trashBtn = card.querySelector('.trash-video-btn');
-    if (trashBtn) {
-      trashBtn.addEventListener('click', async e => {
-        e.stopPropagation();
-        await apiPost('/api/video/trash', { videoId: video.id });
-      });
-    }
-
-    const restoreBtn = card.querySelector('.restore-btn');
-    if (restoreBtn) {
-      restoreBtn.addEventListener('click', async e => {
-        e.stopPropagation();
-        await apiPost('/api/video/restore', { videoId: video.id });
-      });
-    }
-
-    const slicesWrap = card.querySelector('.slices-wrap');
-    for (const slice of activeSlices) {
-      const pill = document.createElement('div');
-      pill.className = `slice-pill ${slice.id === state.selectedSliceId ? 'active-slice' : ''}`;
-      const isPerc = !!slice.percBucket;
-      const label = isPerc ? slice.percBucket.toUpperCase() : slice.name;
-
-      pill.innerHTML = `
-        <span>${label}</span>
-        <span style="color:var(--text-2)">@${slice.startSec}s</span>
-        <button class="del-slice-btn" title="Move slice to _trash/">×</button>
-      `;
-      pill.addEventListener('click', () => selectVideoAndSlice(video, slice, null, true));
-      pill.querySelector('.del-slice-btn').addEventListener('click', async e => {
-        e.stopPropagation();
-        await apiPost('/api/slice/trash', { videoId: video.id, sliceId: slice.id });
-      });
-      slicesWrap.appendChild(pill);
-    }
-
-    grid.appendChild(card);
-  }
-}
-
-async function selectVideoAndSlice(video, slice, preloadedBuffer = null, shouldPlay = true) {
-  state.selectedVideoId = video ? video.id : null;
-  state.selectedSliceId = slice ? slice.id : null;
-  renderVideoGrid();
-
-  if (video) {
-    document.getElementById('waveformTitle').textContent =
-      `#${String(video.index).padStart(2, '0')} ${video.slug} (${video.duration}s)`;
-    renderSourceWaveform(video, slice);
-  }
-
-  if (slice) {
-    const centsStr = slice.cents >= 0 ? `+${slice.cents}c` : `${slice.cents}c`;
-    document.getElementById('specSubtitle').textContent =
-      `${slice.name} (${centsStr}) · ${slice.startSec}s–${(slice.startSec + slice.durSec).toFixed(2)}s`;
-    document.getElementById('f0Readout').textContent = `${slice.name} · ${slice.freq} Hz`;
-    document.getElementById('filePairBadge').textContent = `${slice.mp4File}`;
-    document.getElementById('sliceBucketSelect').value = slice.percBucket || 'tonal';
-    document.getElementById('sliceStartInput').value = slice.startSec;
-    document.getElementById('sliceDurInput').value = slice.durSec;
-    document.getElementById('sliceHpInput').value = slice.highpassHz || 85;
-
-    const peaksList = document.getElementById('peaksList');
-    peaksList.innerHTML = '';
-    for (const pk of slice.candidatePeaks || []) {
-      const chip = document.createElement('button');
-      const isCurrent = Math.abs(pk.freq - slice.freq) < 6;
-      chip.className = `peak-chip ${isCurrent ? 'selected' : ''}`;
-      chip.textContent = `${pk.name} (${pk.freq}Hz)`;
-      chip.addEventListener('click', async () => {
-        await apiPost('/api/slice/update', {
-          videoId: video.id,
-          sliceId: slice.id,
-          overrideFreq: pk.freq
-        });
-      });
-      peaksList.appendChild(chip);
-    }
-
-    if (shouldPlay) {
-      startHeldVoice({
-        triggerId: 'slicer_preview',
-        midi: null,
-        slice: { ...slice, videoSlug: video.slug },
-        noteLabel: slice.name,
-        shiftCents: slice.cents,
-        playbackRate: 1.0,
-        velocity: 0.94
-      });
-      setTimeout(() => releaseHeldVoice('slicer_preview'), 450);
-      await renderDrawerSpectrogram(slice, preloadedBuffer);
-    } else {
-      await renderDrawerSpectrogram(slice, preloadedBuffer);
-    }
-  }
-}
-
-function openSlicerForVideoAndSlice(videoId, sliceId) {
-  document.getElementById('libraryDrawer').classList.remove('hidden');
-  const video = state.catalog?.videos.find(v => v.id === videoId);
-  if (video) {
-    const slice = (video.slices || []).find(s => s.id === sliceId && !s.deleted) || video.slices?.[0];
-    selectVideoAndSlice(video, slice, null, false);
-  }
-}
-
-// ============================================================================
-// Focused Single-Clip Visual "Trim In / Out" Modal (Draggable IN / OUT Handles)
+// Universal Clip Inspector Overlay (Rename + Rotate + Spectrogram + Peaks + Trim + Trash)
 // ============================================================================
 const trimState = {
   open: false,
@@ -1538,10 +1141,10 @@ const trimState = {
   outSec: 2.0,
   viewStart: 0,
   viewEnd: 5.0,
-  zoomMode: 'clip', // 'clip' | 'full'
+  zoomMode: 'clip',
   sliceAudioBuffer: null,
   previewRaf: null,
-  dragMode: null, // 'in' | 'out' | 'move' | null
+  dragMode: null,
   dragStartX: 0,
   dragStartIn: 0,
   dragStartOut: 0
@@ -1676,9 +1279,10 @@ function renderInspectorSpectrogram() {
 
   const rate = trimState.playbackRate || 1.0;
   const slice = trimState.slice;
+  const isPerc = isPercussionSlice(trimState.video, slice);
   const playedFreq = Number(((slice.freq || 261.6) * rate).toFixed(1));
-  const f0Label = slice.percBucket ? slice.percBucket.toUpperCase() : slice.name;
-  const cacheKey = `insp__${slice.audioUrl}__${rate.toFixed(4)}__${cssW}x${cssH}__${dpr}`;
+  const f0Label = isPerc ? 'PERC' : slice.name;
+  const cacheKey = `insp__${slice.audioUrl}__${playedFreq}__${isPerc ? 0 : 1}__${cssW}x${cssH}__${dpr}`;
 
   let off = spectrogramBitmapCache.get(cacheKey);
   if (!off) {
@@ -1689,7 +1293,8 @@ function renderInspectorSpectrogram() {
       cssW,
       cssH,
       dpr,
-      rate
+      rate,
+      !isPerc
     );
     spectrogramBitmapCache.set(cacheKey, off);
   }
@@ -1697,7 +1302,6 @@ function renderInspectorSpectrogram() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(off, 0, 0);
 
-  // Shade trimmed-away regions inside the clip spectrogram so spectrogram & handles match 1:1
   const origSpan = Math.max(0.05, trimState.origOut - trimState.origIn);
   const leftCut = Math.max(0, Math.min(cssW, ((trimState.inSec - trimState.origIn) / origSpan) * cssW));
   const rightKeep = Math.max(0, Math.min(cssW, ((trimState.outSec - trimState.origIn) / origSpan) * cssW));
@@ -1773,7 +1377,6 @@ function renderTrimWaveformCanvas() {
   const vSpan = Math.max(0.2, vEnd - vStart);
   const midY = (cssH - 18) / 2;
 
-  // Center baseline
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -1781,7 +1384,6 @@ function renderTrimWaveformCanvas() {
   ctx.lineTo(cssW, midY);
   ctx.stroke();
 
-  // 1. Background envelope from video.waveformPeaks across [vStart .. vEnd]
   const peaks = v.waveformPeaks || [];
   if (peaks.length > 0) {
     const maxPk = Math.max(...peaks, 0.05);
@@ -1798,7 +1400,6 @@ function renderTrimWaveformCanvas() {
     }
   }
 
-  // 2. High-resolution sample-accurate waveform inside original slice buffer [origIn .. origOut]
   if (trimState.sliceAudioBuffer) {
     const ch = trimState.sliceAudioBuffer.getChannelData(0);
     const sr = trimState.sliceAudioBuffer.sampleRate;
@@ -1830,7 +1431,6 @@ function renderTrimWaveformCanvas() {
     }
   }
 
-  // 3. Subtle detected onset markers across [vStart .. vEnd]
   ctx.strokeStyle = 'rgba(245, 158, 11, 0.38)';
   ctx.setLineDash([3, 3]);
   for (const onset of v.allDetectedOnsets || []) {
@@ -1844,7 +1444,6 @@ function renderTrimWaveformCanvas() {
   }
   ctx.setLineDash([]);
 
-  // 4. Time ruler along bottom 18px
   ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
   ctx.fillRect(0, cssH - 18, cssW, 18);
   ctx.font = '10px "SF Mono", Menlo, monospace';
@@ -1857,6 +1456,73 @@ function renderTrimWaveformCanvas() {
     if (x > 8 && x < cssW - 28) {
       ctx.fillText(`${t.toFixed(tickStep < 1 ? 1 : 0)}s`, x + 3, cssH - 5);
     }
+  }
+}
+
+function populateInspectorHeaderAndPeaks() {
+  const video = trimState.video;
+  const slice = trimState.slice;
+  if (!video || !slice) return;
+
+  const isPerc = isPercussionSlice(video, slice);
+  document.getElementById('inspectorSlugInput').value = video.slug || '';
+
+  const noteLabelEl = document.getElementById('inspectorNoteLabel');
+  if (isPerc) {
+    noteLabelEl.textContent = '— Percussion';
+  } else {
+    noteLabelEl.textContent = `— ${slice.name}`;
+  }
+
+  const playedFreq = Number(((slice.freq || 261.6) * (trimState.playbackRate || 1.0)).toFixed(1));
+  const f0Badge = document.getElementById('inspectorF0Badge');
+  if (f0Badge) {
+    f0Badge.textContent = isPerc
+      ? `Center ~${playedFreq} Hz`
+      : `f0: ${slice.name} · ${playedFreq} Hz`;
+  }
+
+  const specMeta = document.getElementById('inspectorSpecMeta');
+  if (specMeta) {
+    specMeta.textContent = `Clip @${trimState.origIn.toFixed(2)}s – ${trimState.origOut.toFixed(2)}s`;
+  }
+
+  const peaksRow = document.getElementById('inspectorPeaksRow');
+  const peaksList = document.getElementById('inspectorPeaksList');
+  peaksList.innerHTML = '';
+
+  const peaks = slice.candidatePeaks || [];
+  if (!isPerc && peaks.length > 0) {
+    peaksRow.classList.remove('hidden');
+    for (const pk of peaks) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      const isCurrent = Math.abs(pk.freq - slice.freq) < 6;
+      chip.className = `peak-chip ${isCurrent ? 'selected' : ''}`;
+      chip.textContent = `${pk.name} (${pk.freq}Hz)`;
+      chip.addEventListener('click', async () => {
+        await apiPost('/api/slice/update', {
+          videoId: video.id,
+          sliceId: slice.id,
+          overrideFreq: pk.freq
+        });
+        const freshVideo = state.catalog?.videos.find(v => v.id === video.id);
+        const freshSlice = freshVideo?.slices?.find(s => s.id === slice.id && !s.deleted);
+        if (freshVideo && freshSlice) {
+          trimState.video = freshVideo;
+          trimState.slice = freshSlice;
+          trimState.playbackRate = 1.0;
+          if (freshSlice.midi >= MIN_MIDI && freshSlice.midi <= MAX_MIDI) {
+            selectKeyForConfig(freshSlice.midi, false);
+          }
+          populateInspectorHeaderAndPeaks();
+          renderInspectorSpectrogram();
+        }
+      });
+      peaksList.appendChild(chip);
+    }
+  } else {
+    peaksRow.classList.add('hidden');
   }
 }
 
@@ -1882,24 +1548,11 @@ async function openTrimModal(videoId, sliceId, playbackRate = 1.0) {
   document.getElementById('trimZoomClipBtn').classList.add('active');
   document.getElementById('trimZoomFullBtn').classList.remove('active');
 
-  const noteTag = slice.percBucket ? slice.percBucket.toUpperCase() : slice.name;
-  document.getElementById('trimModalTitle').textContent = `${video.slug} — ${noteTag}`;
-
-  const playedFreq = Number(((slice.freq || 261.6) * trimState.playbackRate).toFixed(1));
-  const f0Badge = document.getElementById('inspectorF0Badge');
-  if (f0Badge) {
-    f0Badge.textContent = slice.percBucket
-      ? `${noteTag} · ${playedFreq} Hz`
-      : `f0: ${noteTag} · ${playedFreq} Hz`;
-  }
-  const specMeta = document.getElementById('inspectorSpecMeta');
-  if (specMeta) {
-    specMeta.textContent = `Clip @${trimState.origIn.toFixed(2)}s – ${trimState.origOut.toFixed(2)}s`;
-  }
+  populateInspectorHeaderAndPeaks();
 
   const vidEl = document.getElementById('trimScrubVideo');
   const sourceFile = video.sourceFile || `${video.slug}_source.mp4`;
-  vidEl.src = `/samples/${video.folderName}/${sourceFile}`;
+  vidEl.src = withBust(`/samples/${video.folderName}/${sourceFile}`);
   vidEl.style.transform = video.extraRotateDeg ? `rotate(${video.extraRotateDeg}deg)` : '';
 
   document.getElementById('trimModal').classList.remove('hidden');
@@ -1953,22 +1606,11 @@ async function apiPost(url, body) {
 function refreshAllUI() {
   renderPianoKeyboard();
   renderSelectedKeyDeck();
-  renderPercussionRack();
-
-  const libOpen = !document.getElementById('libraryDrawer').classList.contains('hidden');
-  if (libOpen) {
-    renderVideoGrid();
-    const video = state.catalog?.videos.find(v => v.id === state.selectedVideoId);
-    if (video) {
-      const slice = (video.slices || []).find(s => s.id === state.selectedSliceId && !s.deleted);
-      renderSourceWaveform(video, slice);
-    }
-  }
 }
 
 function stepToAdjacentPopulatedKey(dir) {
   let m = state.selectedMidi + dir;
-  while (m >= 36 && m <= 103) {
+  while (m >= MIN_MIDI && m <= MAX_MIDI) {
     if ((state.catalog?.keyboardMap?.[m]?.candidateCount || 0) > 0) {
       selectKeyForConfig(m, true);
       return;
@@ -1978,7 +1620,6 @@ function stepToAdjacentPopulatedKey(dir) {
 }
 
 function setupEventListeners() {
-  // Global mouseup releases any mouse-held key or candidate card!
   window.addEventListener('mouseup', () => {
     releaseHeldVoice('mouse_hold');
   });
@@ -1996,7 +1637,7 @@ function setupEventListeners() {
     document.getElementById('wurliStatusText').textContent = state.wurliEnabled ? 'ON' : 'OFF';
   });
 
-  // Release Decay Time Slider (Default 0.65s)
+  // Release Decay Time Slider
   document.getElementById('releaseSlider').addEventListener('input', e => {
     state.releaseSec = Number(e.target.value);
     document.getElementById('releaseVal').textContent = `${state.releaseSec.toFixed(2)}s`;
@@ -2011,36 +1652,15 @@ function setupEventListeners() {
     }
   });
 
-  // Drawers
-  document.getElementById('openPercBtn').addEventListener('click', () => {
-    document.getElementById('percDrawer').classList.remove('hidden');
-  });
-  document.getElementById('openLibraryBtn').addEventListener('click', () => {
-    document.getElementById('libraryDrawer').classList.remove('hidden');
-    renderVideoGrid();
-    if (!state.selectedVideoId) {
-      const firstVid = state.catalog?.videos.find(v => !v.deleted && v.slices?.length > 0);
-      if (firstVid) selectVideoAndSlice(firstVid, firstVid.slices.find(s => !s.deleted), null, false);
-    }
-  });
-
   document.querySelectorAll('.close-drawer-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (btn.dataset.close === 'trimModal') {
-        closeTrimModal();
-      } else {
-        document.getElementById(btn.dataset.close).classList.add('hidden');
-      }
+      if (btn.dataset.close === 'trimModal') closeTrimModal();
     });
   });
   document.querySelectorAll('.drawer-backdrop').forEach(backdrop => {
     backdrop.addEventListener('click', e => {
-      if (e.target === backdrop) {
-        if (backdrop.id === 'trimModal') {
-          closeTrimModal();
-        } else {
-          backdrop.classList.add('hidden');
-        }
+      if (e.target === backdrop && backdrop.id === 'trimModal') {
+        closeTrimModal();
       }
     });
   });
@@ -2064,17 +1684,76 @@ function setupEventListeners() {
       openTrimModal(state.lastPlayedVideoId, state.lastPlayedSliceId, rate);
     } else {
       const entry = state.catalog?.keyboardMap?.[state.selectedMidi];
-      if (entry?.primary) {
-        openTrimModal(entry.primary.videoId, entry.primary.sliceId, entry.primary.playbackRate || 1.0);
-      } else {
-        document.getElementById('libraryDrawer').classList.remove('hidden');
-        renderVideoGrid();
+      const fallback = entry?.primary || entry?.candidates?.[0];
+      if (fallback) {
+        openTrimModal(fallback.videoId, fallback.sliceId, fallback.playbackRate || 1.0);
       }
     }
   });
 
+  // Inspector Header Editable Object Name
+  const inspectorSlugInput = document.getElementById('inspectorSlugInput');
+  inspectorSlugInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') e.target.blur();
+  });
+  inspectorSlugInput.addEventListener('blur', async () => {
+    if (!trimState.open || !trimState.video) return;
+    const nextSlug = inspectorSlugInput.value.trim();
+    if (nextSlug && nextSlug !== trimState.video.slug) {
+      await apiPost('/api/video/rename', {
+        videoId: trimState.video.id,
+        slug: nextSlug
+      });
+      const freshVideo = state.catalog?.videos.find(v => v.id === trimState.video.id);
+      const freshSlice = freshVideo?.slices?.find(s => s.id === trimState.slice?.id && !s.deleted);
+      if (freshVideo) {
+        trimState.video = freshVideo;
+        if (freshSlice) trimState.slice = freshSlice;
+        populateInspectorHeaderAndPeaks();
+        const vidEl = document.getElementById('trimScrubVideo');
+        const sourceFile = freshVideo.sourceFile || `${freshVideo.slug}_source.mp4`;
+        vidEl.src = withBust(`/samples/${freshVideo.folderName}/${sourceFile}`);
+        scrubTrimVideoTo(trimState.inSec);
+      }
+    }
+  });
+
+  // Inspector Video Rotate 90° Button
+  const rotateBtn = document.getElementById('inspectorRotateBtn');
+  rotateBtn.addEventListener('click', async () => {
+    if (!trimState.open || !trimState.video) return;
+    stopTrimPreview();
+    rotateBtn.disabled = true;
+    rotateBtn.textContent = '...';
+    try {
+      await apiPost('/api/video/rotate', {
+        videoId: trimState.video.id,
+        deltaDeg: 90
+      });
+      const freshVideo = state.catalog?.videos.find(v => v.id === trimState.video.id);
+      if (freshVideo) {
+        trimState.video = freshVideo;
+        const vidEl = document.getElementById('trimScrubVideo');
+        vidEl.style.transform = freshVideo.extraRotateDeg ? `rotate(${freshVideo.extraRotateDeg}deg)` : '';
+      }
+    } finally {
+      rotateBtn.disabled = false;
+      rotateBtn.textContent = '↻ 90°';
+    }
+  });
+
+  // Inspector Footer Move Clip to Trash Button
+  document.getElementById('inspectorTrashClipBtn').addEventListener('click', async () => {
+    if (!trimState.open || !trimState.video || !trimState.slice) return;
+    stopTrimPreview();
+    const vidId = trimState.video.id;
+    const slId = trimState.slice.id;
+    closeTrimModal();
+    await apiPost('/api/slice/trash', { videoId: vidId, sliceId: slId });
+  });
+
   // ==========================================================================
-  // Universal Clip Inspector Drag & Control Bindings
+  // Universal Clip Inspector Drag & Trim Bindings
   // ==========================================================================
   const MIN_TRIM_LEN = 0.50;
   const MAX_TRIM_LEN = 6.00;
@@ -2221,15 +1900,6 @@ function setupEventListeners() {
     startTrimPreview();
   });
 
-  document.getElementById('trimOpenAdvancedBtn').addEventListener('click', () => {
-    const vidId = trimState.video?.id;
-    const slId = trimState.slice?.id;
-    closeTrimModal();
-    if (vidId) {
-      openSlicerForVideoAndSlice(vidId, slId);
-    }
-  });
-
   document.getElementById('trimSaveBtn').addEventListener('click', async () => {
     if (!trimState.video || !trimState.slice) return;
     stopTrimPreview();
@@ -2249,7 +1919,7 @@ function setupEventListeners() {
       durSec
     };
     if (
-      !trimState.slice.percBucket &&
+      !isPercussionSlice(trimState.video, trimState.slice) &&
       trimState.slice.freq &&
       Math.abs(trimState.inSec - trimState.origIn) < 0.65
     ) {
@@ -2297,13 +1967,10 @@ function setupEventListeners() {
   document.getElementById('nextPopulatedKeyBtn').addEventListener('click', () => {
     stepToAdjacentPopulatedKey(1);
   });
-  document.getElementById('clearKeyBtn').addEventListener('click', async () => {
-    await apiPost('/api/keyboard/select', { midi: state.selectedMidi, sliceId: null });
-  });
 
-  // Keyboard Dock Toolbar
+  // Keyboard Dock Toolbar (Z steps down to C1 = 24 for Percussion Octave!)
   document.getElementById('octDownBtn').addEventListener('click', () => {
-    state.baseOctaveMidi = Math.max(36, state.baseOctaveMidi - 12);
+    state.baseOctaveMidi = Math.max(MIN_MIDI, state.baseOctaveMidi - 12);
     renderPianoKeyboard();
   });
   document.getElementById('octUpBtn').addEventListener('click', () => {
@@ -2324,68 +1991,6 @@ function setupEventListeners() {
     renderPianoKeyboard();
   });
 
-  // Slicer Drawer Controls
-  document.getElementById('searchInput').addEventListener('input', e => {
-    state.searchQuery = e.target.value;
-    renderVideoGrid();
-  });
-  document.getElementById('categorySelect').addEventListener('change', e => {
-    state.selectedCategory = e.target.value;
-    renderVideoGrid();
-  });
-  document.getElementById('sortSelect').addEventListener('change', e => {
-    state.sortBy = e.target.value;
-    renderVideoGrid();
-  });
-
-  const waveCanvas = document.getElementById('waveformCanvas');
-  waveCanvas.addEventListener('click', e => {
-    const video = state.catalog?.videos.find(v => v.id === state.selectedVideoId);
-    if (!video) return;
-    const rect = waveCanvas.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const clickSec = Number((ratio * video.duration).toFixed(2));
-    let chosenStart = clickSec;
-    let chosenDur = 2.2;
-    for (const onset of video.allDetectedOnsets || []) {
-      if (Math.abs(onset.startSec - clickSec) < 0.32) {
-        chosenStart = onset.startSec;
-        chosenDur = onset.durSec;
-        break;
-      }
-    }
-    document.getElementById('sliceStartInput').value = chosenStart;
-    document.getElementById('sliceDurInput').value = chosenDur;
-  });
-
-  document.getElementById('recutSliceBtn').addEventListener('click', async () => {
-    if (!state.selectedVideoId || !state.selectedSliceId) return;
-    const btn = document.getElementById('recutSliceBtn');
-    btn.textContent = 'Cutting...';
-    audioBufferCache.clear();
-    await apiPost('/api/slice/update', {
-      videoId: state.selectedVideoId,
-      sliceId: state.selectedSliceId,
-      startSec: Number(document.getElementById('sliceStartInput').value),
-      durSec: Number(document.getElementById('sliceDurInput').value),
-      highpassHz: Number(document.getElementById('sliceHpInput').value),
-      percBucket: document.getElementById('sliceBucketSelect').value
-    });
-    btn.textContent = 'Re-Cut Moment';
-  });
-
-  document.getElementById('addSliceAtStartBtn').addEventListener('click', async () => {
-    if (!state.selectedVideoId) return;
-    const btn = document.getElementById('addSliceAtStartBtn');
-    btn.textContent = 'Cutting...';
-    await apiPost('/api/slice/create', {
-      videoId: state.selectedVideoId,
-      startSec: Number(document.getElementById('sliceStartInput').value),
-      durSec: Number(document.getElementById('sliceDurInput').value)
-    });
-    btn.textContent = '+ Cut New Moment';
-  });
-
   // QWERTY Keydown / Keyup (Hold to Sustain + Lift to Decay!)
   window.addEventListener('keydown', async e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey) {
@@ -2394,8 +1999,6 @@ function setupEventListeners() {
 
     if (e.key === 'Escape') {
       if (trimState.open) closeTrimModal();
-      document.getElementById('percDrawer').classList.add('hidden');
-      document.getElementById('libraryDrawer').classList.add('hidden');
       return;
     }
 
@@ -2420,7 +2023,7 @@ function setupEventListeners() {
       return;
     }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      const cands = getFilteredCandidatesForSelectedKey();
+      const cands = getCandidatesForSelectedKey();
       if (cands.length > 0) {
         e.preventDefault();
         const delta = e.key === 'ArrowDown' ? 1 : -1;
@@ -2431,13 +2034,14 @@ function setupEventListeners() {
       return;
     }
     if (e.key === 'Enter') {
-      const cands = getFilteredCandidatesForSelectedKey();
+      const cands = getCandidatesForSelectedKey();
       const chosen = cands[state.auditionIndex];
       if (chosen) {
         e.preventDefault();
-        await apiPost('/api/keyboard/select', {
+        await apiPost('/api/keyboard/toggle', {
           midi: state.selectedMidi,
-          sliceId: chosen.sliceId
+          sliceId: chosen.sliceId,
+          enabled: !chosen.enabled
         });
       }
       return;
@@ -2445,24 +2049,8 @@ function setupEventListeners() {
 
     if (e.repeat) return;
 
-    if (e.code === 'Digit1') {
-      e.preventDefault();
-      startPercussionHold('qwerty_Digit1', 'kick');
-      return;
-    }
-    if (e.code === 'Digit2') {
-      e.preventDefault();
-      startPercussionHold('qwerty_Digit2', 'snare');
-      return;
-    }
-    if (e.code === 'Digit3') {
-      e.preventDefault();
-      startPercussionHold('qwerty_Digit3', 'hihat');
-      return;
-    }
-
     if (e.code === 'KeyZ') {
-      state.baseOctaveMidi = Math.max(36, state.baseOctaveMidi - 12);
+      state.baseOctaveMidi = Math.max(MIN_MIDI, state.baseOctaveMidi - 12);
       renderPianoKeyboard();
       return;
     }
@@ -2481,10 +2069,6 @@ function setupEventListeners() {
   });
 
   window.addEventListener('keyup', e => {
-    if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
-      releaseHeldVoice(`qwerty_${e.code}`);
-      return;
-    }
     const mapped = QWERTY_MAP.find(q => q.code === e.code);
     if (mapped) {
       releaseHeldVoice(`qwerty_${e.code}`);
@@ -2512,7 +2096,6 @@ function initWebMIDI() {
             } else if (cmd === 0x80 || (cmd === 0x90 && data2 === 0)) {
               releaseHeldVoice(`midi_${data1}`);
             } else if (cmd === 0xb0 && data1 === 64) {
-              // Sustain pedal CC 64
               const down = data2 >= 64;
               state.sustainPedalDown = down;
               if (!down) {

@@ -70,3 +70,16 @@
 - Combined deeper harmonics and In/Out handles in one overlay.
 
 - Inspected harmonics and In/Out handles in one overlay. [img](screenshots/04_universal-clip-inspector-overlay.png)
+
+
+## Nov 2, 2026 · 9:20 pm
+
+- Removed the Library and Drums drawers to cut UI bloat.
+- Switched candidates to ON/OFF toggles with random play.
+- Shrank the bottom keyboard to slim note-name bars.
+
+- Enabled two G4 clips above slim note-name key bars. [img](screenshots/05_minimal-note-bars-and-on-off-candidates.png)
+
+- Added a low C1–B1 percussion octave below C2 tonal keys.
+
+- Triggered puffball kicks and wood log on the C1 octave. [img](screenshots/06_low-percussion-octave-puffball-kicks.png)

@@ -348,34 +348,52 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, saveCatalog(catalog));
     }
 
+    if (pathname === '/api/keyboard/toggle' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const midi = Number(body.midi);
+      const sliceId = String(body.sliceId || '');
+      if (!Number.isFinite(midi) || midi < 24 || midi > 103 || !sliceId) {
+        return sendJson(res, 400, { error: 'Invalid MIDI note or sliceId' });
+      }
+      const catalog = loadCatalog();
+      if (!catalog.keyboardConfig) {
+        catalog.keyboardConfig = { selectedByMidi: {}, enabledByMidi: {}, clearedMidis: [] };
+      }
+      // Ensure enabledByMidi is migrated before toggling
+      computeKeyboardMap(catalog.videos, catalog.keyboardConfig);
+
+      const cur = Array.isArray(catalog.keyboardConfig.enabledByMidi[midi])
+        ? [...catalog.keyboardConfig.enabledByMidi[midi]]
+        : [];
+      const exists = cur.includes(sliceId);
+      const shouldEnable = body.enabled !== undefined ? !!body.enabled : !exists;
+
+      let next = cur;
+      if (shouldEnable && !exists) {
+        next.push(sliceId);
+      } else if (!shouldEnable && exists) {
+        next = cur.filter(id => id !== sliceId);
+      }
+      catalog.keyboardConfig.enabledByMidi[midi] = next;
+      return sendJson(res, 200, saveCatalog(catalog));
+    }
+
     if (pathname === '/api/keyboard/select' && req.method === 'POST') {
       const body = await parseBody(req);
       const midi = Number(body.midi);
-      if (!Number.isFinite(midi) || midi < 36 || midi > 103) {
+      if (!Number.isFinite(midi) || midi < 24 || midi > 103) {
         return sendJson(res, 400, { error: 'Invalid MIDI note' });
       }
       const catalog = loadCatalog();
       if (!catalog.keyboardConfig) {
-        catalog.keyboardConfig = { selectedByMidi: {}, clearedMidis: [] };
+        catalog.keyboardConfig = { selectedByMidi: {}, enabledByMidi: {}, clearedMidis: [] };
       }
-      if (!Array.isArray(catalog.keyboardConfig.clearedMidis)) {
-        catalog.keyboardConfig.clearedMidis = [];
-      }
+      computeKeyboardMap(catalog.videos, catalog.keyboardConfig);
 
       if (!body.sliceId) {
-        delete catalog.keyboardConfig.selectedByMidi[midi];
-        if (!catalog.keyboardConfig.clearedMidis.includes(midi)) {
-          catalog.keyboardConfig.clearedMidis.push(midi);
-        }
+        catalog.keyboardConfig.enabledByMidi[midi] = [];
       } else {
-        catalog.keyboardConfig.selectedByMidi[midi] = String(body.sliceId);
-        catalog.keyboardConfig.clearedMidis = catalog.keyboardConfig.clearedMidis.filter(m => Number(m) !== midi);
-        // Selecting a candidate marks it reviewed
-        for (const v of catalog.videos) {
-          for (const s of v.slices || []) {
-            if (s.id === body.sliceId) s.isNew = false;
-          }
-        }
+        catalog.keyboardConfig.enabledByMidi[midi] = [String(body.sliceId)];
       }
       return sendJson(res, 200, saveCatalog(catalog));
     }
@@ -445,6 +463,7 @@ const server = http.createServer(async (req, res) => {
 
       // If user clicked a specific spectral peak or manually overrode frequency/MIDI
       if (body.overrideFreq !== undefined) {
+        const prevMidi = slice.midi;
         const ni = freqToMidi(Number(body.overrideFreq));
         if (ni) {
           slice.freq = ni.freq;
@@ -452,6 +471,17 @@ const server = http.createServer(async (req, res) => {
           slice.name = ni.name;
           slice.cents = ni.cents;
           slice.exactMidi = ni.exactMidi;
+
+          if (prevMidi !== ni.midi) {
+            if (!catalog.keyboardConfig) {
+              catalog.keyboardConfig = { selectedByMidi: {}, enabledByMidi: {}, clearedMidis: [] };
+            }
+            computeKeyboardMap(catalog.videos, catalog.keyboardConfig);
+            const dest = catalog.keyboardConfig.enabledByMidi?.[ni.midi] || [];
+            if (!dest.includes(slice.id)) {
+              catalog.keyboardConfig.enabledByMidi[ni.midi] = [...dest, slice.id];
+            }
+          }
 
           // Rename files on disk to reflect new note name
           const hitNum = String(slice.hitIndex).padStart(2, '0');

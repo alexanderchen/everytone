@@ -628,22 +628,93 @@ export function analyzeVideoAudio(filePath, options = {}) {
   };
 }
 
+// Curated low-to-high 12-key Percussion Octave (MIDI 24 C1 -> 35 B1)
+const PERC_OCTAVE_ROLES = {
+  24: 'Sub Kick',
+  25: 'Deep Kick',
+  26: 'Soft Thud',
+  27: 'Metal Thump',
+  28: 'Low Log',
+  29: 'Warm Log',
+  30: 'Wood Block',
+  31: 'High Wood',
+  32: 'Hollow Gong',
+  33: 'Tin & Glass',
+  34: 'Ping & Tick',
+  35: 'Crisp Click'
+};
+
+const PERC_SLICE_TO_MIDI = {
+  // 24 C1 — Sub Kick (Puffball Mushroom 1)
+  v53_s01: 24, v53_s02: 24, v08_s01: 24,
+  // 25 C#1 — Deep Kick (Puffball Mushroom 2)
+  v54_s01: 25, v54_s02: 25, v08_s03: 25,
+  // 26 D1 — Soft Thud (Puffball + Lamp / Clock Low)
+  v53_s03: 26, v08_s02: 26, v09_s01: 26,
+  // 27 D#1 — Low Metal Thump (Bird Feeder Low)
+  v55_s01: 27, v57_s01: 27,
+  // 28 E1 — Low Wood Log
+  v46_s01: 28, v48_s01: 28, v52_s01: 28,
+  // 29 F1 — Warm Wood Log
+  v44_s01: 29, v50_s01: 29, v51_s01: 29, v58_s01: 29,
+  // 30 F#1 — Mid Wood Block
+  v40_s01: 30, v43_s01: 30, v42_s01: 30, v41_s01: 30,
+  // 31 G1 — High Wood Clack
+  v45_s01: 31, v47_s01: 31, v49_s01: 31,
+  // 32 G#1 — Hollow Resonance
+  v08_s06: 32, v08_s04: 32, v08_s05: 32,
+  // 33 A1 — Tin & Glass Rim
+  v56_s01: 33, v59_s01: 33, v09_s02: 33, v09_s03: 33,
+  // 34 A#1 — Ping-Pong & Clock Tick
+  v110_s01: 34, v08_s09: 34, v08_s08: 34, v08_s07: 34,
+  // 35 B1 — Crisp High Click
+  v09_s04: 35, v09_s06: 35, v09_s05: 35, v09_s07: 35
+};
+
+const DEFAULT_PERC_ON_BY_MIDI = {
+  24: 'v53_s01',
+  25: 'v54_s01',
+  26: 'v53_s03',
+  27: 'v55_s01',
+  28: 'v46_s01',
+  29: 'v44_s01',
+  30: 'v40_s01',
+  31: 'v45_s01',
+  32: 'v08_s06',
+  33: 'v56_s01',
+  34: 'v110_s01',
+  35: 'v09_s04'
+};
+
+function inferPercMidiFallback(video, slice) {
+  if ((video.slug || '').includes('puffball')) return slice.freq < 100 ? 24 : 26;
+  const f = slice.freq || 200;
+  if (f < 76) return 24;
+  if (f < 86) return 25;
+  if (f < 110) return 28;
+  if (f < 160) return 26;
+  if (f < 204) return 29;
+  if (f < 230) return 30;
+  if (f < 290) return 31;
+  if (f < 360) return 32;
+  if (f < 650) return 33;
+  if (f < 1450) return 34;
+  return 35;
+}
+
 /**
- * Nearest-Note Chromatic Keyboard Configurator (MIDI 36 C2 to 103 G7).
- *
- * Rules:
- *  1. Every tonal slice is placed ONLY in its single nearest chromatic note bucket (`targetMidi = s.midi`, within ±50c).
- *     No slice is ever offered across multiple keys, eliminating domino swaps and keeping pitch shift minimal (<= ±50c).
- *  2. Commits and preserves the user's persistent Go-To Keyboard Config (`keyboardConfig.selectedByMidi`) on disk.
- *  3. Newly imported slices (`s.isNew === true`) surface as NEW candidate considerations on their nearest key
- *     without overwriting an already-configured key's chosen sample.
+ * Unified Keyboard Configurator:
+ *  - MIDI 24..35 (C1..B1): 12-key Percussion Octave mapped low kick (puffballs) -> high clicks
+ *  - MIDI 36..103 (C2..G7): 68-key Nearest-Note Tonal Range (<= ±50c micro-tuning)
+ *  - Supports multiple `ON` clips per key (`keyboardConfig.enabledByMidi[midi]`) for round-robin / random playback.
  */
 export function computeKeyboardMap(videos, keyboardConfig = {}) {
   if (!keyboardConfig.selectedByMidi) keyboardConfig.selectedByMidi = {};
+  if (!keyboardConfig.enabledByMidi) keyboardConfig.enabledByMidi = {};
   if (!Array.isArray(keyboardConfig.clearedMidis)) keyboardConfig.clearedMidis = [];
 
   const clearedSet = new Set(keyboardConfig.clearedMidis.map(Number));
-  const MIN_MIDI = 36;
+  const MIN_MIDI = 24;
   const MAX_MIDI = 103;
   const bucketsByMidi = new Map();
 
@@ -661,14 +732,52 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
   }
 
   for (const v of videos) {
-    if (v.deleted || v.category === 'percussion') continue;
+    if (v.deleted) continue;
 
     for (const s of v.slices || []) {
       if (s.deleted) continue;
-      if (s.percBucket === 'kick' || s.percBucket === 'snare' || s.percBucket === 'hihat') continue;
+      const isPerc =
+        v.category === 'percussion' ||
+        s.percBucket === 'kick' ||
+        s.percBucket === 'snare' ||
+        s.percBucket === 'hihat';
+
+      if (isPerc) {
+        const targetMidi = PERC_SLICE_TO_MIDI[s.id] ?? inferPercMidiFallback(v, s);
+        const isDefaultHero = DEFAULT_PERC_ON_BY_MIDI[targetMidi] === s.id;
+        const item = {
+          videoId: v.id,
+          videoIndex: v.index,
+          videoSlug: v.slug,
+          videoLabel: v.label,
+          category: 'percussion',
+          isPerc: true,
+          thumbUrl: v.thumbUrl,
+          sliceId: s.id,
+          midi: targetMidi,
+          name: PERC_OCTAVE_ROLES[targetMidi] || 'Percussion',
+          freq: s.freq,
+          cents: 0,
+          exactMidi: targetMidi,
+          shiftCents: 0,
+          playbackRate: 1.0,
+          confidence: s.confidence ?? 0.85,
+          peakDb: s.peakDb ?? -20,
+          starred: !!s.starred,
+          videoUrl: s.videoUrl,
+          audioUrl: s.audioUrl,
+          startSec: s.startSec,
+          durSec: s.durSec,
+          _score: (isDefaultHero ? 1000 : 0) - (s.freq || 0) * 0.01
+        };
+        const list = bucketsByMidi.get(targetMidi) || [];
+        list.push(item);
+        bucketsByMidi.set(targetMidi, list);
+        continue;
+      }
 
       const targetMidi = s.midi;
-      if (targetMidi < MIN_MIDI || targetMidi > MAX_MIDI) continue;
+      if (targetMidi < 36 || targetMidi > MAX_MIDI) continue;
 
       const exactMidi = s.exactMidi ?? (s.midi + (s.cents || 0) / 100);
       const shiftSemitones = targetMidi - exactMidi;
@@ -682,6 +791,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
         videoSlug: v.slug,
         videoLabel: v.label,
         category: v.category,
+        isPerc: false,
         thumbUrl: v.thumbUrl,
         sliceId: s.id,
         midi: s.midi,
@@ -694,7 +804,6 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
         confidence: s.confidence ?? 0.85,
         peakDb: s.peakDb ?? -20,
         starred: !!s.starred,
-        isNew: !!s.isNew,
         videoUrl: s.videoUrl,
         audioUrl: s.audioUrl,
         startSec: s.startSec,
@@ -711,48 +820,75 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
   const keyMap = {};
 
   for (let targetMidi = MIN_MIDI; targetMidi <= MAX_MIDI; targetMidi++) {
+    const isPercKey = targetMidi < 36;
     const candidates = bucketsByMidi.get(targetMidi) || [];
     if (candidates.length === 0) {
       delete keyboardConfig.selectedByMidi[targetMidi];
+      delete keyboardConfig.enabledByMidi[targetMidi];
       continue;
     }
 
-    // Stable quality sort (cleanest, truest-pitch objects first)
-    candidates.sort((a, b) => b._score - a._score || a.videoIndex - b.videoIndex);
+    // Fixed stable order (never reorders when toggling ON/OFF)
+    candidates.sort(
+      (a, b) => b._score - a._score || a.videoIndex - b.videoIndex || a.startSec - b.startSec
+    );
     for (const c of candidates) delete c._score;
 
-    const targetName = midiToName(targetMidi);
-    const targetFreq = midiToFreq(targetMidi);
-    const isCleared = clearedSet.has(targetMidi);
+    // Migrate or validate enabledByMidi[targetMidi]
+    let enabledIds = keyboardConfig.enabledByMidi[targetMidi];
+    if (!Array.isArray(enabledIds)) {
+      if (clearedSet.has(targetMidi)) {
+        enabledIds = [];
+      } else if (isPercKey) {
+        const heroId = DEFAULT_PERC_ON_BY_MIDI[targetMidi];
+        const hero = candidates.find(c => c.sliceId === heroId) || candidates[0];
+        enabledIds = hero ? [hero.sliceId] : [];
+      } else {
+        const savedId = keyboardConfig.selectedByMidi[targetMidi];
+        const savedCand = candidates.find(c => c.sliceId === savedId) || candidates[0];
+        enabledIds = savedCand ? [savedCand.sliceId] : [];
+      }
+    } else {
+      enabledIds = enabledIds.filter(id => candidates.some(c => c.sliceId === id));
+    }
 
-    let activeCandidate = null;
-    if (!isCleared) {
-      const savedId = keyboardConfig.selectedByMidi[targetMidi];
-      activeCandidate = candidates.find(c => c.sliceId === savedId) || null;
-      if (!activeCandidate) {
-        // Prefer an established candidate if key wasn't configured yet, or fall back to top candidate
-        activeCandidate = candidates[0];
-        keyboardConfig.selectedByMidi[targetMidi] = activeCandidate.sliceId;
+    keyboardConfig.enabledByMidi[targetMidi] = enabledIds;
+    if (enabledIds.length > 0) {
+      keyboardConfig.selectedByMidi[targetMidi] = enabledIds[0];
+      keyboardConfig.clearedMidis = keyboardConfig.clearedMidis.filter(m => Number(m) !== targetMidi);
+    } else {
+      delete keyboardConfig.selectedByMidi[targetMidi];
+      if (!keyboardConfig.clearedMidis.includes(targetMidi)) {
+        keyboardConfig.clearedMidis.push(targetMidi);
       }
     }
 
-    const newCount = candidates.filter(c => c.isNew).length;
+    const enabledSet = new Set(enabledIds);
+    for (const c of candidates) {
+      c.enabled = enabledSet.has(c.sliceId);
+    }
+
+    const primary = candidates.find(c => c.enabled) || null;
+    const targetName = midiToName(targetMidi);
+    const targetFreq = midiToFreq(targetMidi);
 
     keyMap[targetMidi] = {
       targetMidi,
       targetName,
       targetFreq,
-      isCleared,
-      activeSliceId: activeCandidate ? activeCandidate.sliceId : null,
+      isPercKey,
+      percRole: isPercKey ? PERC_OCTAVE_ROLES[targetMidi] : null,
+      isCleared: enabledIds.length === 0,
+      enabledSliceIds: enabledIds,
+      enabledCount: enabledIds.length,
+      activeSliceId: primary ? primary.sliceId : null,
       matchType: 'exact',
-      shiftCents: activeCandidate ? activeCandidate.shiftCents : 0,
+      shiftCents: primary ? primary.shiftCents : 0,
       semitoneSteps: 0,
-      playbackRate: activeCandidate ? activeCandidate.playbackRate : 1.0,
-      primary: activeCandidate,
+      playbackRate: primary ? primary.playbackRate : 1.0,
+      primary,
       candidates,
-      alternates: candidates.filter(c => !activeCandidate || c.sliceId !== activeCandidate.sliceId),
-      candidateCount: candidates.length,
-      newCount
+      candidateCount: candidates.length
     };
   }
 

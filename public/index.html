@@ -7,21 +7,13 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <!-- 1. Quiet Minimal Top Controls Bar (No Brand / Stats Clutter) -->
+  <!-- 1. Quiet Minimal Top Controls Bar -->
   <header class="topbar">
     <div class="topbar-spacer"></div>
 
     <div class="topbar-actions">
-      <button id="inspectLatestBtn" class="drawer-btn" title="Inspect spectrogram and trim In/Out of the active clip">
+      <button id="inspectLatestBtn" class="drawer-btn" title="Inspect spectrogram, pitch, and In/Out trim of the active clip">
         <span>Inspect Clip</span>
-      </button>
-
-      <button id="openPercBtn" class="drawer-btn" title="Configure Kick [1], Snare [2], and Hi-Hat/Click [3] percussion takes">
-        <span>Drums (1·2·3)</span>
-      </button>
-
-      <button id="openLibraryBtn" class="drawer-btn" title="Open full source video library">
-        <span>Library</span>
       </button>
 
       <div class="divider-v"></div>
@@ -77,25 +69,22 @@
         <button id="prevKeyBtn" class="nav-arrow-btn" title="Previous half-step (Left Arrow)">←</button>
         <div class="selected-note-hero">
           <span class="hero-note-name" id="selectedKeyName">C4</span>
-          <span class="hero-note-meta" id="selectedKeyMeta">261.6 Hz</span>
         </div>
         <button id="nextKeyBtn" class="nav-arrow-btn" title="Next half-step (Right Arrow)">→</button>
         <button id="nextPopulatedKeyBtn" class="nav-arrow-btn wide" title="Next populated key (Shift + Right Arrow)">⇥</button>
       </div>
 
       <div class="candidate-sidebar-meta">
-        <span class="candidate-summary-label" id="candidateSummaryLabel">0 Clips</span>
-        <div class="candidate-sidebar-btns">
-          <button id="clearKeyBtn" class="ghost-btn tiny hidden" title="Leave this key empty">Clear</button>
-        </div>
+        <span class="hero-note-meta" id="selectedKeyMeta">261.6 Hz</span>
+        <span class="candidate-summary-label" id="candidateSummaryLabel">0 / 0 ON</span>
       </div>
     </div>
 
-    <!-- Horizontal Strip of Compact Candidate Cards -->
+    <!-- Horizontal Strip of Compact Candidate Cards (ON/OFF Multi-Select) -->
     <div class="candidates-strip" id="candidatesGrid"></div>
   </section>
 
-  <!-- 4. Bottom Equal-Width Keyline Keyboard (C2 – G7) -->
+  <!-- 4. Slim Minimal Note-Name Keyboard Bars (C1–B1 Percussion + C2–G7 Tonal) -->
   <section class="keyboard-dock">
     <div class="keyboard-bar">
       <div class="kb-right-tools">
@@ -106,7 +95,7 @@
         </div>
 
         <div class="zoom-toggle">
-          <button id="fitKeysBtn" class="mini-key-btn active" title="Fit all 68 equal-width keys across screen">Fit 68</button>
+          <button id="fitKeysBtn" class="mini-key-btn active" title="Fit all 80 equal-width keys across screen">Fit All</button>
           <button id="wideKeysBtn" class="mini-key-btn" title="Wider equal-width keys with horizontal scroll">Wide</button>
         </div>
       </div>
@@ -117,145 +106,41 @@
     </div>
   </section>
 
-  <!-- Overlay Drawer 1: Minimal 3-Bucket Percussion Rack (Kick, Snare, Hi-Hat / Click) -->
-  <div class="drawer-backdrop hidden" id="percDrawer">
-    <div class="drawer-sheet perc-sheet">
-      <div class="drawer-header">
-        <div>
-          <h2>Drums (Keys 1 · 2 · 3)</h2>
-        </div>
-        <button class="close-drawer-btn" data-close="percDrawer">✕ Close</button>
-      </div>
-      <div class="percussion-rack" id="percussionRack"></div>
-    </div>
-  </div>
-
-  <!-- Overlay Drawer 2: Secondary Source Video Library & Slicer -->
-  <div class="drawer-backdrop hidden" id="libraryDrawer">
-    <div class="drawer-sheet library-sheet">
-      <div class="drawer-header">
-        <div>
-          <h2>Source Video Library</h2>
-        </div>
-        <div class="drawer-header-actions">
-          <button class="close-drawer-btn" data-close="libraryDrawer">✕ Close</button>
-        </div>
-      </div>
-
-      <div class="library-split">
-        <div class="library-list-col">
-          <div class="library-filters">
-            <input type="text" id="searchInput" placeholder="Search object or note..." />
-            <select id="categorySelect">
-              <option value="all">All Categories</option>
-              <option value="strings">Strings &amp; Rubberband Bowls</option>
-              <option value="winds">Winds &amp; Bottles</option>
-              <option value="glass">Glass</option>
-              <option value="metal">Metal, Chimes &amp; Music Box</option>
-              <option value="wood">Wood &amp; Marimba</option>
-              <option value="toms">Toms (Tonal)</option>
-              <option value="percussion">Percussion Only</option>
-              <option value="trash">_trash</option>
-            </select>
-            <select id="sortSelect">
-              <option value="index">Video #</option>
-              <option value="pitch-asc">Lowest Pitch</option>
-              <option value="pitch-desc">Highest Pitch</option>
-              <option value="slices">Most Moments</option>
-            </select>
-          </div>
-
-          <div class="video-grid" id="videoGrid"></div>
-        </div>
-
-        <div class="slicer-col">
-          <div class="slicer-card">
-            <div class="slicer-head">
-              <div>
-                <h3 id="waveformTitle">Source Recording Waveform &amp; Moments</h3>
-                <p class="card-sub" id="waveformSub">Click any amber onset pin on the waveform to cut a new moment</p>
-              </div>
-              <span class="mono-badge" id="filePairBadge">--</span>
-            </div>
-
-            <div class="canvas-box">
-              <canvas id="waveformCanvas" width="540" height="96"></canvas>
-            </div>
-
-            <div class="slice-controls">
-              <div class="field-group">
-                <label>Routing</label>
-                <select id="sliceBucketSelect">
-                  <option value="tonal">Tonal (Nearest Note)</option>
-                  <option value="kick">Kick (Key 1)</option>
-                  <option value="snare">Snare (Key 2)</option>
-                  <option value="hihat">Hi-Hat / Click (Key 3)</option>
-                </select>
-              </div>
-              <div class="field-group">
-                <label>Start (s)</label>
-                <input type="number" id="sliceStartInput" step="0.05" min="0" value="0" />
-              </div>
-              <div class="field-group">
-                <label>Dur (s)</label>
-                <input type="number" id="sliceDurInput" step="0.1" min="0.4" max="6.0" value="2.2" />
-              </div>
-              <div class="field-group">
-                <label>HPF (Hz)</label>
-                <input type="number" id="sliceHpInput" step="10" min="25" max="400" value="85" />
-              </div>
-              <button id="recutSliceBtn" class="action-btn primary">Re-Cut Moment</button>
-              <button id="addSliceAtStartBtn" class="action-btn">+ Cut New Moment</button>
-            </div>
-          </div>
-
-          <div class="slicer-card">
-            <div class="slicer-head">
-              <div>
-                <h3>Slice Spectrogram &amp; Pitch Override</h3>
-                <p class="card-sub" id="specSubtitle">Select any slice to inspect its pitch &amp; harmonics</p>
-              </div>
-              <span class="mono-badge bright" id="f0Readout">-- Hz</span>
-            </div>
-
-            <div class="canvas-box">
-              <canvas id="spectrogramCanvas" width="540" height="190"></canvas>
-            </div>
-
-            <div class="peaks-bar">
-              <span class="peaks-label">Spectral Peaks (click to override pitch):</span>
-              <div class="peaks-list" id="peaksList"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Universal Clip Inspector Overlay (Deeper Spectrogram + Fundamental Pitch + Trim In / Out) -->
+  <!-- Universal Clip Inspector Overlay (Rename + Rotate + Deeper Spectrogram + Pitch Override + Trim + Trash) -->
   <div class="drawer-backdrop hidden" id="trimModal">
     <div class="trim-modal-card">
       <div class="trim-modal-header">
         <div class="inspector-title-row">
-          <h2 id="trimModalTitle">Clip Inspector</h2>
+          <input
+            id="inspectorSlugInput"
+            type="text"
+            class="inspector-slug-input"
+            value=""
+            spellcheck="false"
+            title="Edit object shorthand name (Enter or click away to save)"
+          />
+          <span class="inspector-note-label" id="inspectorNoteLabel">--</span>
           <span class="spec-f0-badge" id="inspectorF0Badge">f0: -- Hz</span>
         </div>
         <button class="close-drawer-btn" data-close="trimModal">✕ Close</button>
       </div>
 
       <div class="trim-modal-body">
-        <!-- Left: Live 1:1 Square Scrub Video + Preview Trigger -->
+        <!-- Left: Live 1:1 Square Scrub Video + Rotate + Preview Trigger -->
         <div class="trim-video-col">
           <div class="trim-video-square">
             <video id="trimScrubVideo" playsinline preload="auto"></video>
           </div>
-          <span class="trim-scrub-time" id="trimScrubTimeReadout">Frame @ 0.00s</span>
+          <div class="trim-video-meta-row">
+            <span class="trim-scrub-time" id="trimScrubTimeReadout">Frame @ 0.00s</span>
+            <button id="inspectorRotateBtn" type="button" class="ghost-btn tiny" title="Rotate video 90°">↻ 90°</button>
+          </div>
           <button id="trimPreviewBtn" type="button" class="trim-btn-secondary full-w">
             ▶ Preview (Space)
           </button>
         </div>
 
-        <!-- Right: Stacked Deeper Spectrogram + Draggable [ IN ... OUT ] Trim Timeline -->
+        <!-- Right: Deeper Spectrogram + Optional Pitch Override + Draggable [ IN ... OUT ] Trim -->
         <div class="trim-timeline-col">
           <!-- 1. Deeper Log-Frequency Spectrogram + f0 & Harmonics -->
           <div class="inspector-spec-block">
@@ -266,6 +151,10 @@
             <div class="inspector-spec-stage">
               <canvas id="inspectorSpectrogramCanvas" width="520" height="148"></canvas>
               <div class="inspector-spec-playhead" id="inspectorSpecPlayhead"></div>
+            </div>
+            <div class="inspector-peaks-row hidden" id="inspectorPeaksRow">
+              <span class="peaks-mini-label">Pitch Override:</span>
+              <div class="peaks-list" id="inspectorPeaksList"></div>
             </div>
           </div>
 
@@ -321,8 +210,8 @@
       </div>
 
       <div class="trim-modal-footer">
-        <button id="trimOpenAdvancedBtn" class="ghost-btn small" type="button" title="Open full Source Video Library &amp; Pitch Override">
-          Open in Library ↗
+        <button id="inspectorTrashClipBtn" class="ghost-btn small danger-text" type="button" title="Move this clip to _trash/">
+          Move Clip to Trash
         </button>
 
         <div class="trim-footer-right">
