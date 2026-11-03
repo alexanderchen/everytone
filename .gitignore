@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Dependencies
+node_modules/
+
+# Heavy local video/audio sample binaries & drop folders
+samples/
+_trash/
+temp-photo-import/
+
+# Rendered MP4 exports (keep scripts, diagrams, screenshots, and PROCESS_LOG.md tracked)
+renders/*.mp4
