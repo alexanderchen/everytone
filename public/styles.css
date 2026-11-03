@@ -42,13 +42,13 @@ body {
 }
 
 /* ============================================================================
-   1. Minimal Studio Top Bar
+   1. Quiet Minimal Top Controls Bar
    ============================================================================ */
 .topbar {
-  height: 42px;
+  height: 38px;
   padding: 0 14px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--line-dim);
+  background: #030406;
+  border-bottom: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -56,70 +56,8 @@ body {
   flex-shrink: 0;
 }
 
-.brand-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.brand-mark {
-  width: 9px;
-  height: 9px;
-  border: 1.5px solid #ffffff;
-}
-
-.brand-title {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.status-pills {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 4px;
-}
-
-.status-pill {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  padding: 2px 8px;
-  border: 1px solid var(--line-key);
-  border-radius: 2px;
-  font-size: 10.5px;
-  color: var(--text-1);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.status-pill.subtle {
-  border-color: var(--line-dim);
-  color: var(--text-2);
-}
-
-.status-pill strong {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  color: var(--text-0);
-}
-
-.status-pill.new-pill {
-  cursor: pointer;
-  border-color: rgba(56, 189, 248, 0.55);
-  background: var(--accent-new-bg);
-  color: #bae6fd;
-}
-
-.status-pill.new-pill:hover {
-  background: rgba(56, 189, 248, 0.24);
-  border-color: var(--accent-new);
-}
-
-.status-pill.new-pill strong,
-.status-pill.new-pill .sparkle {
-  color: var(--accent-new);
+.topbar-spacer {
+  flex: 1 1 auto;
 }
 
 .topbar-actions {
@@ -130,7 +68,7 @@ body {
 
 .divider-v {
   width: 1px;
-  height: 18px;
+  height: 16px;
   background: var(--line-dim);
   margin: 0 2px;
 }
@@ -140,9 +78,9 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: 25px;
   padding: 0 9px;
-  background: var(--bg-2);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text-1);
   border: 1px solid var(--line-dim);
   border-radius: 2px;
@@ -154,15 +92,6 @@ body {
 .drawer-btn:hover,
 .ctrl-btn:hover {
   border-color: rgba(255, 255, 255, 0.45);
-  color: var(--text-0);
-}
-
-.badge-count {
-  font-family: var(--mono);
-  font-size: 10px;
-  padding: 1px 5px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
   color: var(--text-0);
 }
 
@@ -188,9 +117,9 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 26px;
+  height: 25px;
   padding: 0 7px;
-  background: var(--bg-2);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--line-dim);
   border-radius: 2px;
   font-size: 10px;
@@ -198,7 +127,7 @@ body {
 }
 
 .slider-ctrl input[type="range"] {
-  width: 52px;
+  width: 50px;
   accent-color: #ffffff;
 }
 
@@ -213,14 +142,14 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: 25px;
   padding: 0 8px;
   border: 1px solid var(--line-dim);
   border-radius: 2px;
   font-family: var(--mono);
   font-size: 10px;
   color: var(--text-1);
-  background: var(--bg-2);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .midi-dot {
@@ -231,115 +160,16 @@ body {
 }
 
 /* ============================================================================
-   2. Hero Live Stage Row: Side-by-Side 1:1 Square Stage + Compact Spectrogram
+   2. Full-Width Centered Immersive 3-Slot Stage + Unveiling Spectrograms
    ============================================================================ */
 .hero-stage-row {
   flex: 1 1 auto;
-  min-height: 210px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 368px;
-  border-bottom: 1px solid var(--line-key);
-  background: var(--bg-0);
-}
-
-.stage-videos-pane {
-  border-right: 1px solid var(--line-key);
+  min-height: 220px;
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  background: #040507;
-}
-
-.stage-spec-pane {
-  display: flex;
-  flex-direction: column;
+  align-items: center;
   justify-content: center;
-  align-items: center;
-  padding: 10px 11px;
-  min-width: 0;
-  min-height: 0;
-  background: #06080b;
-}
-
-.spec-hud-card {
-  width: 346px;
-  background: #090c11;
-  border: 1px solid var(--line-dim);
-  border-radius: 4px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
-}
-
-.spec-hud-header {
-  height: 28px;
-  padding: 0 9px;
-  background: var(--bg-1);
   border-bottom: 1px solid var(--line-dim);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.spec-hud-footer {
-  padding: 5px 9px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pane-header {
-  height: 32px;
-  padding: 0 12px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--line-dim);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.pane-title-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.pane-label {
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-2);
-  flex-shrink: 0;
-}
-
-.stage-note {
-  font-family: var(--mono);
-  font-size: 11.5px;
-  font-weight: 700;
-  color: #ffffff;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.stage-sub {
-  font-family: var(--mono);
-  font-size: 10px;
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  background: #030406;
 }
 
 .spec-f0-badge {
@@ -347,34 +177,33 @@ body {
   font-size: 11px;
   font-weight: 700;
   color: var(--accent-active);
-  padding: 1px 6px;
+  padding: 2px 7px;
   border: 1px solid rgba(16, 185, 129, 0.45);
   background: rgba(16, 185, 129, 0.12);
   border-radius: 2px;
 }
 
-/* Pure Borderless 3-Slot 1:1 Square Stage + Mini Spectrogram Strips Underneath */
+/* Pure Borderless 3-Slot 1:1 Square Stage + Unveiling Spectrogram Strips */
 .video-stage {
   position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  padding: 14px 20px;
-  background: #030406;
-}
-
-.poly-video-strip {
-  --tile-size: 240px;
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 18px;
+  overflow: hidden;
+  padding: 10px 28px 14px;
+  background: #030406;
+}
+
+.poly-video-strip {
+  --tile-size: 260px;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
 }
 
 .stage-slot-unit {
@@ -412,21 +241,6 @@ body {
   border: none;
 }
 
-/* Live Stage Spectrogram Canvas — Fixed 344x138 CSS Pixels (Zero Stretching!) */
-.stage-spec-wrap {
-  width: 344px;
-  height: 138px;
-  position: relative;
-  background: #06080c;
-  flex-shrink: 0;
-}
-
-#stageSpectrogramCanvas {
-  width: 344px;
-  height: 138px;
-  display: block;
-}
-
 /* ============================================================================
    3. Compact Horizontal Candidate Strip (Right Above the Keyboard)
    ============================================================================ */
@@ -440,14 +254,14 @@ body {
 }
 
 .candidate-strip-sidebar {
-  width: 224px;
+  width: 184px;
   flex-shrink: 0;
   border-right: 1px solid var(--line-dim);
   padding: 9px 12px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   background: var(--bg-1);
 }
 
@@ -813,13 +627,13 @@ body {
 }
 
 .keyboard-bar {
-  height: 30px;
+  height: 28px;
   padding: 0 12px;
-  background: #090b0f;
-  border-bottom: 1px solid var(--line-key);
+  background: #07090d;
+  border-bottom: 1px solid var(--line-dim);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 10px;
   flex-shrink: 0;
 }
@@ -1621,14 +1435,14 @@ body {
 
 
 /* ============================================================================
-   Focused Clip "Trim In / Out" Modal (QuickTime-Style Handle Trimmer)
+   Universal Clip Inspector Overlay (Deeper Spectrogram + Trim In / Out)
    ============================================================================ */
 .trim-modal-card {
-  width: min(760px, 95vw);
+  width: min(840px, 95vw);
   background: #0b0e14;
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 6px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.82);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1644,17 +1458,18 @@ body {
   gap: 12px;
 }
 
+.inspector-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .trim-modal-header h2 {
   font-size: 14px;
   font-weight: 700;
   color: #ffffff;
   font-family: var(--mono);
-}
-
-.trim-modal-sub {
-  margin-top: 3px;
-  font-size: 11.5px;
-  color: var(--text-2);
 }
 
 .in-color {
@@ -1669,21 +1484,21 @@ body {
   padding: 16px;
   display: flex;
   gap: 18px;
-  align-items: center;
+  align-items: flex-start;
 }
 
 .trim-video-col {
-  width: 196px;
+  width: 224px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .trim-video-square {
-  width: 196px;
-  height: 196px;
+  width: 224px;
+  height: 224px;
   aspect-ratio: 1 / 1;
   background: #030406;
   overflow: hidden;
@@ -1703,12 +1518,75 @@ body {
   color: var(--text-1);
 }
 
+.trim-btn-secondary.full-w {
+  width: 100%;
+}
+
 .trim-timeline-col {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+}
+
+.inspector-spec-block,
+.inspector-trim-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.inspector-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inspector-section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+
+.inspector-spec-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+
+.inspector-spec-stage {
+  position: relative;
+  width: 100%;
+  height: 148px;
+  background: #05070b;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#inspectorSpectrogramCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.inspector-spec-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0%;
+  width: 1.5px;
+  background: rgba(255, 255, 255, 0.72);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.inspector-spec-playhead.visible {
+  opacity: 1;
 }
 
 .trim-view-bar {
@@ -1726,7 +1604,7 @@ body {
 .trim-timeline-stage {
   position: relative;
   width: 100%;
-  height: 132px;
+  height: 108px;
   background: #05070b;
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 4px;
@@ -1774,7 +1652,7 @@ body {
   position: absolute;
   top: -2px;
   bottom: -2px;
-  width: 16px;
+  width: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1783,27 +1661,26 @@ body {
 }
 
 .trim-handle.in-handle {
-  left: -8px;
+  left: -7px;
   background: #10b981;
   border-radius: 3px 0 0 3px;
 }
 
 .trim-handle.out-handle {
-  right: -8px;
+  right: -7px;
   background: #f59e0b;
   border-radius: 0 3px 3px 0;
 }
 
 .handle-grip {
   width: 2px;
-  height: 26px;
+  height: 24px;
   background: rgba(0, 0, 0, 0.65);
   border-radius: 1px;
 }
 
 .handle-tag {
   position: absolute;
-  top: 4px;
   padding: 1px 4px;
   font-family: var(--mono);
   font-size: 9px;
@@ -1814,13 +1691,15 @@ body {
 }
 
 .in-handle .handle-tag {
-  left: 18px;
+  top: 4px;
+  left: 16px;
   background: rgba(16, 185, 129, 0.92);
   color: #03150e;
 }
 
 .out-handle .handle-tag {
-  right: 18px;
+  bottom: 20px;
+  right: 16px;
   background: rgba(245, 158, 11, 0.95);
   color: #1c0f02;
 }
@@ -1830,9 +1709,8 @@ body {
   top: 0;
   bottom: 0;
   left: 0%;
-  width: 2px;
-  background: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.9);
+  width: 1.5px;
+  background: rgba(255, 255, 255, 0.78);
   pointer-events: none;
   opacity: 0;
 }

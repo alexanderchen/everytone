@@ -89,10 +89,6 @@ class CDPClient {
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const nameIdx = args.indexOf('--name');
-  const singleShotName = nameIdx >= 0 ? args[nameIdx + 1] : null;
-
   const chrome = spawn(
     CHROME_BIN,
     [
@@ -124,7 +120,6 @@ async function main() {
       mobile: false
     });
 
-    // Wait for catalog & piano keyboard to finish rendering
     for (let i = 0; i < 40; i++) {
       const ready = await cdp.evalJs(
         `Boolean(document.querySelectorAll('#pianoKeyboard .key-cell').length >= 60)`
@@ -134,45 +129,28 @@ async function main() {
     }
     await sleep(300);
 
-    if (singleShotName) {
-      // Trigger 3 active notes so the stage is populated, then capture
-      await cdp.evalJs(`(() => {
-        const codes = ['KeyS', 'KeyT', 'KeyH'];
-        for (const code of codes) {
-          window.dispatchEvent(new KeyboardEvent('keydown', { code, key: 'a', bubbles: true }));
-        }
-      })()`);
-      await sleep(550);
-      const outFile = singleShotName.endsWith('.png') ? singleShotName : `${singleShotName}.png`;
-      await cdp.savePng(path.join(SCREENSHOTS_DIR, outFile));
-      return;
-    }
+    // Stagger 3 notes (D4, F#4, G4 -> KeyS, KeyT, KeyG) so all 3 centered square slots are active
+    // and their spectrograms show progressive left-to-right unveiling!
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS', key: 's', bubbles: true }))`);
+    await sleep(320);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyT', key: 't', bubbles: true }))`);
+    await sleep(280);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyG', key: 'g', bubbles: true }))`);
+    await sleep(360);
 
-    // Baseline Capture 1: 3-Slot Stage + Taller Mini Spectrograms + Right-Side Inspector
-    await cdp.evalJs(`(() => {
-      const codes = ['KeyS', 'KeyT', 'KeyH']; // D4, F#4, A4 triad
-      for (const code of codes) {
-        window.dispatchEvent(new KeyboardEvent('keydown', { code, key: 'a', bubbles: true }));
-      }
-    })()`);
-    await sleep(600);
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '01_three-slot-stage-and-spectrograms.png'));
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '03_centered-three-slot-stage-unveil.png'));
 
-    // Release held notes
     await cdp.evalJs(`(() => {
-      const codes = ['KeyS', 'KeyT', 'KeyH'];
-      for (const code of codes) {
+      for (const code of ['KeyS', 'KeyT', 'KeyG']) {
         window.dispatchEvent(new KeyboardEvent('keyup', { code, key: 'a', bubbles: true }));
       }
     })()`);
-    await sleep(250);
+    await sleep(200);
 
-    // Baseline Capture 2: Focused Visual "Trim Clip In / Out" Handle Modal
-    await cdp.evalJs(`(() => {
-      document.getElementById('inspectActiveSliceBtn')?.click();
-    })()`);
-    await sleep(800);
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '02_trim-clip-in-out-modal.png'));
+    // Open Universal Clip Inspector Overlay (Deeper Spectrogram + Harmonics + Trim In/Out)
+    await cdp.evalJs(`document.getElementById('inspectLatestBtn')?.click()`);
+    await sleep(850);
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '04_universal-clip-inspector-overlay.png'));
   } finally {
     cdp?.close();
     chrome.kill('SIGTERM');

@@ -3,44 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Everything Piano — Keyboard Configurator &amp; Live Stage</title>
+  <title>Everything Piano</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <!-- 1. Minimal Studio Top Bar -->
+  <!-- 1. Quiet Minimal Top Controls Bar (No Brand / Stats Clutter) -->
   <header class="topbar">
-    <div class="brand-group">
-      <div class="brand-mark"></div>
-      <h1 class="brand-title">Everything Piano</h1>
-      <div class="status-pills">
-        <span class="status-pill" title="Keys with an active Go-To sample committed to catalog.json">
-          <strong id="statConfiguredKeys">--</strong><span>/ 68 Keys Active</span>
-        </span>
-        <span class="status-pill subtle" title="Total nearest-note sample slices across the keyboard">
-          <strong id="statTotalCandidates">--</strong><span>Candidates</span>
-        </span>
-        <button id="jumpNewTopBtn" class="status-pill new-pill hidden" title="Jump to next key with newly imported candidate considerations">
-          <span class="sparkle">✦</span>
-          <strong id="statNewCount">0</strong>
-          <span>New Considerations</span>
-        </button>
-      </div>
-    </div>
+    <div class="topbar-spacer"></div>
 
     <div class="topbar-actions">
-      <button id="openPercBtn" class="drawer-btn" title="Configure Kick [1], Snare [2], and Hi-Hat/Click [3] percussion takes">
-        <span>Drums (1·2·3)</span>
-        <span class="badge-count" id="statPercCount">--</span>
+      <button id="inspectLatestBtn" class="drawer-btn" title="Inspect spectrogram and trim In/Out of the active clip">
+        <span>Inspect Clip</span>
       </button>
 
-      <button id="openLibraryBtn" class="drawer-btn" title="Open raw video library, shorthand search, categories, and onset slicer">
-        <span>Video Library &amp; Slicer</span>
-        <span class="badge-count" id="statVideos">--</span>
+      <button id="openPercBtn" class="drawer-btn" title="Configure Kick [1], Snare [2], and Hi-Hat/Click [3] percussion takes">
+        <span>Drums (1·2·3)</span>
+      </button>
+
+      <button id="openLibraryBtn" class="drawer-btn" title="Open full source video library">
+        <span>Library</span>
       </button>
 
       <div class="divider-v"></div>
 
-      <button id="wurliToggleBtn" class="ctrl-btn" title="Toggle built-in Wurlitzer electric piano reference layer">
+      <button id="wurliToggleBtn" class="ctrl-btn" title="Toggle built-in Wurlitzer electric piano layer">
         <span class="led"></span>
         <span>Wurli: <b id="wurliStatusText">OFF</b></span>
       </button>
@@ -64,53 +50,27 @@
     </div>
   </header>
 
-  <!-- 2. Hero Live Stage Row: Side-by-Side Full 1:1 Square Clips (Left) + Live Spectrogram & f0 Line (Right) -->
+  <!-- 2. Full-Width Centered Immersive 3-Slot Stage + Left-to-Right Unveiling Spectrograms -->
   <section class="hero-stage-row">
-    <!-- Left: Pure Borderless 3-Slot Square Video Stage + Mini Spectrogram Playhead Strips -->
-    <div class="stage-videos-pane">
-      <div class="video-stage" id="videoStage">
-        <div class="poly-video-strip" id="polyVideoGrid">
-          <div class="stage-slot-unit" data-slot="0">
-            <div class="stage-slot-video"></div>
-            <canvas class="slot-mini-spec" width="220" height="54"></canvas>
-          </div>
-          <div class="stage-slot-unit" data-slot="1">
-            <div class="stage-slot-video"></div>
-            <canvas class="slot-mini-spec" width="220" height="54"></canvas>
-          </div>
-          <div class="stage-slot-unit" data-slot="2">
-            <div class="stage-slot-video"></div>
-            <canvas class="slot-mini-spec" width="220" height="54"></canvas>
-          </div>
+    <div class="video-stage" id="videoStage">
+      <div class="poly-video-strip" id="polyVideoGrid">
+        <div class="stage-slot-unit" data-slot="0">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="240" height="54"></canvas>
         </div>
-      </div>
-    </div>
-
-    <!-- Right: Compact Unstretched Spectrogram + Fundamental Pitch HUD -->
-    <div class="stage-spec-pane">
-      <div class="spec-hud-card">
-        <div class="spec-hud-header">
-          <div class="pane-title-group">
-            <span class="pane-label">SPECTROGRAM</span>
-            <span class="spec-f0-badge" id="stageF0Badge">f0: -- Hz</span>
-          </div>
-          <button id="inspectActiveSliceBtn" class="ghost-btn tiny" title="Slide the In and Out points of this clip">
-            ✂ Trim In / Out
-          </button>
+        <div class="stage-slot-unit" data-slot="1">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="240" height="54"></canvas>
         </div>
-
-        <div class="stage-spec-wrap">
-          <canvas id="stageSpectrogramCanvas" width="344" height="138"></canvas>
-        </div>
-
-        <div class="spec-hud-footer" id="stageSpecMeta">
-          Trigger any note to view log-frequency STFT &amp; fundamental pitch
+        <div class="stage-slot-unit" data-slot="2">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="240" height="54"></canvas>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- 3. Compact Horizontal Candidate Strip for the Currently Selected Key -->
+  <!-- 3. Streamlined Horizontal Candidate Strip for the Selected Key -->
   <section class="candidate-strip-section">
     <div class="candidate-strip-sidebar">
       <div class="key-nav-row">
@@ -124,40 +84,20 @@
       </div>
 
       <div class="candidate-sidebar-meta">
-        <span class="candidate-summary-label" id="candidateSummaryLabel">0 Candidates</span>
+        <span class="candidate-summary-label" id="candidateSummaryLabel">0 Clips</span>
         <div class="candidate-sidebar-btns">
-          <button id="markKeySeenBtn" class="ghost-btn tiny accent-new hidden" title="Clear NEW badges on this note">✓ Seen</button>
           <button id="clearKeyBtn" class="ghost-btn tiny hidden" title="Leave this key empty">Clear</button>
         </div>
       </div>
-
-      <input
-        type="text"
-        id="keyCandidateFilter"
-        class="inline-filter hidden"
-        placeholder="Filter note backups..."
-      />
     </div>
 
     <!-- Horizontal Strip of Compact Candidate Cards -->
     <div class="candidates-strip" id="candidatesGrid"></div>
   </section>
 
-  <!-- 4. Central / Bottom Anchor: Wide Equal-Width Keyline UI Keyboard Diagram (C2 – G7) -->
+  <!-- 4. Bottom Equal-Width Keyline Keyboard (C2 – G7) -->
   <section class="keyboard-dock">
     <div class="keyboard-bar">
-      <div class="kb-left-tools">
-        <span class="kb-title">KEYLINE CONFIG DIAGRAM</span>
-        <div class="kb-filter-pills" id="kbHighlightGroup">
-          <button class="kb-pill active" data-hl="all">All 68 Keys</button>
-          <button class="kb-pill" data-hl="new">New Considerations</button>
-          <button class="kb-pill" data-hl="gaps">Empty Gaps</button>
-        </div>
-        <span class="kb-shortcuts-hint">
-          <b>←/→</b> select key · <b>↑/↓</b> audition backups · <b>Enter</b> set Go-To · <b>Hold ASDF...</b> play &amp; sustain · <b>1/2/3</b> drums
-        </span>
-      </div>
-
       <div class="kb-right-tools">
         <div class="octave-stepper">
           <button id="octDownBtn" class="mini-key-btn" title="Shift QWERTY octave down (Z)">◀ Z</button>
@@ -182,8 +122,7 @@
     <div class="drawer-sheet perc-sheet">
       <div class="drawer-header">
         <div>
-          <h2>Percussion Buckets (Keys 1 · 2 · 3)</h2>
-          <p class="drawer-sub">Strictly non-tonal objects: wood logs, bird feeder, puffball mushrooms, clock pendulum, glass lamp, ping pong ball</p>
+          <h2>Drums (Keys 1 · 2 · 3)</h2>
         </div>
         <button class="close-drawer-btn" data-close="percDrawer">✕ Close</button>
       </div>
@@ -191,30 +130,29 @@
     </div>
   </div>
 
-  <!-- Overlay Drawer 2: Secondary Video Library, Shorthand Search & Onset/Spectrogram Slicer -->
+  <!-- Overlay Drawer 2: Secondary Source Video Library & Slicer -->
   <div class="drawer-backdrop hidden" id="libraryDrawer">
     <div class="drawer-sheet library-sheet">
       <div class="drawer-header">
         <div>
-          <h2>Source Video Library &amp; Onset Slicer</h2>
-          <p class="drawer-sub">Rename object shorthands on disk, browse categories, trim slice start/duration, or move clips to <code>_trash/</code></p>
+          <h2>Source Video Library</h2>
         </div>
         <div class="drawer-header-actions">
-          <button id="markAllSeenBtn" class="ghost-btn small">Clear All "NEW" Flags</button>
-          <button class="close-drawer-btn" data-close="libraryDrawer">✕ Back to Keyboard</button>
+          <button class="close-drawer-btn" data-close="libraryDrawer">✕ Close</button>
         </div>
       </div>
 
       <div class="library-split">
         <div class="library-list-col">
           <div class="library-filters">
-            <input type="text" id="searchInput" placeholder="Search shorthand or note (e.g. rubberband, music-box, C5)..." />
+            <input type="text" id="searchInput" placeholder="Search object or note..." />
             <select id="categorySelect">
               <option value="all">All Categories</option>
               <option value="strings">Strings &amp; Rubberband Bowls</option>
               <option value="winds">Winds &amp; Bottles</option>
               <option value="glass">Glass</option>
               <option value="metal">Metal, Chimes &amp; Music Box</option>
+              <option value="wood">Wood &amp; Marimba</option>
               <option value="toms">Toms (Tonal)</option>
               <option value="percussion">Percussion Only</option>
               <option value="trash">_trash</option>
@@ -235,7 +173,7 @@
             <div class="slicer-head">
               <div>
                 <h3 id="waveformTitle">Source Recording Waveform &amp; Moments</h3>
-                <p class="card-sub" id="waveformSub">Click any amber onset pin on the waveform to audition or cut a new moment</p>
+                <p class="card-sub" id="waveformSub">Click any amber onset pin on the waveform to cut a new moment</p>
               </div>
               <span class="mono-badge" id="filePairBadge">--</span>
             </div>
@@ -294,91 +232,105 @@
     </div>
   </div>
 
-  <!-- Focused, Single-Clip Visual "Trim In / Out" Modal -->
+  <!-- Universal Clip Inspector Overlay (Deeper Spectrogram + Fundamental Pitch + Trim In / Out) -->
   <div class="drawer-backdrop hidden" id="trimModal">
     <div class="trim-modal-card">
       <div class="trim-modal-header">
-        <div>
-          <h2 id="trimModalTitle">Trim Clip In / Out</h2>
-          <p class="trim-modal-sub">
-            Drag the <b class="in-color">IN [</b> and <b class="out-color">] OUT</b> handles (or drag the middle to slide both) · Press <b>Space</b> to preview
-          </p>
+        <div class="inspector-title-row">
+          <h2 id="trimModalTitle">Clip Inspector</h2>
+          <span class="spec-f0-badge" id="inspectorF0Badge">f0: -- Hz</span>
         </div>
         <button class="close-drawer-btn" data-close="trimModal">✕ Close</button>
       </div>
 
       <div class="trim-modal-body">
-        <!-- Left: Live 1:1 Square Scrub Video Preview -->
+        <!-- Left: Live 1:1 Square Scrub Video + Preview Trigger -->
         <div class="trim-video-col">
           <div class="trim-video-square">
             <video id="trimScrubVideo" playsinline preload="auto"></video>
           </div>
-          <span class="trim-scrub-time" id="trimScrubTimeReadout">0.00s</span>
+          <span class="trim-scrub-time" id="trimScrubTimeReadout">Frame @ 0.00s</span>
+          <button id="trimPreviewBtn" type="button" class="trim-btn-secondary full-w">
+            ▶ Preview (Space)
+          </button>
         </div>
 
-        <!-- Right: Zoomed Waveform + Draggable [ IN ... OUT ] Handles -->
+        <!-- Right: Stacked Deeper Spectrogram + Draggable [ IN ... OUT ] Trim Timeline -->
         <div class="trim-timeline-col">
-          <div class="trim-view-bar">
-            <div class="trim-zoom-pills">
-              <button id="trimZoomClipBtn" class="kb-pill active" type="button">Zoom Around Clip</button>
-              <button id="trimZoomFullBtn" class="kb-pill" type="button">Full Video</button>
+          <!-- 1. Deeper Log-Frequency Spectrogram + f0 & Harmonics -->
+          <div class="inspector-spec-block">
+            <div class="inspector-subbar">
+              <span class="inspector-section-label">SPECTROGRAM &amp; HARMONICS</span>
+              <span class="inspector-spec-meta" id="inspectorSpecMeta">--</span>
             </div>
-            <button id="trimOpenAdvancedBtn" class="ghost-btn tiny" type="button" title="Open full Video Library &amp; Pitch Override">
-              Advanced / Library ↗
-            </button>
-          </div>
-
-          <div class="trim-timeline-stage" id="trimTimelineStage">
-            <canvas id="trimWaveformCanvas" width="490" height="128"></canvas>
-            <div class="trim-curtain left" id="trimCurtainLeft"></div>
-            <div class="trim-curtain right" id="trimCurtainRight"></div>
-            <div class="trim-window-box" id="trimWindowBox" title="Drag middle to slide In &amp; Out together">
-              <div class="trim-handle in-handle" id="trimHandleIn" title="Drag IN start point">
-                <span class="handle-grip"></span>
-                <span class="handle-tag" id="trimHandleInTag">IN</span>
-              </div>
-              <div class="trim-playhead" id="trimPlayhead"></div>
-              <div class="trim-handle out-handle" id="trimHandleOut" title="Drag OUT end point">
-                <span class="handle-grip"></span>
-                <span class="handle-tag" id="trimHandleOutTag">OUT</span>
-              </div>
+            <div class="inspector-spec-stage">
+              <canvas id="inspectorSpectrogramCanvas" width="520" height="148"></canvas>
+              <div class="inspector-spec-playhead" id="inspectorSpecPlayhead"></div>
             </div>
           </div>
 
-          <!-- Fine Nudge & Numeric Readouts -->
-          <div class="trim-readouts-row">
-            <div class="trim-nudge-group">
-              <span class="nudge-label in-color">IN</span>
-              <button type="button" class="nudge-btn" data-nudge="in" data-delta="-0.05">−0.05s</button>
-              <strong class="nudge-val" id="trimInVal">0.00s</strong>
-              <button type="button" class="nudge-btn" data-nudge="in" data-delta="0.05">+0.05s</button>
+          <!-- 2. Interactive Waveform + Draggable [ IN ... OUT ] Trim Handles -->
+          <div class="inspector-trim-block">
+            <div class="trim-view-bar">
+              <span class="inspector-section-label">TRIM IN / OUT</span>
+              <div class="trim-zoom-pills">
+                <button id="trimZoomClipBtn" class="kb-pill active" type="button">Around Clip</button>
+                <button id="trimZoomFullBtn" class="kb-pill" type="button">Full Video</button>
+              </div>
             </div>
 
-            <div class="trim-nudge-group">
-              <span class="nudge-label out-color">OUT</span>
-              <button type="button" class="nudge-btn" data-nudge="out" data-delta="-0.05">−0.05s</button>
-              <strong class="nudge-val" id="trimOutVal">2.00s</strong>
-              <button type="button" class="nudge-btn" data-nudge="out" data-delta="0.05">+0.05s</button>
+            <div class="trim-timeline-stage" id="trimTimelineStage">
+              <canvas id="trimWaveformCanvas" width="520" height="108"></canvas>
+              <div class="trim-curtain left" id="trimCurtainLeft"></div>
+              <div class="trim-curtain right" id="trimCurtainRight"></div>
+              <div class="trim-window-box" id="trimWindowBox" title="Drag middle to slide In &amp; Out together">
+                <div class="trim-handle in-handle" id="trimHandleIn" title="Drag IN start point">
+                  <span class="handle-grip"></span>
+                  <span class="handle-tag" id="trimHandleInTag">IN</span>
+                </div>
+                <div class="trim-playhead" id="trimPlayhead"></div>
+                <div class="trim-handle out-handle" id="trimHandleOut" title="Drag OUT end point">
+                  <span class="handle-grip"></span>
+                  <span class="handle-tag" id="trimHandleOutTag">OUT</span>
+                </div>
+              </div>
             </div>
 
-            <div class="trim-len-pill">
-              Length: <strong id="trimLenVal">2.00s</strong>
+            <!-- Fine Nudge & Numeric Readouts -->
+            <div class="trim-readouts-row">
+              <div class="trim-nudge-group">
+                <span class="nudge-label in-color">IN</span>
+                <button type="button" class="nudge-btn" data-nudge="in" data-delta="-0.05">−0.05s</button>
+                <strong class="nudge-val" id="trimInVal">0.00s</strong>
+                <button type="button" class="nudge-btn" data-nudge="in" data-delta="0.05">+0.05s</button>
+              </div>
+
+              <div class="trim-nudge-group">
+                <span class="nudge-label out-color">OUT</span>
+                <button type="button" class="nudge-btn" data-nudge="out" data-delta="-0.05">−0.05s</button>
+                <strong class="nudge-val" id="trimOutVal">2.00s</strong>
+                <button type="button" class="nudge-btn" data-nudge="out" data-delta="0.05">+0.05s</button>
+              </div>
+
+              <div class="trim-len-pill">
+                Length: <strong id="trimLenVal">2.00s</strong>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <div class="trim-modal-footer">
-        <button id="trimPreviewBtn" type="button" class="trim-btn-secondary">
-          ▶ Preview In → Out (Space)
+        <button id="trimOpenAdvancedBtn" class="ghost-btn small" type="button" title="Open full Source Video Library &amp; Pitch Override">
+          Open in Library ↗
         </button>
 
         <div class="trim-footer-right">
-          <button id="trimSaveNewBtn" type="button" class="ghost-btn small" title="Keep existing clip untouched and save this In/Out as an extra candidate">
+          <button id="trimSaveNewBtn" type="button" class="ghost-btn small" title="Keep existing clip untouched and save this In/Out as an extra clip">
             + Save as New Clip
           </button>
           <button id="trimSaveBtn" type="button" class="trim-btn-primary">
-            ✓ Save In / Out
+            ✓ Save Trim
           </button>
         </div>
       </div>

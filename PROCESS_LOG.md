@@ -58,3 +58,15 @@
 - Added draggable In and Out bars with live frame scrubbing.
 
 - Built a single-clip trim modal with draggable In and Out. [img](screenshots/02_trim-clip-in-out-modal.png)
+
+
+## Nov 2, 2026 · 8:09 pm
+
+- Removed the top-left title, batch flags, and side inspector.
+- Unveiled each mini spectrogram left to right as clips play.
+
+- Centered three square clips above unveiling spectrograms. [img](screenshots/03_centered-three-slot-stage-unveil.png)
+
+- Combined deeper harmonics and In/Out handles in one overlay.
+
+- Inspected harmonics and In/Out handles in one overlay. [img](screenshots/04_universal-clip-inspector-overlay.png)

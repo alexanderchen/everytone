@@ -197,10 +197,10 @@ function updateStageTileSizes() {
   const grid = document.getElementById('polyVideoGrid');
   if (!stageEl || !grid) return;
 
-  const gap = 18;
-  const availW = Math.max(180, stageEl.clientWidth - 40 - gap * (STAGE_SLOT_COUNT - 1));
-  const availH = Math.max(110, stageEl.clientHeight - 28 - (MINI_SPEC_H + 6));
-  const side = Math.max(84, Math.floor(Math.min(availH, availW / STAGE_SLOT_COUNT)));
+  const gap = 22;
+  const availW = Math.max(240, stageEl.clientWidth - 56 - gap * (STAGE_SLOT_COUNT - 1));
+  const availH = Math.max(120, stageEl.clientHeight - 24 - (MINI_SPEC_H + 6));
+  const side = Math.max(96, Math.floor(Math.min(availH, availW / STAGE_SLOT_COUNT)));
   currentStageTileSize = side;
   grid.style.setProperty('--tile-size', `${side}px`);
 }
@@ -415,19 +415,31 @@ function ensureMiniSpecAnimLoop() {
 
       const ctx = canvas.getContext('2d');
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(slot.miniBitmap, 0, 0, cssW, cssH);
+      ctx.fillStyle = '#030406';
+      ctx.fillRect(0, 0, cssW, cssH);
 
       const elapsed = Math.max(0, now - slot.voice.startedAt);
       const progress = Math.min(1, elapsed / Math.max(0.08, slot.voice.naturalDur));
-      const x = progress * cssW;
+      const revealW = Math.max(0, Math.min(cssW, progress * cssW));
 
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.92)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, cssH);
-      ctx.stroke();
+      if (revealW > 0.5) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, 0, revealW, cssH);
+        ctx.clip();
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(slot.miniBitmap, 0, 0, cssW, cssH);
+        ctx.restore();
+      }
+
+      if (progress > 0 && progress < 0.998) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.22)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(revealW, 0);
+        ctx.lineTo(revealW, cssH);
+        ctx.stroke();
+      }
     }
 
     if (anyActive) {
@@ -527,11 +539,8 @@ async function startHeldVoice({
     voice.startedAt = now;
     voice.naturalDur = dur;
 
-    // Attach visual-only mini spectrogram + playhead underneath this clip's slot,
-    // and update the separate right-side Inspector spectrogram!
+    // Attach visual-only left-to-right unveiling spectrogram underneath this clip's slot
     attachSlotMiniSpectrogram(tileObj, slice, buffer, voice);
-    const playedFreq = Number(((slice.freq || 261.6) * playbackRate).toFixed(1));
-    renderStageSpectrogramLive(slice, buffer, playedFreq, noteLabel, voice);
 
     if (voice.released) {
       // Finger already lifted during async decode -> immediately apply smooth release!
@@ -703,16 +712,20 @@ function magmaColor(norm) {
   }
 }
 
-// Cache offscreen spectrogram canvases per (audioUrl + playbackRate) for instant zero-lag redraws!
+// Cache offscreen spectrogram canvases per (audioUrl + playbackRate + size) for instant redraws
 const spectrogramBitmapCache = new Map();
-let stageSpecAnimId = null;
 
-const SPEC_CSS_W = 344;
-const SPEC_CSS_H = 138;
-
-function buildSpectrogramOffscreen(buffer, f0Hz, f0Label, dpr = 1, playbackRate = 1.0) {
-  const W = SPEC_CSS_W;
-  const H = SPEC_CSS_H;
+function buildSpectrogramOffscreen(
+  buffer,
+  f0Hz,
+  f0Label,
+  cssW = 520,
+  cssH = 148,
+  dpr = 1,
+  playbackRate = 1.0
+) {
+  const W = Math.max(200, Math.round(cssW));
+  const H = Math.max(90, Math.round(cssH));
 
   // 1. Build 1:1 CSS-pixel STFT bitmap (zero stretching, crisp pixel cells)
   const stftCanvas = document.createElement('canvas');
@@ -835,95 +848,6 @@ function buildSpectrogramOffscreen(buffer, f0Hz, f0Label, dpr = 1, playbackRate 
   }
 
   return offCanvas;
-}
-
-function renderStageSpectrogramLive(slice, buffer, playedFreq, noteLabel, voice) {
-  const canvas = document.getElementById('stageSpectrogramCanvas');
-  if (!canvas || !buffer) return;
-
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const targetW = Math.round(SPEC_CSS_W * dpr);
-  const targetH = Math.round(SPEC_CSS_H * dpr);
-  if (canvas.width !== targetW || canvas.height !== targetH) {
-    canvas.width = targetW;
-    canvas.height = targetH;
-  }
-
-  const ctx = canvas.getContext('2d');
-
-  const badge = document.getElementById('stageF0Badge');
-  if (badge) {
-    badge.textContent = slice.percBucket
-      ? `${noteLabel} · ${playedFreq} Hz`
-      : `f0: ${noteLabel} · ${playedFreq} Hz`;
-  }
-
-  const metaEl = document.getElementById('stageSpecMeta');
-  if (metaEl) {
-    const slug = slice.videoSlug || slice.baseName || '--';
-    const durStr = slice.durSec ? `${Number(slice.durSec).toFixed(2)}s` : '';
-    const startStr = slice.startSec !== undefined ? `@${Number(slice.startSec).toFixed(2)}s` : '';
-    metaEl.textContent = `${slug} ${startStr} · ${durStr}`;
-  }
-
-  const rate = voice ? voice.playbackRate : 1.0;
-  const cacheKey = `${slice.audioUrl}__${rate.toFixed(4)}__${dpr}`;
-  let offscreen = spectrogramBitmapCache.get(cacheKey);
-  if (!offscreen) {
-    offscreen = buildSpectrogramOffscreen(
-      buffer,
-      playedFreq,
-      noteLabel || slice.name,
-      dpr,
-      rate
-    );
-    spectrogramBitmapCache.set(cacheKey, offscreen);
-  }
-
-  if (stageSpecAnimId) {
-    cancelAnimationFrame(stageSpecAnimId);
-    stageSpecAnimId = null;
-  }
-
-  const drawFrame = playheadX => {
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(offscreen, 0, 0);
-    if (playheadX !== null) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(playheadX, 0);
-      ctx.lineTo(playheadX, SPEC_CSS_H);
-      ctx.stroke();
-    }
-  };
-
-  if (!voice || !audioCtx) {
-    drawFrame(null);
-    return;
-  }
-
-  const animatePlayhead = () => {
-    const now = audioCtx.currentTime;
-    const elapsed = Math.max(0, now - voice.startedAt);
-    const progress = Math.min(1, elapsed / Math.max(0.1, voice.naturalDur));
-
-    let stillAudible = progress < 1;
-    if (voice.released && voice.releaseStartCtxTime !== null) {
-      if (now - voice.releaseStartCtxTime >= voice.releaseDur) {
-        stillAudible = false;
-      }
-    }
-
-    if (stillAudible) {
-      drawFrame(progress * SPEC_CSS_W);
-      stageSpecAnimId = requestAnimationFrame(animatePlayhead);
-    } else {
-      drawFrame(null);
-    }
-  };
-  stageSpecAnimId = requestAnimationFrame(animatePlayhead);
 }
 
 // ============================================================================
@@ -1113,21 +1037,8 @@ function renderPercussionRack() {
 }
 
 // ============================================================================
-// Rendering: Top Stats, Equal-Width Keyline Keyboard, and Compact Candidate Strip
+// Rendering: Equal-Width Keyline Keyboard & Streamlined Candidate Strip
 // ============================================================================
-function renderStats() {
-  const st = state.catalog?.stats || {};
-  document.getElementById('statConfiguredKeys').textContent = st.coveredKeys ?? 0;
-  document.getElementById('statTotalCandidates').textContent = st.totalCandidates ?? 0;
-  document.getElementById('statPercCount').textContent = st.percCount ?? 0;
-  document.getElementById('statVideos').textContent = st.totalVideos ?? 0;
-
-  const newBtn = document.getElementById('jumpNewTopBtn');
-  const newCount = st.newConsiderations ?? 0;
-  document.getElementById('statNewCount').textContent = newCount;
-  newBtn.classList.toggle('hidden', newCount === 0);
-}
-
 function renderPianoKeyboard() {
   const container = document.getElementById('pianoKeyboard');
   if (!container) return;
@@ -1154,13 +1065,8 @@ function renderPianoKeyboard() {
     const isOctaveStart = pc === 0;
     const entry = keyMap[midi];
     const candCount = entry?.candidateCount || 0;
-    const newCount = entry?.newCount || 0;
     const primary = entry?.primary || null;
     const isEmpty = !primary;
-
-    let dimmed = false;
-    if (state.kbHighlightMode === 'new' && newCount === 0) dimmed = true;
-    if (state.kbHighlightMode === 'gaps' && candCount > 0) dimmed = true;
 
     const cell = document.createElement('div');
     cell.className = [
@@ -1169,8 +1075,7 @@ function renderPianoKeyboard() {
       isOctaveStart ? 'octave-start' : '',
       isEmpty ? 'empty-key' : 'configured-key',
       midi === state.selectedMidi ? 'selected-key' : '',
-      isMidiStillHeld(midi) ? 'active-play' : '',
-      dimmed ? 'dimmed' : ''
+      isMidiStillHeld(midi) ? 'active-play' : ''
     ]
       .filter(Boolean)
       .join(' ');
@@ -1179,11 +1084,11 @@ function renderPianoKeyboard() {
     const fullNoteName = midiToName(midi);
     const shortNote = midiToShortLabel(midi, isWide);
     const qLabel = qwertyByMidi.get(midi);
-    const countText = candCount > 0 ? (newCount > 0 ? `${candCount}✦` : `${candCount}`) : '·';
+    const countText = candCount > 0 ? `${candCount}` : '·';
 
     cell.innerHTML = `
       <div class="key-top-meta">
-        <span class="key-cand-count ${newCount > 0 ? 'has-new' : ''}">${countText}</span>
+        <span class="key-cand-count">${countText}</span>
         ${
           primary?.thumbUrl
             ? `<img class="key-thumb-square" src="${primary.thumbUrl}" alt="${fullNoteName}" loading="lazy" />`
@@ -1202,11 +1107,11 @@ function renderPianoKeyboard() {
       cell.title =
         `${fullNoteName} (${midiToFreq(midi)} Hz)\n` +
         `Active Go-To: ${primary.videoSlug} (@${primary.startSec}s, ${shiftStr})\n` +
-        `Candidates: ${candCount}${newCount > 0 ? ` (${newCount} NEW)` : ''}`;
+        `Clips: ${candCount}`;
     } else if (candCount > 0) {
-      cell.title = `${fullNoteName} — Cleared (${candCount} candidates available)`;
+      cell.title = `${fullNoteName} — Cleared (${candCount} clips available)`;
     } else {
-      cell.title = `${fullNoteName} (${midiToFreq(midi)} Hz) — Empty (0 nearest-note candidates)`;
+      cell.title = `${fullNoteName} (${midiToFreq(midi)} Hz) — Empty`;
     }
 
     cell.addEventListener('mousedown', e => {
@@ -1221,15 +1126,7 @@ function renderPianoKeyboard() {
 
 function getFilteredCandidatesForSelectedKey() {
   const entry = state.catalog?.keyboardMap?.[state.selectedMidi];
-  if (!entry || !entry.candidates) return [];
-  const q = state.keyCandidateFilter.toLowerCase().trim();
-  if (!q) return entry.candidates;
-  return entry.candidates.filter(
-    c =>
-      c.videoSlug.toLowerCase().includes(q) ||
-      (c.videoLabel || '').toLowerCase().includes(q) ||
-      c.category.toLowerCase().includes(q)
-  );
+  return entry?.candidates || [];
 }
 
 function renderSelectedKeyDeck() {
@@ -1242,16 +1139,9 @@ function renderSelectedKeyDeck() {
   document.getElementById('selectedKeyMeta').textContent = `${freqStr} Hz`;
 
   const totalCands = entry?.candidateCount || 0;
-  const newCount = entry?.newCount || 0;
   document.getElementById('candidateSummaryLabel').textContent =
-    totalCands === 0
-      ? '0 Candidates'
-      : `${totalCands} Option${totalCands === 1 ? '' : 's'}${newCount > 0 ? ` · ${newCount} NEW` : ''}`;
+    `${totalCands} Clip${totalCands === 1 ? '' : 's'}`;
 
-  const filterEl = document.getElementById('keyCandidateFilter');
-  filterEl.classList.toggle('hidden', totalCands < 5);
-
-  document.getElementById('markKeySeenBtn').classList.toggle('hidden', newCount === 0);
   document.getElementById('clearKeyBtn').classList.toggle('hidden', !entry?.primary);
 
   const grid = document.getElementById('candidatesGrid');
@@ -1261,14 +1151,10 @@ function renderSelectedKeyDeck() {
   if (candidates.length === 0) {
     const emptyDiv = document.createElement('div');
     emptyDiv.className = 'empty-key-state';
-    if (totalCands === 0) {
-      emptyDiv.innerHTML = `
-        <h3>${noteName} (${freqStr} Hz) — Empty Slot</h3>
-        <p>No sample currently sits within ±50c of ${noteName}. Record an object near ${freqStr} Hz or slice an unextracted moment in Video Library &amp; Slicer.</p>
-      `;
-    } else {
-      emptyDiv.innerHTML = `<h3>No candidates on ${noteName} match "${state.keyCandidateFilter}"</h3>`;
-    }
+    emptyDiv.innerHTML = `
+      <h3>${noteName} (${freqStr} Hz) — Empty</h3>
+      <p>No clip sits within ±50c of ${noteName}.</p>
+    `;
     grid.appendChild(emptyDiv);
     return;
   }
@@ -1279,7 +1165,6 @@ function renderSelectedKeyDeck() {
     card.className = [
       'candidate-card',
       isActive ? 'is-active' : '',
-      cand.isNew ? 'is-new' : '',
       idx === state.auditionIndex ? 'audition-focus' : ''
     ]
       .filter(Boolean)
@@ -1297,7 +1182,6 @@ function renderSelectedKeyDeck() {
         <div class="cand-info">
           <div class="cand-badges-row">
             ${isActive ? `<span class="pill-badge active-go-to">✓ Go-To</span>` : ''}
-            ${cand.isNew ? `<span class="pill-badge new-flag">✦ New</span>` : ''}
             <span class="pill-badge cat-flag">#${numStr} ${cand.category}</span>
           </div>
           <input
@@ -1315,8 +1199,8 @@ function renderSelectedKeyDeck() {
           ${isActive ? `✓ Active on ${noteName}` : `Use as Go-To`}
         </button>
         <div class="cand-mini-tools">
-          <button class="icon-tool-btn trim-btn" title="Slide In &amp; Out points for this clip">✂ Trim</button>
-          <button class="icon-tool-btn danger trash-cand-btn" title="Move slice to _trash/">🗑</button>
+          <button class="icon-tool-btn trim-btn" title="Inspect spectrogram &amp; trim In/Out">Inspect</button>
+          <button class="icon-tool-btn danger trash-cand-btn" title="Move clip to _trash/">🗑</button>
         </div>
       </div>
     `;
@@ -1377,6 +1261,7 @@ async function renderDrawerSpectrogram(slice, existingBuffer = null) {
     slice.name,
     canvas.width,
     canvas.height,
+    1,
     1.0
   );
   ctx.drawImage(off, 0, 0);
@@ -1695,8 +1580,10 @@ function stopTrimPreview() {
   }
   const ph = document.getElementById('trimPlayhead');
   if (ph) ph.classList.remove('visible');
+  const specPh = document.getElementById('inspectorSpecPlayhead');
+  if (specPh) specPh.classList.remove('visible');
   const btn = document.getElementById('trimPreviewBtn');
-  if (btn) btn.textContent = '▶ Preview In → Out (Space)';
+  if (btn) btn.textContent = '▶ Preview (Space)';
 }
 
 function scrubTrimVideoTo(sec) {
@@ -1722,8 +1609,9 @@ function startTrimPreview() {
   }
 
   const ph = document.getElementById('trimPlayhead');
+  const specPh = document.getElementById('inspectorSpecPlayhead');
   const btn = document.getElementById('trimPreviewBtn');
-  btn.textContent = '⏹ Stop Preview (Space)';
+  btn.textContent = '⏹ Stop (Space)';
 
   vid.muted = false;
   vid.playbackRate = Math.max(0.5, Math.min(2.0, trimState.playbackRate || 1.0));
@@ -1732,6 +1620,7 @@ function startTrimPreview() {
 
   ph.classList.add('visible');
   ph.style.left = '0%';
+  const origSpan = Math.max(0.05, trimState.origOut - trimState.origIn);
 
   const tick = () => {
     if (!trimState.open || vid.paused) {
@@ -1744,6 +1633,16 @@ function startTrimPreview() {
     const pct = Math.max(0, Math.min(100, ((t - trimState.inSec) / span) * 100));
     ph.style.left = `${pct.toFixed(1)}%`;
 
+    if (specPh) {
+      if (t >= trimState.origIn && t <= trimState.origOut) {
+        const specPct = Math.max(0, Math.min(100, ((t - trimState.origIn) / origSpan) * 100));
+        specPh.classList.add('visible');
+        specPh.style.left = `${specPct.toFixed(1)}%`;
+      } else {
+        specPh.classList.remove('visible');
+      }
+    }
+
     if (t >= trimState.outSec) {
       stopTrimPreview();
       scrubTrimVideoTo(trimState.inSec);
@@ -1752,6 +1651,78 @@ function startTrimPreview() {
     trimState.previewRaf = requestAnimationFrame(tick);
   };
   trimState.previewRaf = requestAnimationFrame(tick);
+}
+
+function renderInspectorSpectrogram() {
+  const canvas = document.getElementById('inspectorSpectrogramCanvas');
+  if (!canvas || !trimState.slice) return;
+
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const cssW = Math.max(320, Math.round(rect.width || 520));
+  const cssH = Math.max(110, Math.round(rect.height || 148));
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+  }
+
+  const ctx = canvas.getContext('2d');
+  if (!trimState.sliceAudioBuffer) {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#05070b';
+    ctx.fillRect(0, 0, cssW, cssH);
+    return;
+  }
+
+  const rate = trimState.playbackRate || 1.0;
+  const slice = trimState.slice;
+  const playedFreq = Number(((slice.freq || 261.6) * rate).toFixed(1));
+  const f0Label = slice.percBucket ? slice.percBucket.toUpperCase() : slice.name;
+  const cacheKey = `insp__${slice.audioUrl}__${rate.toFixed(4)}__${cssW}x${cssH}__${dpr}`;
+
+  let off = spectrogramBitmapCache.get(cacheKey);
+  if (!off) {
+    off = buildSpectrogramOffscreen(
+      trimState.sliceAudioBuffer,
+      playedFreq,
+      f0Label,
+      cssW,
+      cssH,
+      dpr,
+      rate
+    );
+    spectrogramBitmapCache.set(cacheKey, off);
+  }
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(off, 0, 0);
+
+  // Shade trimmed-away regions inside the clip spectrogram so spectrogram & handles match 1:1
+  const origSpan = Math.max(0.05, trimState.origOut - trimState.origIn);
+  const leftCut = Math.max(0, Math.min(cssW, ((trimState.inSec - trimState.origIn) / origSpan) * cssW));
+  const rightKeep = Math.max(0, Math.min(cssW, ((trimState.outSec - trimState.origIn) / origSpan) * cssW));
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (leftCut > 1) {
+    ctx.fillStyle = 'rgba(3, 4, 7, 0.72)';
+    ctx.fillRect(0, 0, leftCut, cssH);
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(leftCut, 0);
+    ctx.lineTo(leftCut, cssH);
+    ctx.stroke();
+  }
+  if (rightKeep < cssW - 1) {
+    ctx.fillStyle = 'rgba(3, 4, 7, 0.72)';
+    ctx.fillRect(rightKeep, 0, cssW - rightKeep, cssH);
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(rightKeep, 0);
+    ctx.lineTo(rightKeep, cssH);
+    ctx.stroke();
+  }
 }
 
 function renderTrimHandlesUI() {
@@ -1773,6 +1744,10 @@ function renderTrimHandlesUI() {
   document.getElementById('trimLenVal').textContent = `${len.toFixed(2)}s`;
   document.getElementById('trimHandleInTag').textContent = `IN ${trimState.inSec.toFixed(2)}s`;
   document.getElementById('trimHandleOutTag').textContent = `OUT ${trimState.outSec.toFixed(2)}s`;
+
+  if (trimState.sliceAudioBuffer) {
+    renderInspectorSpectrogram();
+  }
 }
 
 function renderTrimWaveformCanvas() {
@@ -1780,8 +1755,8 @@ function renderTrimWaveformCanvas() {
   if (!canvas || !trimState.video) return;
 
   const rect = canvas.parentElement.getBoundingClientRect();
-  const cssW = Math.max(320, Math.round(rect.width || 490));
-  const cssH = Math.max(96, Math.round(rect.height || 132));
+  const cssW = Math.max(320, Math.round(rect.width || 520));
+  const cssH = Math.max(88, Math.round(rect.height || 108));
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
@@ -1908,8 +1883,19 @@ async function openTrimModal(videoId, sliceId, playbackRate = 1.0) {
   document.getElementById('trimZoomFullBtn').classList.remove('active');
 
   const noteTag = slice.percBucket ? slice.percBucket.toUpperCase() : slice.name;
-  document.getElementById('trimModalTitle').textContent =
-    `Trim Clip In / Out — ${video.slug} (${noteTag})`;
+  document.getElementById('trimModalTitle').textContent = `${video.slug} — ${noteTag}`;
+
+  const playedFreq = Number(((slice.freq || 261.6) * trimState.playbackRate).toFixed(1));
+  const f0Badge = document.getElementById('inspectorF0Badge');
+  if (f0Badge) {
+    f0Badge.textContent = slice.percBucket
+      ? `${noteTag} · ${playedFreq} Hz`
+      : `f0: ${noteTag} · ${playedFreq} Hz`;
+  }
+  const specMeta = document.getElementById('inspectorSpecMeta');
+  if (specMeta) {
+    specMeta.textContent = `Clip @${trimState.origIn.toFixed(2)}s – ${trimState.origOut.toFixed(2)}s`;
+  }
 
   const vidEl = document.getElementById('trimScrubVideo');
   const sourceFile = video.sourceFile || `${video.slug}_source.mp4`;
@@ -1921,6 +1907,7 @@ async function openTrimModal(videoId, sliceId, playbackRate = 1.0) {
   computeTrimViewWindow();
   renderTrimHandlesUI();
   renderTrimWaveformCanvas();
+  renderInspectorSpectrogram();
 
   vidEl.onloadedmetadata = () => {
     scrubTrimVideoTo(trimState.inSec);
@@ -1932,6 +1919,7 @@ async function openTrimModal(videoId, sliceId, playbackRate = 1.0) {
     if (trimState.open && trimState.slice?.id === slice.id) {
       trimState.sliceAudioBuffer = buf;
       renderTrimWaveformCanvas();
+      renderInspectorSpectrogram();
     }
   } catch {}
 }
@@ -1963,7 +1951,6 @@ async function apiPost(url, body) {
 }
 
 function refreshAllUI() {
-  renderStats();
   renderPianoKeyboard();
   renderSelectedKeyDeck();
   renderPercussionRack();
@@ -1987,17 +1974,6 @@ function stepToAdjacentPopulatedKey(dir) {
       return;
     }
     m += dir;
-  }
-}
-
-function jumpToNextNewKey() {
-  const keyMap = state.catalog?.keyboardMap || {};
-  for (let offset = 1; offset <= 68; offset++) {
-    const m = 36 + ((state.selectedMidi - 36 + offset) % 68);
-    if ((keyMap[m]?.newCount || 0) > 0) {
-      selectKeyForConfig(m, true);
-      return;
-    }
   }
 }
 
@@ -2034,8 +2010,6 @@ function setupEventListeners() {
       sampleHighpass.frequency.setValueAtTime(state.highpassHz, audioCtx.currentTime);
     }
   });
-
-  document.getElementById('jumpNewTopBtn').addEventListener('click', jumpToNextNewKey);
 
   // Drawers
   document.getElementById('openPercBtn').addEventListener('click', () => {
@@ -2083,8 +2057,8 @@ function setupEventListeners() {
     return 1.0;
   };
 
-  // Trim In / Out button on Right-Side Stage Inspector pane
-  document.getElementById('inspectActiveSliceBtn').addEventListener('click', () => {
+  // Universal "Inspect Clip" button in Top Controls Bar
+  document.getElementById('inspectLatestBtn').addEventListener('click', () => {
     if (state.lastPlayedVideoId) {
       const rate = findPlaybackRateForSlice(state.lastPlayedSliceId);
       openTrimModal(state.lastPlayedVideoId, state.lastPlayedSliceId, rate);
@@ -2100,7 +2074,7 @@ function setupEventListeners() {
   });
 
   // ==========================================================================
-  // Focused Visual "Trim In / Out" Modal Drag & Control Bindings
+  // Universal Clip Inspector Drag & Control Bindings
   // ==========================================================================
   const MIN_TRIM_LEN = 0.50;
   const MAX_TRIM_LEN = 6.00;
@@ -2265,7 +2239,6 @@ function setupEventListeners() {
 
     const savedVideoId = trimState.video.id;
     const savedSliceId = trimState.slice.id;
-    const savedRate = trimState.playbackRate || 1.0;
     const durSec = Number(
       Math.max(MIN_TRIM_LEN, Math.min(MAX_TRIM_LEN, trimState.outSec - trimState.inSec)).toFixed(2)
     );
@@ -2275,7 +2248,6 @@ function setupEventListeners() {
       startSec: Number(trimState.inSec.toFixed(2)),
       durSec
     };
-    // Preserve detected note pitch when fine-trimming pre-roll / tail around the same strike
     if (
       !trimState.slice.percBucket &&
       trimState.slice.freq &&
@@ -2287,21 +2259,9 @@ function setupEventListeners() {
     try {
       await apiPost('/api/slice/update', payload);
       closeTrimModal();
-
-      const updatedVid = state.catalog?.videos.find(v => v.id === savedVideoId);
-      const updatedSlice = updatedVid?.slices?.find(s => s.id === savedSliceId && !s.deleted);
-      if (updatedSlice) {
-        const enriched = { ...updatedSlice, videoSlug: updatedVid.slug };
-        const buf = await loadAudioBuffer(updatedSlice.audioUrl);
-        const playedFreq = Number(((updatedSlice.freq || 261.6) * savedRate).toFixed(1));
-        const label = updatedSlice.percBucket
-          ? updatedSlice.percBucket.toUpperCase()
-          : updatedSlice.name;
-        renderStageSpectrogramLive(enriched, buf, playedFreq, label, null);
-      }
     } finally {
       btn.disabled = false;
-      btn.textContent = '✓ Save In / Out';
+      btn.textContent = '✓ Save Trim';
     }
   });
 
@@ -2337,30 +2297,11 @@ function setupEventListeners() {
   document.getElementById('nextPopulatedKeyBtn').addEventListener('click', () => {
     stepToAdjacentPopulatedKey(1);
   });
-  document.getElementById('keyCandidateFilter').addEventListener('input', e => {
-    state.keyCandidateFilter = e.target.value;
-    renderSelectedKeyDeck();
-  });
-  document.getElementById('markKeySeenBtn').addEventListener('click', async () => {
-    await apiPost('/api/keyboard/mark-seen', { midi: state.selectedMidi });
-  });
-  document.getElementById('markAllSeenBtn').addEventListener('click', async () => {
-    await apiPost('/api/keyboard/mark-seen', { all: true });
-  });
   document.getElementById('clearKeyBtn').addEventListener('click', async () => {
     await apiPost('/api/keyboard/select', { midi: state.selectedMidi, sliceId: null });
   });
 
   // Keyboard Dock Toolbar
-  document.getElementById('kbHighlightGroup').addEventListener('click', e => {
-    const btn = e.target.closest('.kb-pill');
-    if (!btn) return;
-    document.querySelectorAll('.kb-pill').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    state.kbHighlightMode = btn.dataset.hl;
-    renderPianoKeyboard();
-  });
-
   document.getElementById('octDownBtn').addEventListener('click', () => {
     state.baseOctaveMidi = Math.max(36, state.baseOctaveMidi - 12);
     renderPianoKeyboard();
@@ -2612,15 +2553,7 @@ async function init() {
   }
 
   refreshAllUI();
-
-  // Pre-render initial selected key's spectrogram on stage so the spectral view is populated on load!
-  const initEntry = state.catalog?.keyboardMap?.[state.selectedMidi];
-  if (initEntry?.primary) {
-    loadAudioBuffer(initEntry.primary.audioUrl).then(buf => {
-      const playedFreq = Number(((initEntry.primary.freq || 261.6) * initEntry.primary.playbackRate).toFixed(1));
-      renderStageSpectrogramLive(initEntry.primary, buf, playedFreq, initEntry.targetName, null);
-    }).catch(() => {});
-  }
+  updateStageTileSizes();
 }
 
 init();
