@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-03T02:20:40.851Z",
+  "updatedAt": "2026-11-03T02:50:15.784Z",
   "stats": {
     "totalVideos": 117,
     "trashedVideos": 2,
@@ -51374,10 +51374,10 @@
       "percRole": "Deep Kick",
       "isCleared": false,
       "enabledSliceIds": [
-        "v54_s01"
+        "v54_s02"
       ],
       "enabledCount": 1,
-      "activeSliceId": "v54_s01",
+      "activeSliceId": "v54_s02",
       "matchType": "exact",
       "shiftCents": 0,
       "semitoneSteps": 0,
@@ -51390,21 +51390,21 @@
         "category": "percussion",
         "isPerc": true,
         "thumbUrl": "/samples/54_puffball-mushroom-2/puffball-mushroom-2_thumb.jpg",
-        "sliceId": "v54_s01",
+        "sliceId": "v54_s02",
         "midi": 25,
         "name": "Deep Kick",
-        "freq": 78,
+        "freq": 88.9,
         "cents": 0,
         "exactMidi": 25,
         "shiftCents": 0,
         "playbackRate": 1,
         "confidence": 0.88,
         "peakDb": -16,
-        "starred": true,
-        "videoUrl": "/samples/54_puffball-mushroom-2/puffball-mushroom-2_hit01_KICK.mp4",
-        "audioUrl": "/samples/54_puffball-mushroom-2/puffball-mushroom-2_hit01_KICK.wav",
-        "startSec": 5.22,
-        "durSec": 0.95,
+        "starred": false,
+        "videoUrl": "/samples/54_puffball-mushroom-2/puffball-mushroom-2_hit02_SNARE.mp4",
+        "audioUrl": "/samples/54_puffball-mushroom-2/puffball-mushroom-2_hit02_SNARE.wav",
+        "startSec": 2.48,
+        "durSec": 0.9,
         "enabled": true
       },
       "candidates": [
@@ -51431,7 +51431,7 @@
           "audioUrl": "/samples/54_puffball-mushroom-2/puffball-mushroom-2_hit01_KICK.wav",
           "startSec": 5.22,
           "durSec": 0.95,
-          "enabled": true
+          "enabled": false
         },
         {
           "videoId": "v08",
@@ -51481,7 +51481,7 @@
           "audioUrl": "/samples/54_puffball-mushroom-2/puffball-mushroom-2_hit02_SNARE.wav",
           "startSec": 2.48,
           "durSec": 0.9,
-          "enabled": false
+          "enabled": true
         }
       ],
       "candidateCount": 3
@@ -64384,7 +64384,7 @@
   "keyboardConfig": {
     "selectedByMidi": {
       "24": "v53_s01",
-      "25": "v54_s01",
+      "25": "v54_s02",
       "26": "v53_s03",
       "27": "v55_s01",
       "28": "v46_s01",
@@ -64463,7 +64463,7 @@
         "v53_s01"
       ],
       "25": [
-        "v54_s01"
+        "v54_s02"
       ],
       "26": [
         "v53_s03"

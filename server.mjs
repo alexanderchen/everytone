@@ -1,6 +1,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import {
   SR,
@@ -13,7 +14,7 @@ import {
 } from './dsp-pipeline.mjs';
 
 const PORT = process.env.PORT || 3456;
-const ROOT_DIR = process.cwd();
+const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const SAMPLES_DIR = path.join(ROOT_DIR, 'samples');
 const TRASH_DIR = path.join(ROOT_DIR, '_trash');
@@ -590,5 +591,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Everything Piano CMS running at http://localhost:${PORT}`);
+  console.log(`Everytone running at http://localhost:${PORT}`);
 });
