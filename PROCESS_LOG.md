@@ -124,3 +124,17 @@
 - Docked MIDI scrub transport, sample toggles, and a keyline keyboard. [img](screenshots/2026-11-04/11_music-software-layout-idle.png)
 
 - Made connected black keys equal width and lit hits in 12 note colors. [img](screenshots/2026-11-04/12_explorer-mute-and-keyline-polyphony.png)
+
+
+## Nov 4, 2026 · 5:12 pm
+
+- Switched to Space Mono on solid black panels with grey keylines.
+- Added one top-left menu toggle for sidebar and bottom transport.
+- Placed chromatic note dots on every tile in the 3D grid. [img](screenshots/2026-11-04/13_space-mono-solid-black-and-grid-note-dots.png)
+
+- Cropped low rumble and floated screen-blended gray spectrograms.
+- Added a 0.2s visual fade-out when releasing foreground stage clips. [img](screenshots/2026-11-04/14_floating-gray-screen-spectrograms-and-winds.png)
+
+- Built a video file inspector with holistic integer dB volume trim. [img](screenshots/2026-11-04/15_video-file-inspector-holistic-volume.png)
+
+- Linked video and sample inspectors by breadcrumb and capped pitch to ±1st. [img](screenshots/2026-11-04/16_sample-inspector-breadcrumb-and-1st-clamp.png)

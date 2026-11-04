@@ -1,22 +1,40 @@
+@font-face {
+  font-family: "Space Mono";
+  src: url("./vendor/fonts/SpaceMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Space Mono";
+  src: url("./vendor/fonts/SpaceMono-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
 :root {
-  --bg-0: #030406;
-  --bg-1: #06080c;
-  --bg-2: #0d1017;
-  --bg-3: #171c26;
-  --line-subtle: rgba(255, 255, 255, 0.08);
-  --line-dim: rgba(255, 255, 255, 0.14);
-  --line-key: rgba(255, 255, 255, 0.32);
+  --bg-0: #000000;
+  --bg-1: #000000;
+  --bg-2: #0d0d0d;
+  --bg-3: #171717;
+  --line-subtle: #181818;
+  --line-dim: #2b2b2b;
+  --line-key: #4a4a4a;
   --line-bright: #ffffff;
-  --text-0: #f8fafc;
-  --text-1: #cbd5e1;
-  --text-2: #7c8798;
-  --text-3: #4b5565;
+  --text-0: #f5f5f5;
+  --text-1: #d4d4d4;
+  --text-2: #8a8a8a;
+  --text-3: #525252;
+  --switch-green: #22c55e;
+  --switch-green-border: #10b981;
   --accent-new: #38bdf8;
   --accent-active: #10b981;
   --accent-amber: #fbbf24;
   --danger: #ef4444;
-  --mono: "SF Mono", "JetBrains Mono", "Menlo", monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+  --mono: "Space Mono", "SF Mono", "Menlo", monospace;
+  --sans: "Space Mono", "SF Mono", "Menlo", monospace;
 }
 
 * {
@@ -25,10 +43,17 @@
   padding: 0;
 }
 
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--mono);
+}
+
 body {
   background: var(--bg-0);
   color: var(--text-0);
-  font-family: var(--sans);
   height: 100vh;
   display: flex;
   flex-direction: column;
@@ -37,6 +62,10 @@ body {
 }
 
 .hidden {
+  display: none !important;
+}
+
+body.static-mode .local-only-btn {
   display: none !important;
 }
 
@@ -55,8 +84,8 @@ body {
 
 /* --- Left Sidebar: Video File Explorer --- */
 .file-explorer {
-  width: 248px;
-  min-width: 248px;
+  width: 288px;
+  min-width: 288px;
   height: 100%;
   background: var(--bg-1);
   border-right: 1px solid var(--line-dim);
@@ -79,71 +108,72 @@ body {
   pointer-events: none;
 }
 
+/* Unified Far Top-Left Hamburger Toggle */
+.chrome-hamburger-btn {
+  position: fixed;
+  top: 7px;
+  left: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: #000000;
+  color: var(--text-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 40;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.chrome-hamburger-btn.is-collapsed {
+  border-color: var(--line-dim);
+}
+
+.chrome-hamburger-btn:hover {
+  color: #ffffff;
+  border-color: #ffffff;
+  background: #121212;
+}
+
 .explorer-header {
-  height: 36px;
-  padding: 0 10px 0 12px;
+  height: 42px;
+  padding: 0 12px 0 46px;
   border-bottom: 1px solid var(--line-dim);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.015);
+  background: #000000;
 }
 
 .explorer-title-group {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
 .explorer-title {
-  font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--text-1);
+  letter-spacing: 0.06em;
+  color: var(--text-0);
   white-space: nowrap;
 }
 
 .explorer-count {
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 11px;
   color: var(--text-2);
   white-space: nowrap;
 }
 
-.explorer-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.explorer-mini-btn {
-  height: 20px;
-  padding: 0 6px;
-  border-radius: 3px;
-  border: 1px solid var(--line-dim);
-  background: transparent;
-  color: var(--text-2);
-  font-family: var(--mono);
-  font-size: 9.5px;
-  cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
-}
-
-.explorer-mini-btn:hover {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.42);
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.explorer-collapse-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
+.panel-icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-2);
@@ -151,10 +181,11 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
   transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 
-.explorer-collapse-btn:hover {
+.panel-icon-btn:hover {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.08);
   border-color: var(--line-dim);
@@ -165,9 +196,9 @@ body {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 4px 0 12px;
+  padding: 4px 0 14px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
 .explorer-scroll-list::-webkit-scrollbar {
@@ -175,7 +206,7 @@ body {
 }
 
 .explorer-scroll-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 3px;
 }
 
@@ -184,31 +215,31 @@ body {
 }
 
 .explorer-cat-header {
-  height: 28px;
-  padding: 0 10px 0 8px;
+  height: 35px;
+  padding: 0 12px 0 10px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.025);
+  gap: 8px;
+  background: #000000;
   cursor: pointer;
   transition: background 0.12s ease;
 }
 
 .explorer-cat-header:hover {
-  background: rgba(255, 255, 255, 0.055);
+  background: #0e0e0e;
 }
 
 .explorer-cat-left {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   min-width: 0;
 }
 
 .explorer-cat-caret {
   width: 12px;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-2);
   text-align: center;
   transition: transform 0.14s ease;
@@ -219,24 +250,22 @@ body {
 }
 
 .explorer-cat-name {
-  font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11.5px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--text-1);
 }
 
 .explorer-cat-count {
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 10.5px;
   color: var(--text-2);
 }
 
 .explorer-cat-items {
   display: flex;
   flex-direction: column;
-  padding: 2px 0 4px;
+  padding: 3px 0 6px;
 }
 
 .explorer-cat-group.is-collapsed .explorer-cat-items {
@@ -244,55 +273,89 @@ body {
 }
 
 .explorer-video-row {
-  height: 25px;
-  padding: 0 10px 0 22px;
+  height: 31px;
+  padding: 0 12px 0 24px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 7px;
   cursor: pointer;
   transition: background 0.1s ease, color 0.1s ease;
 }
 
 .explorer-video-row:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .explorer-video-label {
   flex: 1 1 auto;
   min-width: 0;
-  font-family: var(--sans);
   font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.86);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: color 0.12s ease, opacity 0.12s ease;
+  transition: color 0.12s ease;
 }
 
 .explorer-video-row.is-muted .explorer-video-label {
   color: rgba(255, 255, 255, 0.30);
 }
 
+.explorer-gain-tag {
+  font-size: 10px;
+  color: #a3a3a3;
+  flex-shrink: 0;
+}
+
+.explorer-video-row.is-muted .explorer-gain-tag {
+  opacity: 0.35;
+}
+
 .explorer-video-meta {
-  font-family: var(--mono);
-  font-size: 9.5px;
-  color: rgba(255, 255, 255, 0.26);
+  font-size: 10.5px;
+  color: var(--text-2);
   flex-shrink: 0;
 }
 
 .explorer-video-row.is-muted .explorer-video-meta {
-  opacity: 0.45;
+  opacity: 0.35;
 }
 
-/* Tactile Pill Toggle Switch (.ui-switch) */
+.explorer-inspect-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.42;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.explorer-video-row:hover .explorer-inspect-btn {
+  opacity: 1;
+}
+
+.explorer-inspect-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--line-dim);
+}
+
+/* Green ON / Dim Gray OFF Pill Toggle Switch (.ui-switch) */
 .ui-switch {
   position: relative;
-  width: 26px;
-  height: 14px;
+  width: 32px;
+  height: 17px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
   padding: 0;
   flex-shrink: 0;
   cursor: pointer;
@@ -302,37 +365,42 @@ body {
 .ui-switch::after {
   content: "";
   position: absolute;
-  top: 1.5px;
-  left: 1.5px;
-  width: 9px;
-  height: 9px;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.45);
-  transition: transform 0.14s cubic-bezier(0.22, 1, 0.36, 1), background 0.14s ease;
+  background: rgba(255, 255, 255, 0.28);
+  transition: transform 0.14s cubic-bezier(0.22, 1, 0.36, 1), background 0.14s ease, box-shadow 0.14s ease;
 }
 
 .ui-switch.is-on {
-  background: rgba(255, 255, 255, 0.22);
-  border-color: rgba(255, 255, 255, 0.68);
+  background: rgba(34, 197, 94, 0.24);
+  border-color: var(--switch-green-border);
 }
 
 .ui-switch.is-on::after {
-  transform: translateX(12px);
-  background: #ffffff;
+  transform: translateX(15px);
+  background: var(--switch-green);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.55);
 }
 
 .ui-switch.is-partial {
-  background: rgba(255, 255, 255, 0.10);
-  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(34, 197, 94, 0.10);
+  border-color: rgba(16, 185, 129, 0.52);
 }
 
 .ui-switch.is-partial::after {
-  transform: translateX(6px);
-  background: rgba(255, 255, 255, 0.78);
+  transform: translateX(7.5px);
+  background: #34d399;
 }
 
 .ui-switch:hover {
-  border-color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.ui-switch.is-on:hover {
+  border-color: #4ade80;
 }
 
 /* --- Right Main 3D Stage Canvas --- */
@@ -354,16 +422,13 @@ body {
   overflow: hidden;
 }
 
-.explorer-expand-tab {
+.stage-floating-tab {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 5px;
   border: 1px solid var(--line-dim);
-  background: rgba(10, 13, 19, 0.88);
-  backdrop-filter: blur(8px);
+  background: #000000;
   color: var(--text-1);
   display: flex;
   align-items: center;
@@ -373,10 +438,20 @@ body {
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 
-.explorer-expand-tab:hover {
+.stage-floating-tab.top-left {
+  top: 12px;
+  left: 12px;
+}
+
+.stage-floating-tab.bottom-right {
+  bottom: 12px;
+  right: 12px;
+}
+
+.stage-floating-tab:hover {
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.55);
-  background: rgba(20, 25, 36, 0.96);
+  background: #141414;
 }
 
 .three-stage-bg {
@@ -410,9 +485,16 @@ body {
   pointer-events: none;
 }
 
-/* 100% full opacity on active foreground video + spectrogram slots */
-.stage-slot-unit.is-occupied {
+/* Instant pop-on at 100% opacity (opacity:1 keeps stacking flat so .slot-mini-spec screens over 3D grid!) */
+.stage-slot-unit.is-occupied:not(.is-fading-out) {
   opacity: 1;
+  transition: none;
+}
+
+/* Smooth 0.20s visual fade-out on note release (freezes or keeps playing until faded) */
+.stage-slot-unit.is-occupied.is-fading-out {
+  opacity: 0;
+  transition: opacity 0.2s ease-out;
 }
 
 .stage-slot-video {
@@ -434,19 +516,21 @@ body {
   border: none;
 }
 
+/* Floating 100% Grayscale Screen-Blended Spectrogram + Colored f0 Bar */
 .slot-mini-spec {
   width: var(--tile-size);
   height: var(--spec-height);
   display: block;
-  background: var(--bg-0);
+  background: transparent;
+  mix-blend-mode: screen;
   border: none;
 }
 
 /* ============================================================================
-   2. Persistent Bottom Bar: [ MIDI Transport ] | [ Sample Controls ] | [ Keyboard ]
+   2. Collapsible Bottom Bar: [ MIDI Transport ] | [ Sample Controls ] | [ Keyboard ]
    ============================================================================ */
 .bottom-transport-dock {
-  height: 112px;
+  height: 126px;
   flex-shrink: 0;
   width: 100%;
   background: var(--bg-1);
@@ -454,7 +538,19 @@ body {
   display: flex;
   flex-direction: row;
   align-items: stretch;
+  overflow: hidden;
   z-index: 30;
+  transition:
+    height 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.bottom-transport-dock.collapsed {
+  height: 0;
+  opacity: 0;
+  border-top-color: transparent;
+  pointer-events: none;
 }
 
 .dock-zone {
@@ -464,33 +560,32 @@ body {
 
 /* --- Zone 1 (Left): MIDI Player & Scrubbable Play Bar --- */
 .transport-zone {
-  width: clamp(232px, 21vw, 296px);
+  width: clamp(260px, 22.5vw, 326px);
   flex-shrink: 0;
   border-right: 1px solid var(--line-dim);
-  padding: 12px 14px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
 }
 
 .transport-top-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
 .midi-load-btn {
-  height: 24px;
-  padding: 0 9px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-1);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 600;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 4px;
+  border: 1px solid var(--line-key);
+  background: #000000;
+  color: var(--text-0);
+  font-size: 11px;
+  font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
@@ -499,13 +594,12 @@ body {
 
 .midi-load-btn:hover {
   color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.62);
-  background: rgba(255, 255, 255, 0.10);
+  border-color: #ffffff;
+  background: #121212;
 }
 
 .midi-file-label {
-  font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-2);
   min-width: 0;
   flex: 1 1 auto;
@@ -517,18 +611,18 @@ body {
 .transport-scrub-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 36px;
+  gap: 11px;
+  height: 38px;
 }
 
 .midi-play-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.30);
+  width: 34px;
+  height: 34px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
   background: transparent;
   color: #ffffff;
-  font-size: 11px;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -543,9 +637,9 @@ body {
 }
 
 .midi-play-btn.is-playing {
-  background: #ffffff;
-  border-color: #ffffff;
-  color: #050608;
+  background: var(--switch-green);
+  border-color: var(--switch-green);
+  color: #04130a;
 }
 
 .midi-play-btn:disabled {
@@ -554,12 +648,11 @@ body {
   cursor: default;
 }
 
-/* Sketch-faithful o---|------o Scrubbable Play Bar */
 .midi-scrub-track {
   position: relative;
   flex: 1 1 auto;
-  min-width: 60px;
-  height: 24px;
+  min-width: 64px;
+  height: 26px;
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -573,8 +666,8 @@ body {
 }
 
 .scrub-endpoint {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.65);
   flex-shrink: 0;
@@ -583,7 +676,7 @@ body {
 .scrub-rail {
   position: relative;
   flex: 1 1 auto;
-  height: 1.5px;
+  height: 2px;
   background: rgba(255, 255, 255, 0.28);
 }
 
@@ -593,7 +686,7 @@ body {
   top: 0;
   bottom: 0;
   width: 0%;
-  background: #ffffff;
+  background: var(--switch-green);
   pointer-events: none;
 }
 
@@ -601,8 +694,8 @@ body {
   position: absolute;
   top: 50%;
   left: 0%;
-  width: 2px;
-  height: 14px;
+  width: 2.5px;
+  height: 16px;
   background: #ffffff;
   border-radius: 1px;
   transform: translate(-50%, -50%);
@@ -613,19 +706,18 @@ body {
 
 .midi-scrub-track:hover .scrub-playhead,
 .midi-scrub-track.is-scrubbing .scrub-playhead {
-  height: 18px;
+  height: 20px;
 }
 
 .midi-time-readout {
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 10.5px;
   color: var(--text-2);
   white-space: nowrap;
   text-align: right;
   flex-shrink: 0;
 }
 
-/* --- Zone 2 (Center): Single-Note Sample Controls --- */
+/* --- Zone 2 (Center): Single-Note Sample Controls (Decluttered) --- */
 .note-samples-zone {
   flex: 1 1 0;
   min-width: 0;
@@ -633,30 +725,8 @@ body {
   display: flex;
   flex-direction: row;
   align-items: center;
-  padding: 0 12px;
-  gap: 12px;
+  padding: 0 14px;
   overflow: hidden;
-}
-
-.note-samples-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.selected-note-pill {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: #ffffff;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1.5px solid rgba(255, 255, 255, 0.28);
-  min-width: 40px;
-  text-align: center;
 }
 
 .candidates-strip {
@@ -668,10 +738,10 @@ body {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 10px;
-  padding: 6px 4px;
+  gap: 12px;
+  padding: 8px 4px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
 
 .candidates-strip::-webkit-scrollbar {
@@ -679,27 +749,27 @@ body {
 }
 
 .candidates-strip::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.18);
   border-radius: 3px;
 }
 
 .candidate-card {
-  width: 62px;
-  flex: 0 0 62px;
+  width: 72px;
+  flex: 0 0 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   cursor: pointer;
 }
 
 .cand-thumb-wrap {
   position: relative;
-  width: 62px;
-  height: 62px;
-  border-radius: 4px;
-  background: #0b0e14;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  width: 72px;
+  height: 72px;
+  border-radius: 5px;
+  background: #000000;
+  border: 1px solid #333333;
   overflow: hidden;
   transition: border-color 0.14s ease, transform 0.14s ease;
 }
@@ -710,7 +780,7 @@ body {
   object-fit: cover;
   display: block;
   opacity: 0.28;
-  filter: saturate(0.2) brightness(0.78);
+  filter: saturate(0.2) brightness(0.76);
   transition: opacity 0.16s ease, filter 0.16s ease;
 }
 
@@ -724,27 +794,28 @@ body {
 }
 
 .candidate-card:hover .cand-thumb-wrap {
-  border-color: rgba(255, 255, 255, 0.68);
+  border-color: rgba(255, 255, 255, 0.72);
 }
 
 .candidate-card:not(.is-enabled):hover .cand-thumb-wrap img {
-  opacity: 0.5;
+  opacity: 0.48;
   filter: saturate(0.45) brightness(0.9);
 }
 
 .candidate-card.audition-focus .cand-thumb-wrap {
-  border-color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.88);
 }
 
+/* Green ON / Dim Gray OFF Sample Toggle Button */
 .toggle-on-btn {
   position: absolute;
   top: 4px;
   left: 4px;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: none;
-  background: rgba(5, 7, 11, 0.72);
+  background: rgba(0, 0, 0, 0.80);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -755,36 +826,36 @@ body {
 }
 
 .toggle-on-btn:hover {
-  background: rgba(5, 7, 11, 0.92);
+  background: rgba(0, 0, 0, 0.95);
   transform: scale(1.08);
 }
 
 .transport-led {
-  width: 6.5px;
-  height: 6.5px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.42);
-  background: transparent;
+  border: 1.5px solid rgba(255, 255, 255, 0.30);
+  background: rgba(255, 255, 255, 0.14);
   transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
 .toggle-on-btn.is-on .transport-led {
-  background: #ffffff;
-  border-color: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+  background: var(--switch-green);
+  border-color: var(--switch-green);
+  box-shadow: 0 0 7px rgba(34, 197, 94, 0.85);
 }
 
 .cand-inspect-btn {
   position: absolute;
   top: 4px;
   right: 4px;
-  width: 19px;
-  height: 19px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: none;
-  background: rgba(5, 7, 11, 0.72);
+  background: rgba(0, 0, 0, 0.80);
   backdrop-filter: blur(4px);
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(255, 255, 255, 0.82);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -799,7 +870,8 @@ body {
   opacity: 1;
 }
 
-body.static-mode .cand-inspect-btn {
+body.static-mode .cand-inspect-btn,
+body.static-mode .local-only-btn {
   display: none !important;
 }
 
@@ -812,8 +884,7 @@ body.static-mode .cand-inspect-btn {
 .cand-slug-title {
   width: 100%;
   text-align: center;
-  font-family: var(--sans);
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 400;
   color: rgba(255, 255, 255, 0.36);
   white-space: nowrap;
@@ -823,25 +894,24 @@ body.static-mode .cand-inspect-btn {
 }
 
 .candidate-card.is-enabled .cand-slug-title {
-  color: rgba(255, 255, 255, 0.74);
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .candidate-card:hover .cand-slug-title {
-  color: rgba(255, 255, 255, 0.94);
+  color: #ffffff;
 }
 
 .empty-key-state {
   display: flex;
   align-items: center;
   padding: 0 4px;
-  color: rgba(255, 255, 255, 0.34);
-  font-family: var(--mono);
-  font-size: 11px;
+  color: rgba(255, 255, 255, 0.36);
+  font-size: 11.5px;
 }
 
 /* --- Zone 3 (Right): Connected Equal-Width Wireframe Keyline Keyboard --- */
 .keyboard-zone {
-  width: clamp(360px, 38vw, 560px);
+  width: clamp(390px, 40vw, 600px);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -849,25 +919,33 @@ body.static-mode .cand-inspect-btn {
 }
 
 .keyboard-octave-bar {
-  height: 24px;
-  padding: 0 8px;
+  height: 30px;
+  padding: 0 8px 0 10px;
   border-bottom: 1px solid var(--line-dim);
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.015);
+  background: #000000;
+}
+
+.keyboard-bar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .oct-step-btn {
-  height: 17px;
-  padding: 0 6px;
-  border-radius: 2px;
+  width: 26px;
+  height: 22px;
+  border-radius: 3px;
   border: 1px solid transparent;
   background: transparent;
-  color: var(--text-2);
-  font-family: var(--mono);
-  font-size: 9.5px;
+  color: var(--text-1);
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
 }
@@ -875,18 +953,17 @@ body.static-mode .cand-inspect-btn {
 .oct-step-btn:hover:not(:disabled) {
   color: #ffffff;
   border-color: var(--line-dim);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .oct-step-btn:disabled {
-  opacity: 0.25;
+  opacity: 0.24;
   cursor: default;
 }
 
 .oct-range-label {
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 600;
+  font-size: 11.5px;
+  font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--text-1);
 }
@@ -906,12 +983,12 @@ body.static-mode .cand-inspect-btn {
   background: var(--bg-1);
 }
 
-/* Pure Wireframe Keylines — No White or Black Solid Fills */
+/* Pure Decluttered Wireframe Keylines — Solid Black Background + Neutral Grey Keylines Only */
 .wf-key {
-  --note-color: #8c95a4;
+  --note-color: #8e8e8e;
   position: absolute;
   top: 0;
-  background: var(--bg-1);
+  background: #000000;
   cursor: pointer;
   transition: background 0.09s ease, box-shadow 0.09s ease;
 }
@@ -927,72 +1004,36 @@ body.static-mode .cand-inspect-btn {
 }
 
 .wf-key.natural.octave-start:not(:first-child) {
-  border-left: 1px solid rgba(255, 255, 255, 0.48);
+  border-left: 1px solid #6a6a6a;
 }
 
-/* Connected, touching equal-width accidentals sitting above natural stems */
 .wf-key.accidental {
   height: 55%;
-  z-index: 2;
-  background: var(--bg-1);
+  z-index: 4;
+  background: #000000;
   border-left: 1px solid var(--line-key);
   border-right: 1px solid var(--line-key);
   border-bottom: 1px solid var(--line-key);
 }
 
-/* Adjacent accidentals (D#, G#, A#) touch C#, F#, G# cleanly without double 2px seams */
 .wf-key.accidental.touch-left {
   border-left: none;
 }
 
 .wf-key.natural:hover:not(.active-play) {
-  background: #10141d;
+  background: #121212;
 }
 
 .wf-key.accidental:hover:not(.active-play) {
-  background: #121722;
+  background: #161616;
 }
 
-/* Subtle bottom micro-pip on keys that have active samples */
-.wf-key.configured-key::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 5px;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.42);
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-.wf-key.accidental.configured-key::before {
-  bottom: 4px;
-}
-
-/* Subtle octave tag (C4, C5...) at bottom of C keys */
-.wf-key-label {
-  position: absolute;
-  left: 50%;
-  bottom: 11px;
-  transform: translateX(-50%);
-  font-family: var(--mono);
-  font-size: 8.5px;
-  color: rgba(255, 255, 255, 0.34);
-  pointer-events: none;
-  line-height: 1;
-}
-
-/* Selected Note Ring (currently inspected in Single-Note Sample Controls)
-   Natural keys stay z-index 1..3 behind accidentals (z-index 4..6) so L-shaped
-   and stem keys never overlap the connected accidental boxes above them! */
+/* Selected Note Ring (Natural keys z-index 1..3 behind accidentals 4..6) */
 .wf-key.natural.selected-key {
   z-index: 2;
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.88);
 }
 
-/* Active Hit: 12 Chromatic Note Colors */
 .wf-key.natural.active-play {
   z-index: 3;
   background: var(--note-color);
@@ -1000,10 +1041,6 @@ body.static-mode .cand-inspect-btn {
   box-shadow:
     inset 0 0 0 1.5px var(--note-color),
     0 0 14px color-mix(in srgb, var(--note-color) 42%, transparent);
-}
-
-.wf-key.accidental {
-  z-index: 4;
 }
 
 .wf-key.accidental.selected-key {
@@ -1020,32 +1057,26 @@ body.static-mode .cand-inspect-btn {
     0 0 14px color-mix(in srgb, var(--note-color) 42%, transparent);
 }
 
-.wf-key.active-play .wf-key-label {
-  color: #ffffff;
-}
-
 /* ============================================================================
-   3. Shared Buttons & Universal Clip Inspector Overlay (#trimModal)
+   3. Video File Inspector & Individual Sample Inspector Overlays
    ============================================================================ */
 .ghost-btn {
   background: transparent;
   color: var(--text-1);
   border: 1px solid var(--line-key);
-  border-radius: 2px;
-  padding: 4px 9px;
-  font-size: 10.5px;
+  border-radius: 3px;
+  padding: 5px 10px;
+  font-size: 11px;
   cursor: pointer;
 }
 
 .ghost-btn.small {
-  padding: 5px 10px;
-  font-family: var(--mono);
+  padding: 6px 11px;
 }
 
 .ghost-btn.tiny {
-  padding: 2px 6px;
-  font-size: 10px;
-  font-family: var(--mono);
+  padding: 3px 7px;
+  font-size: 10.5px;
 }
 
 .ghost-btn:hover {
@@ -1075,8 +1106,8 @@ body.static-mode .cand-inspect-btn {
 .drawer-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.76);
-  backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(5px);
   z-index: 50;
   display: flex;
   align-items: center;
@@ -1085,31 +1116,34 @@ body.static-mode .cand-inspect-btn {
 }
 
 .close-drawer-btn {
-  height: 30px;
-  padding: 0 12px;
+  height: 32px;
+  padding: 0 14px;
   background: #ffffff;
   color: #050608;
   border: none;
-  border-radius: 2px;
-  font-family: var(--mono);
-  font-size: 11px;
+  border-radius: 3px;
+  font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .trim-modal-card {
-  width: min(920px, 95vw);
-  background: #0b0e14;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  width: min(940px, 95vw);
+  background: #000000;
+  border: 1px solid var(--line-key);
   border-radius: 6px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.9);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
+.video-inspector-card {
+  width: min(860px, 95vw);
+}
+
 .trim-modal-header {
-  padding: 12px 16px;
+  padding: 13px 18px;
   background: var(--bg-1);
   border-bottom: 1px solid var(--line-dim);
   display: flex;
@@ -1121,21 +1155,73 @@ body.static-mode .cand-inspect-btn {
 .inspector-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
-.inspector-slug-input {
-  width: 196px;
+/* Cookie-Crumb Trail Hierarchy (VIDEO FILE › SAMPLE) */
+.crumb-type-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+
+.inspector-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.crumb-video-link {
   height: 28px;
+  padding: 0 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 3px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.crumb-video-link:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: #ffffff;
+}
+
+.crumb-sep {
+  font-size: 14px;
+  color: var(--text-2);
+}
+
+.crumb-sample-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-0);
+}
+
+.video-insp-meta-pill {
+  font-size: 10.5px;
+  color: var(--text-2);
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid var(--line-dim);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.inspector-slug-input {
+  width: 224px;
+  height: 30px;
   background: var(--bg-0);
   border: 1px solid var(--line-key);
-  border-radius: 2px;
+  border-radius: 3px;
   color: #ffffff;
-  font-family: var(--mono);
   font-size: 12.5px;
   font-weight: 700;
-  padding: 0 8px;
+  padding: 0 9px;
 }
 
 .inspector-slug-input:focus {
@@ -1143,20 +1229,154 @@ body.static-mode .cand-inspect-btn {
   border-color: #ffffff;
 }
 
+/* Holistic Per-Video Volume Controls */
+.video-gain-panel {
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--line-dim);
+  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.video-gain-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gain-step-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  border: 1px solid var(--line-key);
+  background: var(--bg-2);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.gain-step-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: #ffffff;
+}
+
+.video-gain-readout {
+  min-width: 72px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.video-gain-slider {
+  flex: 1 1 180px;
+  accent-color: var(--switch-green);
+  cursor: pointer;
+}
+
+/* Extracted Samples List inside Video File Inspector */
+.video-slices-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.video-slices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 210px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.video-slice-row {
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 4px;
+  border: 1px solid var(--line-dim);
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.video-slice-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.video-slice-row.is-selected {
+  border-color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.video-slice-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.video-slice-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.video-slice-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.video-slice-meta {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.video-slice-open-btn {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 3px;
+  border: 1px solid var(--line-dim);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-1);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.video-slice-open-btn:hover {
+  color: #ffffff;
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Sample Inspector Controls */
 .inspector-slot-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  height: 28px;
+  gap: 5px;
+  height: 30px;
   background: var(--bg-0);
   border: 1px solid var(--line-key);
-  border-radius: 2px;
-  padding: 0 4px 0 7px;
+  border-radius: 3px;
+  padding: 0 5px 0 8px;
 }
 
 .inspector-slot-tag {
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -1165,14 +1385,13 @@ body.static-mode .cand-inspect-btn {
 }
 
 .slot-step-btn {
-  width: 22px;
-  height: 20px;
+  width: 24px;
+  height: 22px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--text-1);
   border: 1px solid var(--line-dim);
   border-radius: 2px;
-  font-family: var(--mono);
-  font-size: 9.5px;
+  font-size: 10px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -1190,10 +1409,9 @@ body.static-mode .cand-inspect-btn {
   background: var(--bg-0);
   color: #ffffff;
   border: none;
-  font-family: var(--mono);
   font-size: 11.5px;
   font-weight: 700;
-  padding: 2px 2px;
+  padding: 2px 3px;
   cursor: pointer;
 }
 
@@ -1202,13 +1420,12 @@ body.static-mode .cand-inspect-btn {
 }
 
 .test-tone-btn {
-  height: 20px;
-  padding: 0 8px;
+  height: 22px;
+  padding: 0 9px;
   background: rgba(56, 189, 248, 0.14);
   color: #7dd3fc;
   border: 1px solid rgba(56, 189, 248, 0.48);
   border-radius: 2px;
-  font-family: var(--mono);
   font-size: 10.5px;
   font-weight: 700;
   cursor: pointer;
@@ -1223,15 +1440,14 @@ body.static-mode .cand-inspect-btn {
 }
 
 .assign-slot-btn {
-  height: 20px;
-  padding: 0 8px;
+  height: 22px;
+  padding: 0 9px;
   background: #10b981;
   color: #03150e;
   border: 1px solid #10b981;
   border-radius: 2px;
-  font-family: var(--mono);
   font-size: 10.5px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
   transition: background 0.1s ease, border-color 0.1s ease;
 }
@@ -1242,13 +1458,12 @@ body.static-mode .cand-inspect-btn {
 }
 
 .inspector-reset-dsp-btn {
-  height: 26px;
-  padding: 0 9px;
+  height: 28px;
+  padding: 0 10px;
   background: rgba(245, 158, 11, 0.14);
   color: #fbbf24;
   border: 1px solid rgba(245, 158, 11, 0.55);
-  border-radius: 2px;
-  font-family: var(--mono);
+  border-radius: 3px;
   font-size: 10.5px;
   font-weight: 700;
   cursor: pointer;
@@ -1259,14 +1474,6 @@ body.static-mode .cand-inspect-btn {
   background: rgba(245, 158, 11, 0.28);
   border-color: #fbbf24;
   color: #ffffff;
-}
-
-.in-color {
-  color: #10b981;
-}
-
-.out-color {
-  color: #f59e0b;
 }
 
 .trim-modal-body {
@@ -1282,14 +1489,15 @@ body.static-mode .cand-inspect-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 }
 
 .trim-video-square {
   width: 248px;
   height: 248px;
   aspect-ratio: 1 / 1;
-  background: #030406;
+  background: #000000;
+  border: 1px solid var(--line-dim);
   border-radius: 4px;
   overflow: hidden;
   position: relative;
@@ -1311,8 +1519,7 @@ body.static-mode .cand-inspect-btn {
 }
 
 .trim-scrub-time {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-1);
 }
 
@@ -1343,16 +1550,14 @@ body.static-mode .cand-inspect-btn {
 }
 
 .inspector-section-label {
-  font-family: var(--mono);
-  font-size: 10px;
+  font-size: 10.5px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   color: var(--text-2);
 }
 
 .inspector-spec-meta {
-  font-family: var(--mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-2);
 }
 
@@ -1360,8 +1565,8 @@ body.static-mode .cand-inspect-btn {
   position: relative;
   width: 100%;
   height: 248px;
-  background: #05070b;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #000000;
+  border: 1px solid var(--line-dim);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -1397,21 +1602,19 @@ body.static-mode .cand-inspect-btn {
 .inspector-tune-slider {
   flex: 1 1 160px;
   max-width: 240px;
-  accent-color: #10b981;
+  accent-color: var(--switch-green);
   cursor: pointer;
 }
 
 .inspector-tune-readout {
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   color: #ffffff;
-  min-width: 112px;
+  min-width: 120px;
 }
 
 .peaks-mini-label {
-  font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-2);
 }
 
@@ -1430,8 +1633,7 @@ body.static-mode .cand-inspect-btn {
 }
 
 .trim-span-meta {
-  font-family: var(--mono);
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--text-1);
 }
 
@@ -1439,8 +1641,8 @@ body.static-mode .cand-inspect-btn {
   position: relative;
   width: 100%;
   height: 96px;
-  background: #05070b;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #000000;
+  border: 1px solid var(--line-dim);
   border-radius: 4px;
   overflow: hidden;
   user-select: none;
@@ -1457,7 +1659,7 @@ body.static-mode .cand-inspect-btn {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: rgba(3, 4, 7, 0.72);
+  background: rgba(0, 0, 0, 0.76);
   pointer-events: none;
 }
 
@@ -1515,9 +1717,8 @@ body.static-mode .cand-inspect-btn {
 
 .handle-tag {
   position: absolute;
-  padding: 1px 4px;
-  font-family: var(--mono);
-  font-size: 9px;
+  padding: 1px 5px;
+  font-size: 9.5px;
   font-weight: 700;
   border-radius: 2px;
   pointer-events: none;
@@ -1557,10 +1758,9 @@ body.static-mode .cand-inspect-btn {
   background: var(--bg-2);
   color: var(--text-1);
   border: 1px solid var(--line-dim);
-  border-radius: 2px;
-  padding: 2px 5px;
-  font-family: var(--mono);
-  font-size: 10px;
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 10.5px;
   cursor: pointer;
 }
 
@@ -1570,7 +1770,7 @@ body.static-mode .cand-inspect-btn {
 }
 
 .trim-modal-footer {
-  padding: 12px 16px;
+  padding: 13px 18px;
   background: var(--bg-1);
   border-top: 1px solid var(--line-dim);
   display: flex;
@@ -1586,15 +1786,14 @@ body.static-mode .cand-inspect-btn {
 }
 
 .trim-btn-secondary {
-  height: 32px;
+  height: 34px;
   padding: 0 14px;
   background: var(--bg-2);
   color: #ffffff;
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 3px;
-  font-family: var(--mono);
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
 }
 
@@ -1603,19 +1802,18 @@ body.static-mode .cand-inspect-btn {
 }
 
 .trim-btn-primary {
-  height: 32px;
+  height: 34px;
   padding: 0 16px;
-  background: #10b981;
+  background: var(--switch-green);
   color: #03150e;
-  border: 1px solid #10b981;
+  border: 1px solid var(--switch-green);
   border-radius: 3px;
-  font-family: var(--mono);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
 }
 
 .trim-btn-primary:hover {
-  background: #34d399;
-  border-color: #34d399;
+  background: #4ade80;
+  border-color: #4ade80;
 }

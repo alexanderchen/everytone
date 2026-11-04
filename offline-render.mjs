@@ -364,6 +364,9 @@ export async function renderMidiPerformanceToMp4({
   const disabledVideoIds = new Set(
     (catalog.videos || []).filter(v => v.enabled === false).map(v => v.id)
   );
+  const videoGainDbById = new Map(
+    (catalog.videos || []).map(v => [v.id, Number.isFinite(v.gainDb) ? Math.round(v.gainDb) : 0])
+  );
   const keyMap = computeKeyboardMap(catalog.videos, catalog.keyboardConfig || {});
   const rng = makeSeededRng(20261103);
   const lastSliceByMidi = new Map();
@@ -531,9 +534,9 @@ export async function renderMidiPerformanceToMp4({
       const forcedRelDur = Math.min(RELEASE_SEC, playDur * 0.78);
       const forcedRelStart = Math.max(0.012, playDur - forcedRelDur);
 
-      const dbOffset = cand.peakDb !== undefined ? Math.max(0, Math.min(8, (-22 - cand.peakDb) * 0.35)) : 0;
-      const boost = Math.pow(10, dbOffset / 20);
-      const peakGain = Math.min(1.25, 0.86 * (ev.velocity || 0.85) * boost);
+      const videoGainDb = videoGainDbById.get(cand.videoId) || 0;
+      const gainLinear = Math.pow(10, videoGainDb / 20);
+      const peakGain = Math.min(1.8, 0.86 * (ev.velocity || 0.85) * gainLinear);
 
       const slotIdx = allocateSlotAt(t, cand.sliceId);
       const displaced = simSlots[slotIdx].voice;

@@ -61,11 +61,12 @@ const state = {
   catalog: null,
   selectedMidi: 60, // Defaults to C4
   auditionIndex: 0,
-  explorerCollapsed: false,
+  chromeCollapsed: false,
   disabledVideoIds: new Set(),
   collapsedCategories: new Set(),
+  videoGainOverrides: {}, // Per-video holistic gainDb persistence
   sliceToggleOverrides: {}, // Static-mode per-slice toggle persistence
-  releaseSec: 0.40, // Permanent 0.40s universal release decay
+  releaseSec: 0.40, // Permanent 0.40s universal audio release decay
   highpassHz: 80, // Permanent 80Hz master low-cut filter
   baseOctaveMidi: 60, // C4 (Z/X shifts visible 3-octave keyboard & QWERTY octave)
   sustainPedalDown: false,
@@ -79,13 +80,19 @@ const state = {
 const lastPlayedSliceByMidi = new Map();
 
 // ============================================================================
-// Persistent Preferences (Cross-Reload Video Switch & UI State)
+// Persistent Preferences (Cross-Reload Video Switch, Gain & Panel State)
 // ============================================================================
 function normalizeBaseOctaveMidi(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n)) return 60;
   const snapped = Math.round(n / 12) * 12;
   return Math.max(MIN_BASE_OCTAVE_MIDI, Math.min(MAX_BASE_OCTAVE_MIDI, snapped));
+}
+
+function clampVideoGainDb(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-12, Math.min(12, Math.round(n)));
 }
 
 function loadPrefsFromStorage() {
@@ -95,9 +102,9 @@ function loadPrefsFromStorage() {
       return {
         hasSavedDisabledVideos: false,
         disabledVideoIds: [],
+        videoGains: {},
         sliceToggles: {},
-        explorerCollapsed: false,
-        collapsedCategories: [],
+        chromeCollapsed: false,
         baseOctaveMidi: 60
       };
     }
@@ -107,21 +114,20 @@ function loadPrefsFromStorage() {
       disabledVideoIds: Array.isArray(parsed?.disabledVideoIds)
         ? parsed.disabledVideoIds.map(String)
         : [],
+      videoGains:
+        parsed?.videoGains && typeof parsed.videoGains === 'object' ? parsed.videoGains : {},
       sliceToggles:
         parsed?.sliceToggles && typeof parsed.sliceToggles === 'object' ? parsed.sliceToggles : {},
-      explorerCollapsed: Boolean(parsed?.explorerCollapsed),
-      collapsedCategories: Array.isArray(parsed?.collapsedCategories)
-        ? parsed.collapsedCategories.map(String)
-        : [],
+      chromeCollapsed: Boolean(parsed?.chromeCollapsed ?? parsed?.explorerCollapsed),
       baseOctaveMidi: normalizeBaseOctaveMidi(parsed?.baseOctaveMidi ?? 60)
     };
   } catch {
     return {
       hasSavedDisabledVideos: false,
       disabledVideoIds: [],
+      videoGains: {},
       sliceToggles: {},
-      explorerCollapsed: false,
-      collapsedCategories: [],
+      chromeCollapsed: false,
       baseOctaveMidi: 60
     };
   }
@@ -131,9 +137,9 @@ function savePrefsToStorage() {
   try {
     const payload = {
       disabledVideoIds: Array.from(state.disabledVideoIds),
+      videoGains: state.videoGainOverrides,
       sliceToggles: state.sliceToggleOverrides,
-      explorerCollapsed: state.explorerCollapsed,
-      collapsedCategories: Array.from(state.collapsedCategories),
+      chromeCollapsed: state.chromeCollapsed,
       baseOctaveMidi: state.baseOctaveMidi
     };
     window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(payload));
@@ -142,6 +148,20 @@ function savePrefsToStorage() {
 
 function isVideoDisabled(videoId) {
   return Boolean(videoId && state.disabledVideoIds.has(videoId));
+}
+
+function getVideoGainDb(videoId) {
+  if (!videoId) return 0;
+  if (Object.prototype.hasOwnProperty.call(state.videoGainOverrides, videoId)) {
+    return clampVideoGainDb(state.videoGainOverrides[videoId]);
+  }
+  const v = state.catalog?.videos?.find(item => item.id === videoId);
+  return clampVideoGainDb(v?.gainDb ?? 0);
+}
+
+function formatSignedDb(db) {
+  const n = clampVideoGainDb(db);
+  return n > 0 ? `+${n} dB` : `${n} dB`;
 }
 
 function getVisibleCandidatesForMidi(midi) {
@@ -163,41 +183,12 @@ function getNoteColor(midi) {
   return CHROMATIC_COLORS[pc];
 }
 
-function hexToRgb(hex) {
-  const clean = String(hex || '#8c95a4').replace('#', '');
-  const n = parseInt(clean, 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-function getNoteRgb(midi) {
-  return hexToRgb(getNoteColor(midi));
-}
-
-function noteTintedSpecColor(norm, noteRgb) {
+function grayScreenSpecPixel(norm) {
   const t = Math.max(0, Math.min(1, norm));
-  if (t <= 0.015) return [3, 4, 6];
-
-  const g = Math.pow(t, 1.12);
-  const baseR = 3 + g * 232;
-  const baseG = 4 + g * 231;
-  const baseB = 6 + g * 230;
-
-  if (t <= 0.40 || !noteRgb) {
-    return [Math.round(baseR), Math.round(baseG), Math.round(baseB)];
-  }
-
-  const maxCh = Math.max(noteRgb[0], noteRgb[1], noteRgb[2], 1);
-  const lift = 235 / maxCh;
-  const tintR = Math.min(255, noteRgb[0] * lift * 0.82 + 45);
-  const tintG = Math.min(255, noteRgb[1] * lift * 0.82 + 45);
-  const tintB = Math.min(255, noteRgb[2] * lift * 0.82 + 45);
-
-  const mix = Math.pow((t - 0.40) / 0.60, 1.25) * 0.30;
-  return [
-    Math.round(baseR * (1 - mix) + tintR * mix),
-    Math.round(baseG * (1 - mix) + tintG * mix),
-    Math.round(baseB * (1 - mix) + tintB * mix)
-  ];
+  if (t <= 0.025) return [0, 0, 0, 0];
+  const g = Math.pow((t - 0.025) / 0.975, 1.15);
+  const alpha = Math.max(0, Math.min(244, Math.round(g * 244)));
+  return [238, 240, 244, alpha];
 }
 
 function midiToFreq(midi) {
@@ -293,13 +284,27 @@ async function loadAudioBuffer(url) {
 }
 
 // ============================================================================
-// Three.js 3D Stage + 3 Foreground 100%-Opacity Slots + Tinted Spectrograms
+// Three.js 3D Stage + 3 Foreground Slots (0.20s Fade-Out) + Grayscale Screen Spectrograms
 // ============================================================================
 const STAGE_SLOT_COUNT = 3;
-const SPEC_MIN_FREQ = 45;
-const SPEC_MAX_FREQ = 4200;
-const SPEC_LOG_MIN = Math.log(SPEC_MIN_FREQ);
-const SPEC_LOG_MAX = Math.log(SPEC_MAX_FREQ);
+const STAGE_FADE_OUT_MS = 200; // 0.20s smooth visual fade-out on note release
+
+// Cropped low-rumble (< 125 Hz) + Mel-like perceptual frequency warp (125 Hz .. 5000 Hz)
+const SPEC_MIN_FREQ = 125;
+const SPEC_MAX_FREQ = 5000;
+const SPEC_WARP_HZ = 160;
+const SPEC_WARP_MIN = Math.log(1 + SPEC_MIN_FREQ / SPEC_WARP_HZ);
+const SPEC_WARP_MAX = Math.log(1 + SPEC_MAX_FREQ / SPEC_WARP_HZ);
+
+function specFreqToNormY(freq) {
+  const f = Math.max(SPEC_MIN_FREQ, Math.min(SPEC_MAX_FREQ, freq));
+  return (Math.log(1 + f / SPEC_WARP_HZ) - SPEC_WARP_MIN) / (SPEC_WARP_MAX - SPEC_WARP_MIN);
+}
+
+function specNormYToFreq(normY) {
+  const u = Math.max(0, Math.min(1, normY));
+  return SPEC_WARP_HZ * (Math.exp(SPEC_WARP_MIN + u * (SPEC_WARP_MAX - SPEC_WARP_MIN)) - 1);
+}
 
 let stageSlotSeq = 0;
 let currentStageTileSize = 260;
@@ -309,15 +314,15 @@ let threeStage = null;
 const miniSpecBitmapCache = new Map();
 
 const stageSlots = [
-  { occupied: false, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null },
-  { occupied: false, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null },
-  { occupied: false, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null }
+  { occupied: false, fadingOut: false, fadeTimer: null, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null },
+  { occupied: false, fadingOut: false, fadeTimer: null, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null },
+  { occupied: false, fadingOut: false, fadeTimer: null, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null }
 ];
 
 function getActiveStageSliceIds() {
   const set = new Set();
   for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
-    if (stageSlots[i].occupied && stageSlots[i].sliceKey) {
+    if (stageSlots[i].occupied && !stageSlots[i].fadingOut && stageSlots[i].sliceKey) {
       set.add(stageSlots[i].sliceKey);
     }
   }
@@ -400,6 +405,7 @@ function getSliceIdentityKey(slice) {
 }
 
 function allocateStageSlotIndex(sliceKey) {
+  // 1. Re-triggering the same sample overrides its own slot (including if currently fading out)
   if (sliceKey) {
     for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
       if (stageSlots[i].occupied && stageSlots[i].sliceKey === sliceKey) {
@@ -407,9 +413,22 @@ function allocateStageSlotIndex(sliceKey) {
       }
     }
   }
+  // 2. Empty slot
   for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
     if (!stageSlots[i].occupied) return i;
   }
+  // 3. Interrupt a slot that is already fading out
+  let oldestFadingIdx = -1;
+  for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
+    if (stageSlots[i].fadingOut) {
+      if (oldestFadingIdx === -1 || stageSlots[i].seq < stageSlots[oldestFadingIdx].seq) {
+        oldestFadingIdx = i;
+      }
+    }
+  }
+  if (oldestFadingIdx !== -1) return oldestFadingIdx;
+
+  // 4. Steal oldest frozen freeze-frame slot
   let oldestFrozenIdx = -1;
   for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
     if (stageSlots[i].voice?.audioCompleted) {
@@ -420,6 +439,7 @@ function allocateStageSlotIndex(sliceKey) {
   }
   if (oldestFrozenIdx !== -1) return oldestFrozenIdx;
 
+  // 5. Steal oldest playing slot
   let oldestIdx = 0;
   for (let i = 1; i < STAGE_SLOT_COUNT; i++) {
     if (stageSlots[i].seq < stageSlots[oldestIdx].seq) {
@@ -492,6 +512,10 @@ function createStageSquareTile(slice, playbackRate = 1.0) {
   if (!unitEl || !videoWrap) return null;
 
   const prevSlot = stageSlots[slotIdx];
+  if (prevSlot.fadeTimer) {
+    clearTimeout(prevSlot.fadeTimer);
+    prevSlot.fadeTimer = null;
+  }
   if (prevSlot.occupied && prevSlot.voice) {
     displaceStageSlotVoice(prevSlot.voice, prevSlot.sliceKey === sliceKey);
   }
@@ -517,10 +541,15 @@ function createStageSquareTile(slice, playbackRate = 1.0) {
     } catch {}
   });
   videoWrap.appendChild(videoEl);
+
+  // Interrupt any ongoing fade-out and pop on immediately at 100% opacity
+  unitEl.classList.remove('is-fading-out');
   unitEl.classList.add('is-occupied');
 
   stageSlots[slotIdx] = {
     occupied: true,
+    fadingOut: false,
+    fadeTimer: null,
     seq: stageSlotSeq,
     token,
     sliceKey,
@@ -538,11 +567,39 @@ function createStageSquareTile(slice, playbackRate = 1.0) {
   return { slotIdx, token, tile: videoWrap, videoEl };
 }
 
+function fadeOutStageTile(tileObj) {
+  if (!tileObj || tileObj.slotIdx === undefined) return;
+  const { slotIdx, token } = tileObj;
+  const slotState = stageSlots[slotIdx];
+  if (!slotState || slotState.token !== token) return;
+  if (slotState.fadingOut) return;
+
+  slotState.fadingOut = true;
+  const grid = document.getElementById('polyVideoGrid');
+  const unitEl = grid?.querySelector(`.stage-slot-unit[data-slot="${slotIdx}"]`);
+  if (unitEl) {
+    // Do NOT pause videoEl: if frozen at end frame, stays frozen; if still playing, keeps playing while fading out!
+    unitEl.classList.add('is-fading-out');
+  }
+
+  threeStage?.notifyActivity();
+  ensureMiniSpecAnimLoop();
+
+  slotState.fadeTimer = setTimeout(() => {
+    removeStageTile(tileObj);
+  }, STAGE_FADE_OUT_MS + 10);
+}
+
 function removeStageTile(tileObj) {
   if (!tileObj || tileObj.slotIdx === undefined) return;
   const { slotIdx, token } = tileObj;
   const slotState = stageSlots[slotIdx];
   if (!slotState || slotState.token !== token) return;
+
+  if (slotState.fadeTimer) {
+    clearTimeout(slotState.fadeTimer);
+    slotState.fadeTimer = null;
+  }
 
   try {
     tileObj.videoEl?.pause();
@@ -554,11 +611,13 @@ function removeStageTile(tileObj) {
   if (videoWrap) {
     videoWrap.innerHTML = '';
   }
-  unitEl?.classList.remove('is-occupied');
+  unitEl?.classList.remove('is-occupied', 'is-fading-out');
   clearSlotMiniSpec(slotIdx);
 
   stageSlots[slotIdx] = {
     occupied: false,
+    fadingOut: false,
+    fadeTimer: null,
     seq: 0,
     token: null,
     sliceKey: null,
@@ -570,7 +629,7 @@ function removeStageTile(tileObj) {
   threeStage?.notifyActivity();
 }
 
-function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, bufferSpanSec = null, noteRgb = null) {
+function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, bufferSpanSec = null) {
   const W = 256;
   const H = 104;
   const c = document.createElement('canvas');
@@ -595,6 +654,8 @@ function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, buff
   const real = new Float32Array(fftSizeSpec);
   const imag = new Float32Array(fftSizeSpec);
   const half = fftSizeSpec >> 1;
+  const minBin = Math.max(1, Math.floor((SPEC_MIN_FREQ * fftSizeSpec) / effectiveSr));
+  const maxBin = Math.min(half - 1, Math.ceil((SPEC_MAX_FREQ * fftSizeSpec) / effectiveSr));
   const colMags = new Array(W);
   let globalMaxDb = -90;
 
@@ -609,28 +670,31 @@ function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, buff
     for (let k = 1; k < half; k++) {
       const db = 20 * Math.log10(Math.hypot(real[k], imag[k]) + 1e-7);
       dbArr[k] = db;
-      if (db > globalMaxDb) globalMaxDb = db;
+      // Measure peak strictly inside [SPEC_MIN_FREQ, SPEC_MAX_FREQ] so <125Hz rumble never dominates
+      if (k >= minBin && k <= maxBin && db > globalMaxDb) {
+        globalMaxDb = db;
+      }
     }
     colMags[x] = dbArr;
   }
 
-  const floorDb = globalMaxDb - 54;
+  const floorDb = globalMaxDb - 44;
   for (let x = 0; x < W; x++) {
     const dbArr = colMags[x];
     for (let y = 0; y < H; y++) {
       const normY = 1 - y / (H - 1);
-      const freq = Math.exp(SPEC_LOG_MIN + normY * (SPEC_LOG_MAX - SPEC_LOG_MIN));
+      const freq = specNormYToFreq(normY);
       const exactBin = (freq * fftSizeSpec) / effectiveSr;
       const b0 = Math.max(1, Math.min(half - 2, Math.floor(exactBin)));
       const frac = exactBin - b0;
       const db = dbArr[b0] * (1 - frac) + dbArr[b0 + 1] * frac;
       const norm = (db - floorDb) / (globalMaxDb - floorDb + 1e-5);
-      const [r, g, b] = noteTintedSpecColor(norm, noteRgb);
+      const [r, g, b, a] = grayScreenSpecPixel(norm);
       const idx = (y * W + x) * 4;
       data[idx] = r;
       data[idx + 1] = g;
       data[idx + 2] = b;
-      data[idx + 3] = 255;
+      data[idx + 3] = a;
     }
   }
   ctx.putImageData(imgData, 0, 0);
@@ -671,6 +735,7 @@ function drawSlotMiniSpecFrame(slotIdx, now) {
 
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
 
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(slot.miniBitmap, 0, 0, cssW, cssH);
@@ -680,8 +745,8 @@ function drawSlotMiniSpecFrame(slotIdx, now) {
     const progress = Math.max(0, Math.min(1, elapsed / Math.max(0.05, slot.voice.naturalDur)));
     const xPos = progress * (cssW - 1);
     ctx.save();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-    ctx.lineWidth = 1.25;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 1.3;
     ctx.beginPath();
     ctx.moveTo(xPos, 0);
     ctx.lineTo(xPos, cssH);
@@ -690,13 +755,13 @@ function drawSlotMiniSpecFrame(slotIdx, now) {
   } else {
     const f0Hz = slot.voice.f0Hz;
     const stripeAlpha = computeVoiceStripeAlpha(slot.voice, now);
-    if (stripeAlpha > 0.005 && f0Hz >= SPEC_MIN_FREQ && f0Hz <= SPEC_MAX_FREQ) {
-      const normY = (Math.log(f0Hz) - SPEC_LOG_MIN) / (SPEC_LOG_MAX - SPEC_LOG_MIN);
-      const yF0 = (1 - normY) * (cssH - 1);
+    if (stripeAlpha > 0.005 && f0Hz >= 50 && f0Hz <= SPEC_MAX_FREQ) {
+      const normY = specFreqToNormY(f0Hz);
+      const yF0 = Math.max(2, Math.min(cssH - 2, (1 - normY) * (cssH - 1)));
       ctx.save();
       ctx.globalAlpha = stripeAlpha;
       ctx.strokeStyle = slot.voice.noteColor || '#ffffff';
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = 2.0;
       ctx.beginPath();
       ctx.moveTo(0, yF0);
       ctx.lineTo(cssW, yF0);
@@ -714,12 +779,10 @@ function attachSlotMiniSpectrogram(tileObj, slice, buffer, voice) {
   const rate = voice ? voice.playbackRate : 1.0;
   const tIn = voice?.trimIn ?? 0;
   const bSpan = voice?.bufferPlaySpan ?? Math.min(MAX_CLIP_DUR, buffer.duration);
-  const midiTag = voice?.midi ?? 60;
-  const noteRgb = voice?.isPerc ? null : getNoteRgb(midiTag);
-  const cacheKey = `${slice.audioUrl}__m${midiTag}__${rate.toFixed(4)}__${tIn.toFixed(2)}__${bSpan.toFixed(2)}`;
+  const cacheKey = `${slice.audioUrl}__gray__${rate.toFixed(4)}__${tIn.toFixed(2)}__${bSpan.toFixed(2)}`;
   let bmp = miniSpecBitmapCache.get(cacheKey);
   if (!bmp) {
-    bmp = buildMiniSpectrogramBitmap(buffer, rate, tIn, bSpan, noteRgb);
+    bmp = buildMiniSpectrogramBitmap(buffer, rate, tIn, bSpan);
     miniSpecBitmapCache.set(cacheKey, bmp);
   }
 
@@ -748,7 +811,7 @@ function ensureMiniSpecAnimLoop() {
       const slot = stageSlots[i];
       if (!slot.occupied || !slot.voice || !slot.miniBitmap) continue;
       drawSlotMiniSpecFrame(i, now);
-      if (!slot.voice.audioCompleted) {
+      if (!slot.voice.audioCompleted || slot.fadingOut) {
         anyActive = true;
       }
     }
@@ -852,9 +915,8 @@ async function startHeldVoice({
     voice.tileObj = tileObj;
 
     const now = ctx.currentTime;
-    const dbOffset = slice.peakDb !== undefined ? Math.max(0, Math.min(8, (-22 - slice.peakDb) * 0.35)) : 0;
-    const boost = Math.pow(10, dbOffset / 20);
-    const peakGain = Math.min(1.25, 0.86 * velocity * boost);
+    const gainDb = getVideoGainDb(slice.videoId);
+    const peakGain = Math.min(1.85, 0.86 * velocity * Math.pow(10, gainDb / 20));
 
     const rawLimit = Math.min(MAX_CLIP_DUR, Number(slice.rawDurSec ?? buffer.duration), buffer.duration);
     const trimIn = Math.max(0, Math.min(Math.max(0, rawLimit - 0.08), Number(slice.trimIn ?? 0)));
@@ -950,9 +1012,9 @@ function applyVoiceReleaseRamp(voice, customReleaseSec = null) {
   if (voice.audioCompleted || (voice.startedAt && voice.naturalDur && now - voice.startedAt >= voice.naturalDur)) {
     voice.audioCompleted = true;
     voice.releaseStartCtxTime = now;
-    voice.releaseDur = 0;
+    voice.releaseDur = 0.2;
     if (voice.tileObj) {
-      removeStageTile(voice.tileObj);
+      fadeOutStageTile(voice.tileObj);
     }
     return;
   }
@@ -978,10 +1040,9 @@ function applyVoiceReleaseRamp(voice, customReleaseSec = null) {
     } catch {}
   }
 
-  if (voice.tileObj?.tile) {
-    voice.removeTimer = setTimeout(() => {
-      removeStageTile(voice.tileObj);
-    }, Math.round(rel * 1000));
+  // Immediately begin smooth 0.20s visual fade-out while video continues playing!
+  if (voice.tileObj) {
+    fadeOutStageTile(voice.tileObj);
   }
 }
 
@@ -1014,9 +1075,9 @@ function setKeyActiveClass(midi, active) {
 }
 
 // ============================================================================
-// Spectrogram FFT & Offscreen Renderer
+// Spectrogram FFT & Offscreen Renderer (2048-pt FFT for Crisp Mid/Low Resolution)
 // ============================================================================
-const fftSizeSpec = 1024;
+const fftSizeSpec = 2048;
 const hannSpec = new Float32Array(fftSizeSpec);
 for (let i = 0; i < fftSizeSpec; i++) {
   hannSpec[i] = 0.5 * (1 - Math.cos((2 * Math.PI * i) / (fftSizeSpec - 1)));
@@ -1062,21 +1123,12 @@ function fftInPlaceClient(real, imag) {
   }
 }
 
-function magmaColor(norm) {
+function grayInspectorColor(norm) {
   const t = Math.max(0, Math.min(1, norm));
-  if (t < 0.25) {
-    const u = t / 0.25;
-    return [Math.round(6 + u * 45), Math.round(8 + u * 14), Math.round(14 + u * 75)];
-  } else if (t < 0.55) {
-    const u = (t - 0.25) / 0.30;
-    return [Math.round(51 + u * 135), Math.round(22 + u * 35), Math.round(89 + u * 35)];
-  } else if (t < 0.82) {
-    const u = (t - 0.55) / 0.27;
-    return [Math.round(186 + u * 62), Math.round(57 + u * 115), Math.round(124 - u * 70)];
-  } else {
-    const u = (t - 0.82) / 0.18;
-    return [250, Math.round(172 + u * 80), Math.round(54 + u * 165)];
-  }
+  if (t <= 0.02) return [5, 7, 11];
+  const g = Math.pow((t - 0.02) / 0.98, 1.12);
+  const v = Math.round(5 + g * 238);
+  return [v, v, Math.min(255, v + 3)];
 }
 
 const spectrogramBitmapCache = new Map();
@@ -1101,10 +1153,6 @@ function buildSpectrogramOffscreen(
 
   const ch = buffer.getChannelData(0);
   const effectiveSr = buffer.sampleRate * playbackRate;
-  const minFreq = 55;
-  const maxFreq = 4200;
-  const logMin = Math.log(minFreq);
-  const logMax = Math.log(maxFreq);
 
   const imgData = stftCtx.createImageData(W, H);
   const data = imgData.data;
@@ -1112,6 +1160,8 @@ function buildSpectrogramOffscreen(
   const real = new Float32Array(fftSizeSpec);
   const imag = new Float32Array(fftSizeSpec);
   const half = fftSizeSpec >> 1;
+  const minBin = Math.max(1, Math.floor((SPEC_MIN_FREQ * fftSizeSpec) / effectiveSr));
+  const maxBin = Math.min(half - 1, Math.ceil((SPEC_MAX_FREQ * fftSizeSpec) / effectiveSr));
   const colMags = new Array(W);
   let globalMaxDb = -90;
 
@@ -1128,23 +1178,25 @@ function buildSpectrogramOffscreen(
     for (let k = 1; k < half; k++) {
       const db = 20 * Math.log10(Math.hypot(real[k], imag[k]) + 1e-7);
       dbArr[k] = db;
-      if (db > globalMaxDb) globalMaxDb = db;
+      if (k >= minBin && k <= maxBin && db > globalMaxDb) {
+        globalMaxDb = db;
+      }
     }
     colMags[x] = dbArr;
   }
 
-  const floorDb = globalMaxDb - 58;
+  const floorDb = globalMaxDb - 52;
   for (let x = 0; x < W; x++) {
     const dbArr = colMags[x];
     for (let y = 0; y < H; y++) {
       const normY = 1 - y / (H - 1);
-      const freq = Math.exp(logMin + normY * (logMax - logMin));
+      const freq = specNormYToFreq(normY);
       const exactBin = (freq * fftSizeSpec) / effectiveSr;
       const b0 = Math.max(1, Math.min(half - 2, Math.floor(exactBin)));
       const frac = exactBin - b0;
       const db = dbArr[b0] * (1 - frac) + dbArr[b0 + 1] * frac;
       const norm = (db - floorDb) / (globalMaxDb - floorDb + 1e-5);
-      const [r, g, b] = magmaColor(norm);
+      const [r, g, b] = grayInspectorColor(norm);
       const idx = (y * W + x) * 4;
       data[idx] = r;
       data[idx + 1] = g;
@@ -1162,51 +1214,51 @@ function buildSpectrogramOffscreen(
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(stftCanvas, 0, 0, W, H);
 
-  const gridFreqs = [80, 200, 440, 1000, 2000, 3500];
-  ctx.font = '10px "SF Mono", Menlo, monospace';
+  const gridFreqs = [150, 300, 600, 1200, 2400, 4200];
+  ctx.font = '10px "Space Mono", "SF Mono", Menlo, monospace';
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
   ctx.lineWidth = 1;
 
   for (const gf of gridFreqs) {
-    const y = H - 1 - ((Math.log(gf) - logMin) / (logMax - logMin)) * (H - 1);
+    const y = H - 1 - specFreqToNormY(gf) * (H - 1);
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(W, y);
     ctx.stroke();
-    ctx.fillText(`${gf}Hz`, 5, Math.max(9, y - 2));
+    ctx.fillText(`${gf}Hz`, 5, Math.max(10, y - 3));
   }
 
-  if (showHarmonics && f0Hz >= minFreq && f0Hz <= maxFreq) {
-    const yF0 = H - 1 - ((Math.log(f0Hz) - logMin) / (logMax - logMin)) * (H - 1);
-    ctx.strokeStyle = '#10b981';
-    ctx.lineWidth = 1.75;
+  if (showHarmonics && f0Hz >= 50 && f0Hz <= SPEC_MAX_FREQ) {
+    const yF0 = Math.max(2, Math.min(H - 2, H - 1 - specFreqToNormY(f0Hz) * (H - 1)));
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = 1.85;
     ctx.beginPath();
     ctx.moveTo(0, yF0);
     ctx.lineTo(W, yF0);
     ctx.stroke();
 
     const tagText = `f0: ${f0Label} (${f0Hz}Hz)`;
-    ctx.font = 'bold 10px "SF Mono", Menlo, monospace';
-    const tagW = Math.ceil(ctx.measureText(tagText).width) + 10;
-    ctx.fillStyle = '#10b981';
-    ctx.fillRect(W - tagW - 5, Math.max(2, yF0 - 15), tagW, 14);
+    ctx.font = 'bold 10px "Space Mono", "SF Mono", Menlo, monospace';
+    const tagW = Math.ceil(ctx.measureText(tagText).width) + 12;
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(W - tagW - 5, Math.max(2, yF0 - 16), tagW, 15);
     ctx.fillStyle = '#04130d';
-    ctx.fillText(tagText, W - tagW, Math.max(12, yF0 - 4));
+    ctx.fillText(tagText, W - tagW, Math.max(13, yF0 - 5));
 
     ctx.strokeStyle = 'rgba(245, 158, 11, 0.72)';
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     for (let h = 2; h <= 4; h++) {
       const hf = f0Hz * h;
-      if (hf <= maxFreq) {
-        const yh = H - 1 - ((Math.log(hf) - logMin) / (logMax - logMin)) * (H - 1);
+      if (hf >= SPEC_MIN_FREQ && hf <= SPEC_MAX_FREQ) {
+        const yh = H - 1 - specFreqToNormY(hf) * (H - 1);
         ctx.beginPath();
         ctx.moveTo(0, yh);
         ctx.lineTo(W, yh);
         ctx.stroke();
         ctx.fillStyle = '#fbbf24';
-        ctx.fillText(`${h}f0`, W - 26, Math.max(9, yh - 2));
+        ctx.fillText(`${h}f0`, W - 30, Math.max(10, yh - 3));
       }
     }
     ctx.setLineDash([]);
@@ -1216,20 +1268,29 @@ function buildSpectrogramOffscreen(
 }
 
 // ============================================================================
-// Left Collapsible Sidebar: Video File Explorer & Persistent Video Muting
+// Unified Hamburger Toggle: Left Video File Explorer + Bottom Transport Dock
 // ============================================================================
-function setExplorerCollapsed(nextCollapsed) {
-  state.explorerCollapsed = Boolean(nextCollapsed);
+function setChromeCollapsed(nextCollapsed) {
+  state.chromeCollapsed = Boolean(nextCollapsed);
   savePrefsToStorage();
 
   const explorerEl = document.getElementById('fileExplorer');
-  const expandBtn = document.getElementById('explorerExpandBtn');
+  const dockEl = document.getElementById('transportDock');
+  const toggleBtn = document.getElementById('chromeToggleBtn');
+
   if (explorerEl) {
-    explorerEl.classList.toggle('collapsed', state.explorerCollapsed);
+    explorerEl.classList.toggle('collapsed', state.chromeCollapsed);
   }
-  if (expandBtn) {
-    expandBtn.classList.toggle('hidden', !state.explorerCollapsed);
+  if (dockEl) {
+    dockEl.classList.toggle('collapsed', state.chromeCollapsed);
   }
+  if (toggleBtn) {
+    toggleBtn.classList.toggle('is-collapsed', state.chromeCollapsed);
+    toggleBtn.setAttribute('aria-expanded', state.chromeCollapsed ? 'false' : 'true');
+  }
+
+  requestAnimationFrame(() => updateStageTileSizes());
+  setTimeout(() => updateStageTileSizes(), 235);
 }
 
 function setVideosEnabled(videoIds, enabled) {
@@ -1310,6 +1371,7 @@ function renderFileExplorer() {
 
     const groupEl = document.createElement('div');
     groupEl.className = `explorer-cat-group${isCollapsed ? ' is-collapsed' : ''}`;
+    groupEl.dataset.category = cat;
 
     const headerEl = document.createElement('div');
     headerEl.className = 'explorer-cat-header';
@@ -1340,7 +1402,6 @@ function renderFileExplorer() {
       if (e.target.closest('.ui-switch')) return;
       if (state.collapsedCategories.has(cat)) state.collapsedCategories.delete(cat);
       else state.collapsedCategories.add(cat);
-      savePrefsToStorage();
       groupEl.classList.toggle('is-collapsed', state.collapsedCategories.has(cat));
     });
 
@@ -1360,15 +1421,36 @@ function renderFileExplorer() {
     for (const v of catVideos) {
       const muted = isVideoDisabled(v.id);
       const sliceCount = (v.slices || []).filter(s => !s.deleted).length;
+      const gainDb = getVideoGainDb(v.id);
+      const gainTagHtml =
+        gainDb !== 0
+          ? `<span class="explorer-gain-tag" title="Holistic video volume: ${formatSignedDb(gainDb)}">${gainDb > 0 ? `+${gainDb}` : gainDb}dB</span>`
+          : '';
 
       const rowEl = document.createElement('div');
       rowEl.className = `explorer-video-row${muted ? ' is-muted' : ''}`;
       rowEl.dataset.videoId = v.id;
-      rowEl.title = `${v.slug} (${sliceCount} sample${sliceCount === 1 ? '' : 's'}) — click to ${muted ? 'enable' : 'mute'}`;
+      rowEl.title = `${v.slug} (${sliceCount} sample${sliceCount === 1 ? '' : 's'}${gainDb !== 0 ? ` · ${formatSignedDb(gainDb)}` : ''}) — click to ${muted ? 'enable' : 'mute'}`;
 
       rowEl.innerHTML = `
         <span class="explorer-video-label">${v.slug}</span>
+        ${gainTagHtml}
         <span class="explorer-video-meta">${sliceCount}</span>
+        <button
+          type="button"
+          class="explorer-inspect-btn"
+          title="Inspect video file &amp; adjust volume (${v.slug})"
+          aria-label="Inspect video file ${v.slug}"
+        >
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+            <line x1="2.5" y1="4" x2="13.5" y2="4"></line>
+            <circle cx="6" cy="4" r="1.4" fill="currentColor"></circle>
+            <line x1="2.5" y1="8" x2="13.5" y2="8"></line>
+            <circle cx="10.5" cy="8" r="1.4" fill="currentColor"></circle>
+            <line x1="2.5" y1="12" x2="13.5" y2="12"></line>
+            <circle cx="5" cy="12" r="1.4" fill="currentColor"></circle>
+          </svg>
+        </button>
         <button
           type="button"
           class="ui-switch${muted ? '' : ' is-on'}"
@@ -1378,7 +1460,14 @@ function renderFileExplorer() {
         ></button>
       `;
 
+      const inspectBtn = rowEl.querySelector('.explorer-inspect-btn');
+      inspectBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        openVideoInspectorModal(v.id);
+      });
+
       rowEl.addEventListener('click', e => {
+        if (e.target.closest('.explorer-inspect-btn')) return;
         e.stopPropagation();
         setVideosEnabled([v.id], muted);
       });
@@ -1503,7 +1592,7 @@ function selectKeyForConfig(midi, shouldTapPreview = false) {
 }
 
 // ============================================================================
-// Wireframe Keyline Chromatic Keyboard (3 Visible Octaves, Equal-Width Keys)
+// Wireframe Keyline Chromatic Keyboard (Decluttered: No Dots, No Note Labels)
 // ============================================================================
 let wfKeyboardDragActive = false;
 let wfKeyboardDragMidi = null;
@@ -1563,7 +1652,6 @@ function renderPianoKeyboard() {
       isAccidental && TOUCH_LEFT_ACCIDENTALS.has(pc) ? 'touch-left' : '',
       isOctaveStart ? 'octave-start' : '',
       isLastNatural ? 'last-natural' : '',
-      enabledCount > 0 ? 'configured-key' : 'empty-key',
       midi === state.selectedMidi ? 'selected-key' : '',
       isMidiStillHeld(midi) ? 'active-play' : ''
     ]
@@ -1574,13 +1662,6 @@ function renderPianoKeyboard() {
     keyEl.style.left = `${(leftUnits * unitWidthPct).toFixed(4)}%`;
     keyEl.style.width = `${unitWidthPct.toFixed(4)}%`;
     keyEl.style.setProperty('--note-color', getNoteColor(midi));
-
-    if (isOctaveStart) {
-      const lbl = document.createElement('span');
-      lbl.className = 'wf-key-label';
-      lbl.textContent = midiToName(midi);
-      keyEl.appendChild(lbl);
-    }
 
     const fullNoteName = midiToName(midi);
     const entry = keyMap[midi];
@@ -1601,7 +1682,7 @@ function renderPianoKeyboard() {
 }
 
 // ============================================================================
-// Center Bottom Zone: Single-Note Sample Controls
+// Center Bottom Zone: Single-Note Sample Controls (Decluttered Strip)
 // ============================================================================
 function getCandidatesForSelectedKey() {
   return getVisibleCandidatesForMidi(state.selectedMidi);
@@ -1613,13 +1694,6 @@ function renderSelectedKeyDeck() {
   const noteName = midiToName(midi);
   const freqStr = midiToFreq(midi);
   const entry = state.catalog?.keyboardMap?.[midi];
-
-  const noteTagEl = document.getElementById('selectedNoteTag');
-  if (noteTagEl) {
-    noteTagEl.textContent = noteName;
-    noteTagEl.style.borderColor = getNoteColor(midi);
-    noteTagEl.style.color = '#ffffff';
-  }
 
   const grid = document.getElementById('candidatesGrid');
   if (!grid) return;
@@ -1664,10 +1738,10 @@ function renderSelectedKeyDeck() {
         <button
           class="cand-inspect-btn trim-btn"
           type="button"
-          title="Inspect clip"
-          aria-label="Inspect clip"
+          title="Inspect sample (${cand.videoSlug})"
+          aria-label="Inspect sample ${cand.videoSlug}"
         >
-          <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
             <line x1="2.5" y1="4" x2="13.5" y2="4"></line>
             <circle cx="6" cy="4" r="1.4" fill="currentColor"></circle>
             <line x1="2.5" y1="8" x2="13.5" y2="8"></line>
@@ -1708,7 +1782,358 @@ function renderSelectedKeyDeck() {
 }
 
 // ============================================================================
-// Universal Clip Inspector Overlay (Rename + Inline Reference Tone / Slot + Tall Spectrogram + Trim + Confirm Trash)
+// Video File Inspector Overlay (Holistic Per-Video Integer dB Volume + Rename + Slices)
+// ============================================================================
+const videoInspState = {
+  open: false,
+  video: null,
+  selectedSliceId: null,
+  previewRaf: null,
+  previewAudioSrc: null,
+  previewGainNode: null,
+  previewStartCtxTime: 0,
+  previewPlayDur: 0,
+  trashConfirmArmed: false,
+  trashConfirmTimer: null
+};
+
+function resetVideoTrashConfirmUI() {
+  videoInspState.trashConfirmArmed = false;
+  if (videoInspState.trashConfirmTimer) {
+    clearTimeout(videoInspState.trashConfirmTimer);
+    videoInspState.trashConfirmTimer = null;
+  }
+  const trashBtn = document.getElementById('videoInspTrashBtn');
+  if (trashBtn) {
+    trashBtn.classList.remove('confirm-armed');
+    trashBtn.textContent = 'Move Video to Trash';
+  }
+}
+
+function stopVideoInspPreview() {
+  if (videoInspState.previewRaf) {
+    cancelAnimationFrame(videoInspState.previewRaf);
+    videoInspState.previewRaf = null;
+  }
+  if (videoInspState.previewAudioSrc) {
+    try {
+      videoInspState.previewAudioSrc.stop();
+    } catch {}
+    try {
+      videoInspState.previewAudioSrc.disconnect();
+    } catch {}
+    videoInspState.previewAudioSrc = null;
+  }
+  if (videoInspState.previewGainNode) {
+    try {
+      videoInspState.previewGainNode.disconnect();
+    } catch {}
+    videoInspState.previewGainNode = null;
+  }
+  const vid = document.getElementById('videoInspPreviewVideo');
+  if (vid) {
+    try {
+      vid.pause();
+    } catch {}
+  }
+  const btn = document.getElementById('videoInspPreviewBtn');
+  if (btn) btn.textContent = '▶ Preview (Space)';
+}
+
+function getActiveVideoSlices(video) {
+  return (video?.slices || []).filter(s => !s.deleted);
+}
+
+function selectVideoInspSlice(slice, shouldPlay = false) {
+  if (!videoInspState.video || !slice) return;
+  stopVideoInspPreview();
+  videoInspState.selectedSliceId = slice.id;
+
+  const slices = getActiveVideoSlices(videoInspState.video);
+  const idx = Math.max(0, slices.findIndex(s => s.id === slice.id));
+  const cand = findKeyboardCandidate(slice.id);
+  const midi = cand?.midi ?? slice.manualMidi ?? slice.midi ?? 60;
+  const noteName = cand?.isPerc || isPercussionSlice(videoInspState.video, slice) ? 'PERC' : midiToName(midi);
+
+  const readoutEl = document.getElementById('videoInspTimeReadout');
+  if (readoutEl) {
+    readoutEl.textContent = `Sample #${idx + 1} · ${noteName}`;
+  }
+
+  const vidEl = document.getElementById('videoInspPreviewVideo');
+  if (vidEl && slice.videoUrl) {
+    const nextSrc = withBust(slice.videoUrl);
+    if (vidEl.getAttribute('data-slice-id') !== slice.id) {
+      vidEl.setAttribute('data-slice-id', slice.id);
+      vidEl.src = nextSrc;
+      vidEl.muted = true;
+      vidEl.onloadedmetadata = () => {
+        try {
+          vidEl.currentTime = Number(cand?.trimIn ?? slice.trimIn ?? 0);
+        } catch {}
+      };
+    } else {
+      try {
+        vidEl.currentTime = Number(cand?.trimIn ?? slice.trimIn ?? 0);
+      } catch {}
+    }
+  }
+
+  document.querySelectorAll('#videoInspSlicesList .video-slice-row').forEach(row => {
+    row.classList.toggle('is-selected', row.dataset.sliceId === slice.id);
+  });
+
+  if (shouldPlay) {
+    startVideoInspPreview(true);
+  }
+}
+
+async function startVideoInspPreview(forceRestart = false) {
+  const vid = document.getElementById('videoInspPreviewVideo');
+  const video = videoInspState.video;
+  if (!vid || !video) return;
+
+  if (!forceRestart && (videoInspState.previewRaf || videoInspState.previewAudioSrc)) {
+    stopVideoInspPreview();
+    return;
+  }
+  stopVideoInspPreview();
+
+  const slices = getActiveVideoSlices(video);
+  const slice = slices.find(s => s.id === videoInspState.selectedSliceId) || slices[0];
+  if (!slice) return;
+
+  let buffer;
+  try {
+    buffer = await loadAudioBuffer(slice.audioUrl);
+    if (!videoInspState.open || videoInspState.video?.id !== video.id) return;
+  } catch {
+    return;
+  }
+
+  const cand = findKeyboardCandidate(slice.id);
+  const rate = Math.max(0.25, Math.min(4.0, cand?.playbackRate || 1.0));
+  const rawLimit = Math.min(MAX_CLIP_DUR, buffer.duration);
+  const savedIn = Number(cand?.trimIn ?? slice.trimIn ?? 0);
+  const savedOut = Number(cand?.trimOut ?? slice.trimOut ?? rawLimit);
+  const inSec = Math.max(0, Math.min(Math.max(0, rawLimit - 0.08), savedIn));
+  const outSec = Math.max(inSec + 0.08, Math.min(rawLimit, savedOut));
+  const unpitchedSpan = Math.max(0.08, outSec - inSec);
+
+  const playDur = Math.min(MAX_CLIP_DUR, unpitchedSpan / rate);
+  const bufferPlaySpan = Math.min(buffer.duration - inSec, playDur * rate);
+  const effectiveOutSec = inSec + bufferPlaySpan;
+
+  const forcedRelDur = Math.min(state.releaseSec, playDur * 0.78);
+  const forcedRelStart = Math.max(0.012, playDur - forcedRelDur);
+
+  const ctx = ensureAudioContext();
+  const now = ctx.currentTime;
+  const gainDb = getVideoGainDb(video.id);
+  const peakGain = Math.min(1.85, 0.88 * Math.pow(10, gainDb / 20));
+
+  const src = ctx.createBufferSource();
+  src.buffer = buffer;
+  src.playbackRate.setValueAtTime(rate, now);
+
+  const gainNode = ctx.createGain();
+  gainNode.gain.setValueAtTime(0.0001, now);
+  gainNode.gain.linearRampToValueAtTime(peakGain, now + 0.006);
+  gainNode.gain.setValueAtTime(peakGain, now + forcedRelStart);
+  gainNode.gain.linearRampToValueAtTime(peakGain * 0.56, now + forcedRelStart + forcedRelDur * 0.35);
+  gainNode.gain.linearRampToValueAtTime(peakGain * 0.18, now + forcedRelStart + forcedRelDur * 0.72);
+  gainNode.gain.linearRampToValueAtTime(0.0001, now + playDur);
+
+  src.connect(gainNode);
+  gainNode.connect(sampleHighpass);
+  src.start(now, inSec, bufferPlaySpan + 0.015);
+
+  videoInspState.previewAudioSrc = src;
+  videoInspState.previewGainNode = gainNode;
+  videoInspState.previewStartCtxTime = now;
+  videoInspState.previewPlayDur = playDur;
+
+  const btn = document.getElementById('videoInspPreviewBtn');
+  if (btn) btn.textContent = '⏹ Stop (Space)';
+
+  vid.muted = true;
+  vid.playbackRate = rate;
+  try {
+    vid.currentTime = inSec;
+  } catch {}
+  vid.play().catch(() => {});
+
+  const tick = () => {
+    if (!videoInspState.open || !videoInspState.previewAudioSrc) {
+      stopVideoInspPreview();
+      return;
+    }
+    const elapsed = Math.max(0, ctx.currentTime - videoInspState.previewStartCtxTime);
+    const bufTime = Math.min(effectiveOutSec, inSec + elapsed * rate);
+    if (elapsed >= videoInspState.previewPlayDur || bufTime >= effectiveOutSec - 0.005) {
+      stopVideoInspPreview();
+      try {
+        vid.currentTime = inSec;
+      } catch {}
+      return;
+    }
+    videoInspState.previewRaf = requestAnimationFrame(tick);
+  };
+  videoInspState.previewRaf = requestAnimationFrame(tick);
+}
+
+function updateVideoGainUiOnly(videoId) {
+  const gainDb = getVideoGainDb(videoId);
+  const readoutEl = document.getElementById('videoGainReadout');
+  const sliderEl = document.getElementById('videoGainSlider');
+  const zeroBtn = document.getElementById('videoGainZeroBtn');
+
+  if (readoutEl) readoutEl.textContent = formatSignedDb(gainDb);
+  if (sliderEl) sliderEl.value = String(gainDb);
+  if (zeroBtn) zeroBtn.classList.toggle('hidden', gainDb === 0);
+}
+
+function setVideoGainDb(videoId, nextGainDb, persistServer = true) {
+  if (!videoId) return;
+  const clamped = clampVideoGainDb(nextGainDb);
+  state.videoGainOverrides[videoId] = clamped;
+
+  const video = state.catalog?.videos?.find(v => v.id === videoId);
+  if (video) {
+    video.gainDb = clamped;
+  }
+
+  savePrefsToStorage();
+  renderFileExplorer();
+
+  if (videoInspState.open && videoInspState.video?.id === videoId) {
+    updateVideoGainUiOnly(videoId);
+  }
+  if (trimState.open && trimState.video?.id === videoId) {
+    populateInspectorHeaderAndPeaks();
+  }
+
+  if (persistServer && !state.isStaticMode) {
+    fetch('./api/video/gain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoId, gainDb: clamped })
+    }).catch(() => {});
+  }
+}
+
+function renderVideoInspectorModal() {
+  const video = videoInspState.video;
+  if (!video) return;
+
+  const slugInput = document.getElementById('videoInspSlugInput');
+  if (slugInput) {
+    slugInput.value = video.slug || '';
+    slugInput.readOnly = Boolean(state.isStaticMode);
+  }
+
+  const slices = getActiveVideoSlices(video);
+  const metaPill = document.getElementById('videoInspMetaPill');
+  if (metaPill) {
+    const cat = String(video.category || 'other').toUpperCase();
+    metaPill.textContent = `${cat} · ${slices.length} SAMPLE${slices.length === 1 ? '' : 'S'}`;
+  }
+
+  updateVideoGainUiOnly(video.id);
+
+  const listEl = document.getElementById('videoInspSlicesList');
+  if (listEl) {
+    listEl.innerHTML = '';
+    slices.forEach((slice, idx) => {
+      const cand = findKeyboardCandidate(slice.id);
+      const midi = cand?.midi ?? slice.manualMidi ?? slice.midi ?? 60;
+      const isPerc = cand ? cand.isPerc : isPercussionSlice(video, slice);
+      const noteColor = isPerc ? PERC_NOTE_COLOR : getNoteColor(midi);
+      const noteLabel = isPerc ? `PERC (${midiToName(midi)})` : midiToName(midi);
+      const dur = Number(cand?.durSec ?? slice.durSec ?? slice.rawDurSec ?? 1.0).toFixed(2);
+      const shiftCents = cand?.shiftCents ?? 0;
+      const shiftLabel = shiftCents === 0 ? '0c' : shiftCents > 0 ? `+${shiftCents}c` : `${shiftCents}c`;
+
+      const row = document.createElement('div');
+      row.className = `video-slice-row${slice.id === videoInspState.selectedSliceId ? ' is-selected' : ''}`;
+      row.dataset.sliceId = slice.id;
+
+      row.innerHTML = `
+        <div class="video-slice-left">
+          <span class="video-slice-dot" style="background:${noteColor}"></span>
+          <span class="video-slice-title">Sample #${idx + 1} · ${noteLabel}</span>
+          <span class="video-slice-meta">${dur}s · ${shiftLabel}</span>
+        </div>
+        ${
+          state.isStaticMode
+            ? ''
+            : `<button type="button" class="video-slice-open-btn" title="Open Individual Sample Inspector">Sample ›</button>`
+        }
+      `;
+
+      const openBtn = row.querySelector('.video-slice-open-btn');
+      if (openBtn) {
+        openBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          const vidId = video.id;
+          const slId = slice.id;
+          const rate = cand?.playbackRate || 1.0;
+          closeVideoInspectorModal();
+          openTrimModal(vidId, slId, rate);
+        });
+      }
+
+      row.addEventListener('click', () => {
+        selectVideoInspSlice(slice, true);
+      });
+
+      listEl.appendChild(row);
+    });
+  }
+
+  const chosen = slices.find(s => s.id === videoInspState.selectedSliceId) || slices[0];
+  if (chosen) {
+    selectVideoInspSlice(chosen, false);
+  }
+}
+
+function openVideoInspectorModal(videoId, preferredSliceId = null) {
+  const video = state.catalog?.videos?.find(v => v.id === videoId && !v.deleted);
+  if (!video) return;
+
+  if (trimState.open) {
+    closeTrimModal();
+  }
+  stopVideoInspPreview();
+  resetVideoTrashConfirmUI();
+
+  const slices = getActiveVideoSlices(video);
+  const initialSlice =
+    (preferredSliceId && slices.find(s => s.id === preferredSliceId)) || slices[0] || null;
+
+  videoInspState.open = true;
+  videoInspState.video = video;
+  videoInspState.selectedSliceId = initialSlice ? initialSlice.id : null;
+
+  const vidEl = document.getElementById('videoInspPreviewVideo');
+  if (vidEl) {
+    vidEl.removeAttribute('data-slice-id');
+    vidEl.style.transform = '';
+  }
+
+  renderVideoInspectorModal();
+  document.getElementById('videoInspectorModal')?.classList.remove('hidden');
+}
+
+function closeVideoInspectorModal() {
+  stopVideoInspPreview();
+  resetVideoTrashConfirmUI();
+  videoInspState.open = false;
+  document.getElementById('videoInspectorModal')?.classList.add('hidden');
+}
+
+// ============================================================================
+// Individual Sample Inspector Overlay (Cookie-Crumb Header + Pitch Slot + Spectrogram + Trim)
 // ============================================================================
 const trimState = {
   open: false,
@@ -1922,9 +2347,8 @@ async function startTrimPreview() {
   const forcedRelDur = Math.min(state.releaseSec, playDur * 0.78);
   const forcedRelStart = Math.max(0.012, playDur - forcedRelDur);
 
-  const dbOffset =
-    sliceRef.peakDb !== undefined ? Math.max(0, Math.min(8, (-22 - sliceRef.peakDb) * 0.35)) : 0;
-  const peakGain = Math.min(1.25, 0.88 * Math.pow(10, dbOffset / 20));
+  const gainDb = getVideoGainDb(trimState.video.id);
+  const peakGain = Math.min(1.85, 0.88 * Math.pow(10, gainDb / 20));
 
   const src = ctx.createBufferSource();
   src.buffer = buffer;
@@ -2009,7 +2433,7 @@ function renderInspectorSpectrogram() {
   const ctx = canvas.getContext('2d');
   if (!trimState.sliceAudioBuffer) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#05070b';
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, cssW, cssH);
     return;
   }
@@ -2049,12 +2473,8 @@ function renderInspectorSpectrogram() {
   const refMidi = trimState.refMidi;
   if (Number.isFinite(refMidi) && (refMidi !== trimState.assignedMidi || (isPerc && refMidi >= 36))) {
     const refFreq = Number(midiToFreq(refMidi));
-    const minFreq = 55;
-    const maxFreq = 4200;
-    if (refFreq >= minFreq && refFreq <= maxFreq) {
-      const logMin = Math.log(minFreq);
-      const logMax = Math.log(maxFreq);
-      const yRef = cssH - 1 - ((Math.log(refFreq) - logMin) / (logMax - logMin)) * (cssH - 1);
+    if (refFreq >= SPEC_MIN_FREQ && refFreq <= SPEC_MAX_FREQ) {
+      const yRef = cssH - 1 - specFreqToNormY(refFreq) * (cssH - 1);
       ctx.save();
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 1.6;
@@ -2066,7 +2486,7 @@ function renderInspectorSpectrogram() {
       ctx.setLineDash([]);
 
       const refTag = `♪ Ref: ${midiToName(refMidi)} (${refFreq}Hz)`;
-      ctx.font = 'bold 10px "SF Mono", Menlo, monospace';
+      ctx.font = 'bold 10px "Space Mono", "SF Mono", Menlo, monospace';
       const tagW = Math.ceil(ctx.measureText(refTag).width) + 10;
       ctx.fillStyle = '#38bdf8';
       ctx.fillRect(52, Math.max(2, yRef - 15), tagW, 14);
@@ -2077,7 +2497,7 @@ function renderInspectorSpectrogram() {
   }
 
   if (leftCut > 1) {
-    ctx.fillStyle = 'rgba(3, 4, 7, 0.74)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.76)';
     ctx.fillRect(0, 0, leftCut, cssH);
     ctx.strokeStyle = '#10b981';
     ctx.lineWidth = 1.5;
@@ -2087,7 +2507,7 @@ function renderInspectorSpectrogram() {
     ctx.stroke();
   }
   if (rightKeep < cssW - 1) {
-    ctx.fillStyle = 'rgba(3, 4, 7, 0.74)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.76)';
     ctx.fillRect(rightKeep, 0, cssW - rightKeep, cssH);
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 1.5;
@@ -2099,14 +2519,9 @@ function renderInspectorSpectrogram() {
 }
 
 function isTrimModified() {
-  const s = trimState.slice;
-  const persistedTrim = Boolean(
-    s && (s.isTrimmed || Number.isFinite(s.trimIn) || Number.isFinite(s.trimOut))
-  );
   return (
-    persistedTrim ||
     trimState.inSec > 0.005 ||
-    trimState.outSec < Math.max(0.08, trimState.rawDur - 0.005)
+    trimState.outSec < Math.max(0.08, trimState.rawDur - 0.015)
   );
 }
 
@@ -2155,7 +2570,7 @@ function renderTrimWaveformCanvas() {
 
   const ctx = canvas.getContext('2d');
   ctx.scale(dpr, dpr);
-  ctx.fillStyle = '#05070b';
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, cssW, cssH);
 
   const rawDur = Math.max(0.08, Math.min(MAX_CLIP_DUR, trimState.rawDur));
@@ -2193,7 +2608,7 @@ function renderTrimWaveformCanvas() {
         if (av > localPeak) localPeak = av;
       }
       const insideTrim = t0 >= trimState.inSec - 0.002 && t0 <= trimState.outSec + 0.002;
-      ctx.fillStyle = insideTrim ? '#38bdf8' : 'rgba(148, 163, 184, 0.35)';
+      ctx.fillStyle = insideTrim ? '#22c55e' : 'rgba(142, 142, 142, 0.35)';
       const amp = (localPeak / maxAbs) * (midY - 6);
       const h = Math.max(2, amp * 2);
       ctx.fillRect(x, midY - h / 2, 1, h);
@@ -2224,20 +2639,22 @@ function renderTrimWaveformCanvas() {
   ctx.stroke();
   ctx.restore();
 
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
   ctx.fillRect(0, waveAreaH, cssW, 18);
-  ctx.font = '10px "SF Mono", Menlo, monospace';
+  ctx.font = '10px "Space Mono", "SF Mono", Menlo, monospace';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  const endLabel = `${rawDur.toFixed(2)}s`;
+  const endW = ctx.measureText(endLabel).width;
   const tickStep = rawDur <= 1.2 ? 0.25 : 0.5;
   for (let t = 0; t <= rawDur + 0.001; t += tickStep) {
     const x = (t / rawDur) * cssW;
     ctx.fillRect(Math.min(cssW - 1, x), waveAreaH, 1, 4);
-    if (x < cssW - 34) {
-      ctx.fillText(`${t.toFixed(tickStep < 0.5 ? 2 : 1)}s`, x + 3, cssH - 5);
+    const tickLabel = `${t.toFixed(tickStep < 0.5 ? 2 : 1)}s`;
+    const tickW = ctx.measureText(tickLabel).width;
+    if (x + tickW + 14 < cssW - endW - 6) {
+      ctx.fillText(tickLabel, x + 3, cssH - 5);
     }
   }
-  const endLabel = `${rawDur.toFixed(2)}s`;
-  const endW = ctx.measureText(endLabel).width;
   ctx.fillText(endLabel, Math.max(4, cssW - endW - 5), cssH - 5);
 }
 
@@ -2372,7 +2789,17 @@ function populateInspectorHeaderAndPeaks() {
         slice.dspOriginal
     );
 
-  document.getElementById('inspectorSlugInput').value = video.slug || '';
+  const parentBtn = document.getElementById('sampleInspParentBtn');
+  if (parentBtn) {
+    const gainDb = getVideoGainDb(video.id);
+    parentBtn.textContent = gainDb ? `${video.slug} (${formatSignedDb(gainDb)})` : video.slug;
+  }
+  const sliceLabelEl = document.getElementById('sampleInspSliceLabel');
+  if (sliceLabelEl) {
+    const activeSlices = getActiveVideoSlices(video);
+    const sliceIdx = Math.max(0, activeSlices.findIndex(s => s.id === slice.id));
+    sliceLabelEl.textContent = `Sample #${sliceIdx + 1}`;
+  }
 
   const slotSelect = document.getElementById('inspectorSlotSelect');
   if (slotSelect) {
@@ -2417,15 +2844,20 @@ function populateInspectorHeaderAndPeaks() {
     }
   }
 
-  const activeShiftCents =
-    cand?.shiftCents ??
-    Math.round(1200 * Math.log2(Math.max(0.25, trimState.playbackRate || 1.0)));
+  const activeShiftCents = Math.max(
+    -100,
+    Math.min(
+      100,
+      cand?.shiftCents ??
+        Math.round(1200 * Math.log2(Math.max(0.25, trimState.playbackRate || 1.0)))
+    )
+  );
   const isUntouchedDsp =
     !Number.isFinite(slice.manualMidi) && !Number.isFinite(slice.manualTuneCents);
 
   const tuneSlider = document.getElementById('inspectorTuneSlider');
   if (tuneSlider) {
-    tuneSlider.value = String(Math.max(-1200, Math.min(1200, activeShiftCents)));
+    tuneSlider.value = String(activeShiftCents);
   }
   const tuneReadout = document.getElementById('inspectorTuneReadout');
   if (tuneReadout) {
@@ -2447,6 +2879,10 @@ async function openTrimModal(videoId, sliceId, playbackRate = 1.0) {
   if (!video) return;
   const slice = (video.slices || []).find(s => s.id === sliceId && !s.deleted) || video.slices?.[0];
   if (!slice) return;
+
+  if (videoInspState.open) {
+    closeVideoInspectorModal();
+  }
 
   stopTrimPreview();
   stopReferenceTone(true);
@@ -2814,27 +3250,11 @@ function setupEventListeners() {
     wfKeyboardDragMidi = null;
   });
 
-  // Left Collapsible Video File Explorer controls
-  const collapseBtn = document.getElementById('explorerCollapseBtn');
-  if (collapseBtn) {
-    collapseBtn.addEventListener('click', () => setExplorerCollapsed(true));
-  }
-  const expandBtn = document.getElementById('explorerExpandBtn');
-  if (expandBtn) {
-    expandBtn.addEventListener('click', () => setExplorerCollapsed(false));
-  }
-  const allBtn = document.getElementById('explorerAllBtn');
-  if (allBtn) {
-    allBtn.addEventListener('click', () => {
-      const ids = (state.catalog?.videos || []).filter(v => !v.deleted).map(v => v.id);
-      setVideosEnabled(ids, true);
-    });
-  }
-  const noneBtn = document.getElementById('explorerNoneBtn');
-  if (noneBtn) {
-    noneBtn.addEventListener('click', () => {
-      const ids = (state.catalog?.videos || []).filter(v => !v.deleted).map(v => v.id);
-      setVideosEnabled(ids, false);
+  // Unified Far Top-Left Hamburger Toggle (Sidebar + Bottom Transport Together)
+  const chromeToggleBtn = document.getElementById('chromeToggleBtn');
+  if (chromeToggleBtn) {
+    chromeToggleBtn.addEventListener('click', () => {
+      setChromeCollapsed(!state.chromeCollapsed);
     });
   }
 
@@ -2959,47 +3379,152 @@ function setupEventListeners() {
     });
   }
 
-  document.querySelectorAll('.close-drawer-btn').forEach(btn => {
+  document.querySelectorAll('[data-close]').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.dataset.close === 'trimModal') closeTrimModal();
+      if (btn.dataset.close === 'videoInspectorModal') closeVideoInspectorModal();
     });
   });
   document.querySelectorAll('.drawer-backdrop').forEach(backdrop => {
     backdrop.addEventListener('click', e => {
-      if (e.target === backdrop && backdrop.id === 'trimModal') {
-        closeTrimModal();
-      }
+      if (e.target !== backdrop) return;
+      if (backdrop.id === 'trimModal') closeTrimModal();
+      if (backdrop.id === 'videoInspectorModal') closeVideoInspectorModal();
     });
   });
 
-  // Inspector Header Editable Object Name
-  const inspectorSlugInput = document.getElementById('inspectorSlugInput');
-  inspectorSlugInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') e.target.blur();
-  });
-  inspectorSlugInput.addEventListener('blur', async () => {
-    if (!trimState.open || !trimState.video) return;
-    const nextSlug = inspectorSlugInput.value.trim();
-    if (nextSlug && nextSlug !== trimState.video.slug) {
-      await apiPost('/api/video/rename', {
-        videoId: trimState.video.id,
-        slug: nextSlug
-      });
-      const freshVideo = state.catalog?.videos.find(v => v.id === trimState.video.id);
-      const freshSlice = freshVideo?.slices?.find(s => s.id === trimState.slice?.id && !s.deleted);
-      if (freshVideo) {
-        trimState.video = freshVideo;
-        if (freshSlice) {
-          trimState.slice = freshSlice;
-          const vidEl = document.getElementById('trimScrubVideo');
-          vidEl.src = withBust(freshSlice.videoUrl);
-          vidEl.style.transform = '';
+  // Video File Inspector Controls (Rename, Rotate, Preview, Holistic Volume dB, Trash)
+  const videoInspSlugInput = document.getElementById('videoInspSlugInput');
+  if (videoInspSlugInput) {
+    videoInspSlugInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') e.target.blur();
+    });
+    videoInspSlugInput.addEventListener('blur', async () => {
+      if (!videoInspState.open || !videoInspState.video || state.isStaticMode) return;
+      const nextSlug = videoInspSlugInput.value.trim();
+      if (nextSlug && nextSlug !== videoInspState.video.slug) {
+        stopVideoInspPreview();
+        const vidId = videoInspState.video.id;
+        await apiPost('/api/video/rename', {
+          videoId: vidId,
+          slug: nextSlug
+        });
+        const freshVideo = state.catalog?.videos.find(v => v.id === vidId && !v.deleted);
+        if (freshVideo) {
+          videoInspState.video = freshVideo;
+          const vidEl = document.getElementById('videoInspPreviewVideo');
+          if (vidEl) vidEl.removeAttribute('data-slice-id');
+          renderVideoInspectorModal();
         }
-        populateInspectorHeaderAndPeaks();
-        scrubTrimVideoTo(trimState.inSec);
       }
-    }
-  });
+    });
+  }
+
+  const videoInspRotateBtn = document.getElementById('videoInspRotateBtn');
+  if (videoInspRotateBtn) {
+    videoInspRotateBtn.addEventListener('click', async () => {
+      if (!videoInspState.open || !videoInspState.video || state.isStaticMode) return;
+      stopVideoInspPreview();
+      videoInspRotateBtn.disabled = true;
+      videoInspRotateBtn.textContent = '...';
+      try {
+        const vidId = videoInspState.video.id;
+        await apiPost('/api/video/rotate', {
+          videoId: vidId,
+          deltaDeg: 90
+        });
+        const freshVideo = state.catalog?.videos.find(v => v.id === vidId && !v.deleted);
+        if (freshVideo) {
+          videoInspState.video = freshVideo;
+          const vidEl = document.getElementById('videoInspPreviewVideo');
+          if (vidEl) vidEl.removeAttribute('data-slice-id');
+          renderVideoInspectorModal();
+        }
+      } finally {
+        videoInspRotateBtn.disabled = false;
+        videoInspRotateBtn.textContent = '↻ 90°';
+      }
+    });
+  }
+
+  const videoInspPreviewBtn = document.getElementById('videoInspPreviewBtn');
+  if (videoInspPreviewBtn) {
+    videoInspPreviewBtn.addEventListener('click', () => {
+      startVideoInspPreview(false);
+    });
+  }
+
+  const videoGainMinusBtn = document.getElementById('videoGainMinusBtn');
+  if (videoGainMinusBtn) {
+    videoGainMinusBtn.addEventListener('click', () => {
+      if (!videoInspState.open || !videoInspState.video) return;
+      const vidId = videoInspState.video.id;
+      setVideoGainDb(vidId, getVideoGainDb(vidId) - 1, true);
+    });
+  }
+
+  const videoGainPlusBtn = document.getElementById('videoGainPlusBtn');
+  if (videoGainPlusBtn) {
+    videoGainPlusBtn.addEventListener('click', () => {
+      if (!videoInspState.open || !videoInspState.video) return;
+      const vidId = videoInspState.video.id;
+      setVideoGainDb(vidId, getVideoGainDb(vidId) + 1, true);
+    });
+  }
+
+  const videoGainSlider = document.getElementById('videoGainSlider');
+  if (videoGainSlider) {
+    videoGainSlider.addEventListener('input', () => {
+      if (!videoInspState.open || !videoInspState.video) return;
+      setVideoGainDb(videoInspState.video.id, Number(videoGainSlider.value) || 0, false);
+    });
+    videoGainSlider.addEventListener('change', () => {
+      if (!videoInspState.open || !videoInspState.video) return;
+      setVideoGainDb(videoInspState.video.id, Number(videoGainSlider.value) || 0, true);
+    });
+  }
+
+  const videoGainZeroBtn = document.getElementById('videoGainZeroBtn');
+  if (videoGainZeroBtn) {
+    videoGainZeroBtn.addEventListener('click', () => {
+      if (!videoInspState.open || !videoInspState.video) return;
+      setVideoGainDb(videoInspState.video.id, 0, true);
+    });
+  }
+
+  const videoInspTrashBtn = document.getElementById('videoInspTrashBtn');
+  if (videoInspTrashBtn) {
+    videoInspTrashBtn.addEventListener('click', async () => {
+      if (!videoInspState.open || !videoInspState.video || state.isStaticMode) return;
+      if (!videoInspState.trashConfirmArmed) {
+        videoInspState.trashConfirmArmed = true;
+        videoInspTrashBtn.classList.add('confirm-armed');
+        videoInspTrashBtn.textContent = 'Confirm Move Video to _trash?';
+        if (videoInspState.trashConfirmTimer) clearTimeout(videoInspState.trashConfirmTimer);
+        videoInspState.trashConfirmTimer = setTimeout(() => {
+          resetVideoTrashConfirmUI();
+        }, 3500);
+        return;
+      }
+      resetVideoTrashConfirmUI();
+      stopVideoInspPreview();
+      const vidId = videoInspState.video.id;
+      closeVideoInspectorModal();
+      await apiPost('/api/video/trash', { videoId: vidId });
+    });
+  }
+
+  // Sample Inspector Parent Video Breadcrumb Link -> Opens Video File Inspector
+  const sampleInspParentBtn = document.getElementById('sampleInspParentBtn');
+  if (sampleInspParentBtn) {
+    sampleInspParentBtn.addEventListener('click', () => {
+      if (!trimState.open || !trimState.video) return;
+      const vidId = trimState.video.id;
+      const slId = trimState.slice?.id || null;
+      closeTrimModal();
+      openVideoInspectorModal(vidId, slId);
+    });
+  }
 
   // Inspector Video Rotate 90° Button
   const rotateBtn = document.getElementById('inspectorRotateBtn');
@@ -3111,10 +3636,10 @@ function setupEventListeners() {
     });
   }
 
-  // Inspector Re-Pitch / Fine-Tune Slider
+  // Inspector Re-Pitch / Fine-Tune Slider (Strictly Clamped to ±1 Semitone / ±100 Cents)
   const applyManualTuneCents = async nextCents => {
     if (!trimState.open || !trimState.video || !trimState.slice) return;
-    const clamped = Math.max(-1200, Math.min(1200, Math.round(Number(nextCents) || 0)));
+    const clamped = Math.max(-100, Math.min(100, Math.round(Number(nextCents) || 0)));
     const vidId = trimState.video.id;
     const slId = trimState.slice.id;
     trimState.playbackRate = Number(Math.pow(2, clamped / 1200).toFixed(4));
@@ -3134,7 +3659,7 @@ function setupEventListeners() {
   if (tuneSliderEl) {
     tuneSliderEl.addEventListener('input', () => {
       if (!trimState.open || !trimState.slice) return;
-      const c = Math.round(Number(tuneSliderEl.value) || 0);
+      const c = Math.max(-100, Math.min(100, Math.round(Number(tuneSliderEl.value) || 0)));
       trimState.playbackRate = Number(Math.pow(2, c / 1200).toFixed(4));
       const readout = document.getElementById('inspectorTuneReadout');
       if (readout) readout.textContent = formatTuneReadout(c, false);
@@ -3346,6 +3871,15 @@ function setupEventListeners() {
 
     if (e.key === 'Escape') {
       if (trimState.open) closeTrimModal();
+      if (videoInspState.open) closeVideoInspectorModal();
+      return;
+    }
+
+    if (videoInspState.open) {
+      if ((e.code === 'Space' || e.key === ' ') && !e.repeat) {
+        e.preventDefault();
+        startVideoInspPreview(false);
+      }
       return;
     }
 
@@ -3479,12 +4013,13 @@ function initWebMIDI() {
 // ============================================================================
 async function init() {
   const prefs = loadPrefsFromStorage();
-  state.explorerCollapsed = Boolean(prefs.explorerCollapsed);
-  state.collapsedCategories = new Set(prefs.collapsedCategories || []);
+  state.chromeCollapsed = Boolean(prefs.chromeCollapsed);
+  state.collapsedCategories = new Set(CATEGORY_ORDER);
+  state.videoGainOverrides = prefs.videoGains || {};
   state.sliceToggleOverrides = prefs.sliceToggles || {};
   state.baseOctaveMidi = normalizeBaseOctaveMidi(prefs.baseOctaveMidi ?? 60);
 
-  setExplorerCollapsed(state.explorerCollapsed);
+  setChromeCollapsed(state.chromeCollapsed);
   updateMidiTransportUi();
 
   const threeCanvas = document.getElementById('threeStageCanvas');
@@ -3557,6 +4092,24 @@ async function init() {
   const validVideos = (state.catalog?.videos || []).filter(v => !v.deleted);
   const validIdSet = new Set(validVideos.map(v => v.id));
   const catalogDisabled = new Set(validVideos.filter(v => v.enabled === false).map(v => v.id));
+
+  // Always start with ALL categories collapsed on every page load
+  const allCats = new Set(CATEGORY_ORDER);
+  for (const v of validVideos) {
+    allCats.add(String(v.category || 'other').toLowerCase());
+  }
+  state.collapsedCategories = allCats;
+
+  // Sync holistic per-video gainDb between catalog and saved overrides
+  for (const v of validVideos) {
+    const catGain = clampVideoGainDb(v.gainDb ?? 0);
+    if (state.isStaticMode && Object.prototype.hasOwnProperty.call(state.videoGainOverrides, v.id)) {
+      v.gainDb = clampVideoGainDb(state.videoGainOverrides[v.id]);
+    } else {
+      v.gainDb = catGain;
+      state.videoGainOverrides[v.id] = catGain;
+    }
+  }
 
   if (prefs.hasSavedDisabledVideos) {
     state.disabledVideoIds = new Set(prefs.disabledVideoIds.filter(id => validIdSet.has(id)));

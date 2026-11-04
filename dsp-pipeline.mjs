@@ -793,12 +793,12 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
       const exactMidi = s.exactMidi ?? (s.midi + (s.cents || 0) / 100);
 
       if (hasManualMove || hasManualTune) {
-        shiftCents = Math.round(Number(s.manualTuneCents || 0));
+        shiftCents = Math.max(-100, Math.min(100, Math.round(Number(s.manualTuneCents || 0))));
         playbackRate = Number(Math.pow(2, shiftCents / 1200).toFixed(4));
       } else if (!isPercSlot) {
         const shiftSemitones = targetMidi - exactMidi;
-        shiftCents = Math.round(shiftSemitones * 100);
-        playbackRate = Number(Math.pow(2, shiftSemitones / 12).toFixed(4));
+        shiftCents = Math.max(-100, Math.min(100, Math.round(shiftSemitones * 100)));
+        playbackRate = Number(Math.pow(2, shiftCents / 1200).toFixed(4));
       }
 
       const isOverridden =
@@ -828,7 +828,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
           dspMidi,
           dspName,
           manualMidi: hasManualMove ? targetMidi : null,
-          manualTuneCents: hasManualTune ? Math.round(Number(s.manualTuneCents)) : (hasManualMove ? 0 : null),
+          manualTuneCents: hasManualTune ? Math.max(-100, Math.min(100, Math.round(Number(s.manualTuneCents)))) : (hasManualMove ? 0 : null),
           isOverridden,
           freq: s.freq,
           cents: 0,

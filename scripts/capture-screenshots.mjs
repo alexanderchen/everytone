@@ -23,7 +23,7 @@ fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function waitForDebuggerUrl(port, timeoutMs = 3500) {
+async function waitForDebuggerUrl(port, timeoutMs = 4500) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -106,13 +106,14 @@ async function waitForAppReady(cdp) {
     const ready = await cdp.evalJs(
       `Boolean(
         document.querySelectorAll('#pianoKeyboard .wf-key').length === 36 &&
-        document.querySelectorAll('#explorerList .explorer-video-row').length > 100
+        document.querySelectorAll('#explorerList .explorer-video-row').length > 100 &&
+        document.fonts && document.fonts.status === 'loaded'
       )`
     );
     if (ready) break;
     await sleep(150);
   }
-  await sleep(500);
+  await sleep(600);
 }
 
 async function main() {
@@ -151,76 +152,147 @@ async function main() {
 
     await waitForAppReady(cdp);
 
-    // Ensure clean starting state (all videos enabled, C4–B6 octave)
-    await cdp.evalJs(`(() => {
-      document.getElementById('explorerAllBtn')?.click();
-    })()`);
-    await sleep(350);
-
-    const initialCheck = await cdp.evalJs(`({
-      explorerCount: document.getElementById('explorerActiveCount')?.textContent,
-      wfKeys: document.querySelectorAll('#pianoKeyboard .wf-key').length,
-      midiPlayDisabled: document.getElementById('midiPlayPauseBtn')?.disabled,
-      octLabel: document.getElementById('octaveRangeLabel')?.textContent,
-      c4Candidates: document.querySelectorAll('#candidatesGrid .candidate-card').length
-    })`);
-    console.log('Initial UI Check:', initialCheck);
-
-    // ------------------------------------------------------------------------
-    // Shot 11: Idle Music-Software UX Overhaul
-    // Left Video File Explorer + Three.js 3D Stage + 3-Zone Bottom Transport & Keyline Keyboard
-    // ------------------------------------------------------------------------
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '11_music-software-layout-idle.png'));
-
-    // Test muting first two rows in Explorer + reload persistence!
-    const mutedSlugs = await cdp.evalJs(`(() => {
-      const rows = Array.from(document.querySelectorAll('#explorerList .explorer-video-row')).slice(0, 3);
-      const names = rows.map(r => r.querySelector('.explorer-video-label')?.textContent);
-      rows.forEach(r => r.click());
-      return names;
-    })()`);
-    await sleep(300);
-
-    // Reload page and confirm muted switches persist across page load
-    await cdp.send('Page.reload', { ignoreCache: false });
+    // Clear saved storage & reload once to verify pristine fresh-load state
+    await cdp.evalJs(`window.localStorage.removeItem('everytone_prefs_v2')`);
+    await cdp.send('Page.reload', { ignoreCache: true });
     await waitForAppReady(cdp);
 
-    const persistedCheck = await cdp.evalJs(`({
-      explorerCountAfterReload: document.getElementById('explorerActiveCount')?.textContent,
-      mutedRowCountAfterReload: document.querySelectorAll('#explorerList .explorer-video-row.is-muted').length
-    })`);
-    console.log('Reload Persistence Check (muted 3 videos):', mutedSlugs, persistedCheck);
-    if (persistedCheck.mutedRowCountAfterReload !== 3) {
-      throw new Error(`Expected 3 muted videos after reload, got ${persistedCheck.mutedRowCountAfterReload}`);
+    const freshAudit = await cdp.evalJs(`(() => {
+      const catGroups = Array.from(document.querySelectorAll('#explorerList .explorer-cat-group'));
+      const collapsedGroups = catGroups.filter(g => g.classList.contains('is-collapsed'));
+      return {
+        fontFamily: getComputedStyle(document.body).fontFamily,
+        explorerBg: getComputedStyle(document.getElementById('fileExplorer')).backgroundColor,
+        dockBg: getComputedStyle(document.getElementById('transportDock')).backgroundColor,
+        keyBg: getComputedStyle(document.querySelector('#pianoKeyboard .wf-key')).backgroundColor,
+        totalCategories: catGroups.length,
+        collapsedCategories: collapsedGroups.length,
+        hasOldAllNoneBtns: Boolean(document.getElementById('explorerAllBtn') || document.getElementById('explorerNoneBtn')),
+        hasNoteLabelInSamples: Boolean(document.getElementById('selectedKeyNoteLabel')),
+        keyInnerTextLength: Array.from(document.querySelectorAll('#pianoKeyboard .wf-key')).map(k => k.textContent.trim()).join('').length,
+        specBlendMode: getComputedStyle(document.querySelector('.slot-mini-spec')).mixBlendMode
+      };
+    })()`);
+    console.log('Fresh Load Audit:', freshAudit);
+
+    if (freshAudit.collapsedCategories !== freshAudit.totalCategories) {
+      throw new Error('Expected ALL categories to start collapsed on page load');
+    }
+    if (freshAudit.explorerBg !== 'rgb(0, 0, 0)' || freshAudit.dockBg !== 'rgb(0, 0, 0)') {
+      throw new Error(`Expected pure black backgrounds, got explorer=${freshAudit.explorerBg}, dock=${freshAudit.dockBg}`);
     }
 
     // ------------------------------------------------------------------------
-    // Shot 12: Active Polyphonic Performance + Muted Explorer Switches + Chromatic Keyline Hits
-    // Play C4 (KeyA) + D#4 (KeyE) + G4 (KeyG) so 3 foreground 100%-opacity video+spectrogram slots
-    // pop on and both natural + accidental wireframe keys light up in their chromatic colors
+    // Shot 13: Space Mono + Pure Black Keyline Layout + All Categories Collapsed + Grid Note Dots
     // ------------------------------------------------------------------------
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }))`);
-    await sleep(180);
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true }))`);
-    await sleep(180);
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyG', key: 'g', bubbles: true }))`);
-    await sleep(340);
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '13_space-mono-solid-black-and-grid-note-dots.png'));
 
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '12_explorer-mute-and-keyline-polyphony.png'));
-
-    // Release keys and restore all 129/129 videos enabled so localhost catalog.json stays clean
+    // Expand 'winds' category so hand-whistle (-2dB) is clearly visible in explorer,
+    // and trigger 3 polyphonic notes (C4 + E4 + G4) to show 100% grayscale screen-blended spectrograms + chromatic f0 bar
     await cdp.evalJs(`(() => {
-      for (const code of ['KeyA', 'KeyE', 'KeyG']) {
-        window.dispatchEvent(new KeyboardEvent('keyup', { code, key: 'a', bubbles: true }));
-      }
-      document.getElementById('explorerAllBtn')?.click();
+      const windsGroup = document.querySelector('#explorerList .explorer-cat-group[data-category="winds"] .explorer-cat-header');
+      windsGroup?.click();
     })()`);
-    await sleep(400);
+    await sleep(220);
+
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }))`);
+    await sleep(140);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', bubbles: true }))`);
+    await sleep(140);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyG', key: 'g', bubbles: true }))`);
+    await sleep(360);
+
+    // ------------------------------------------------------------------------
+    // Shot 14: Floating 100% Gray Screen-Blended Spectrograms + Chromatic f0 Bar + Winds Expanded (hand-whistle)
+    // ------------------------------------------------------------------------
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '14_floating-gray-screen-spectrograms-and-winds.png'));
+
+    // Release KeyG and verify 0.20s smooth visual fade-out activates immediately
+    const fadeOutCheck = await cdp.evalJs(`(() => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyG', key: 'g', bubbles: true }));
+      const fadingCount = document.querySelectorAll('.stage-slot-unit.is-fading-out').length;
+      return { fadingCount };
+    })()`);
+    console.log('0.20s Stage Fade-Out Check:', fadeOutCheck);
+
+    // Release remaining keys and wait for 200ms fade-out to finish cleanly
+    await cdp.evalJs(`(() => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyA', key: 'a', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD', key: 'd', bubbles: true }));
+    })()`);
+    await sleep(320);
+
+    // Verify unified top-left hamburger button collapses & expands BOTH sidebar and bottom transport
+    const hamburgerCheck = await cdp.evalJs(`(() => {
+      const btn = document.getElementById('chromeToggleBtn');
+      btn.click();
+      const bothCollapsed =
+        document.getElementById('fileExplorer').classList.contains('collapsed') &&
+        document.getElementById('transportDock').classList.contains('collapsed');
+      btn.click();
+      const bothExpanded =
+        !document.getElementById('fileExplorer').classList.contains('collapsed') &&
+        !document.getElementById('transportDock').classList.contains('collapsed');
+      return { bothCollapsed, bothExpanded };
+    })()`);
+    console.log('Unified Hamburger Toggle Check:', hamburgerCheck);
+    if (!hamburgerCheck.bothCollapsed || !hamburgerCheck.bothExpanded) {
+      throw new Error('Unified hamburger toggle failed to collapse/expand both panels');
+    }
+    await sleep(260);
+
+    // Open Video File Inspector on 'hand-whistle' (in winds)
+    await cdp.evalJs(`(() => {
+      const rows = Array.from(document.querySelectorAll('#explorerList .explorer-video-row'));
+      const hw = rows.find(r => r.querySelector('.explorer-video-label')?.textContent.trim() === 'hand-whistle');
+      hw?.querySelector('.explorer-inspect-btn')?.click();
+    })()`);
+    await sleep(550);
+
+    const videoInspCheck = await cdp.evalJs(`({
+      open: !document.getElementById('videoInspectorModal').classList.contains('hidden'),
+      slug: document.getElementById('videoInspSlugInput')?.value,
+      gainReadout: document.getElementById('videoGainReadout')?.textContent,
+      sliceRows: document.querySelectorAll('#videoInspSlicesList .video-slice-row').length
+    })`);
+    console.log('Video File Inspector Check:', videoInspCheck);
+
+    // ------------------------------------------------------------------------
+    // Shot 15: Video File Inspector (Holistic Volume dB + Extracted Samples List on hand-whistle)
+    // ------------------------------------------------------------------------
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '15_video-file-inspector-holistic-volume.png'));
+
+    // Drill down from Video File Inspector -> Sample #1 Inspector and verify cookie-crumb + ±100c clamp
+    await cdp.evalJs(`(() => {
+      document.querySelector('#videoInspSlicesList .video-slice-open-btn')?.click();
+    })()`);
+    await sleep(600);
+
+    const sampleInspCheck = await cdp.evalJs(`({
+      open: !document.getElementById('trimModal').classList.contains('hidden'),
+      parentCrumb: document.getElementById('sampleInspParentBtn')?.textContent?.trim(),
+      sliceCrumb: document.getElementById('sampleInspSliceLabel')?.textContent?.trim(),
+      tuneMin: document.getElementById('inspectorTuneSlider')?.min,
+      tuneMax: document.getElementById('inspectorTuneSlider')?.max
+    })`);
+    console.log('Sample Inspector Breadcrumb & ±1 Semitone Clamp Check:', sampleInspCheck);
+    if (sampleInspCheck.tuneMin !== '-100' || sampleInspCheck.tuneMax !== '100') {
+      throw new Error(`Expected ±100 cents slider limits, got ${sampleInspCheck.tuneMin}..${sampleInspCheck.tuneMax}`);
+    }
+
+    // ------------------------------------------------------------------------
+    // Shot 16: Individual Sample Inspector (Cookie-Crumb Header + ±1 Semitone Max Slider + Cropped/Mel Spectrogram)
+    // ------------------------------------------------------------------------
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '16_sample-inspector-breadcrumb-and-1st-clamp.png'));
+
+    // Close modal cleanly
+    await cdp.evalJs(`document.querySelector('[data-close="trimModal"]')?.click()`);
+    await sleep(200);
 
     if (cdp.consoleErrors.length > 0) {
-      console.warn('Console errors detected:', cdp.consoleErrors);
+      throw new Error(`Console errors detected: ${JSON.stringify(cdp.consoleErrors)}`);
     } else {
-      console.log('Zero uncaught runtime exceptions.');
+      console.log('Zero uncaught runtime exceptions across all interactions!');
     }
   } finally {
     cdp?.close();

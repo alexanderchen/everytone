@@ -270,6 +270,16 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, saveCatalog(catalog));
     }
 
+    if (pathname === '/api/video/gain' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const catalog = loadCatalog();
+      const video = (catalog.videos || []).find(v => v.id === body.videoId);
+      if (!video) return sendJson(res, 404, { error: 'Video not found' });
+      const rawGain = Number(body.gainDb);
+      video.gainDb = Number.isFinite(rawGain) ? Math.max(-12, Math.min(12, Math.round(rawGain))) : 0;
+      return sendJson(res, 200, saveCatalog(catalog));
+    }
+
     if (pathname === '/api/video/rotate' && req.method === 'POST') {
       const body = await parseBody(req);
       const catalog = loadCatalog();
@@ -585,15 +595,15 @@ const server = http.createServer(async (req, res) => {
         slice.manualMidi = targetMidi;
         slice.manualTuneCents =
           body.manualTuneCents !== undefined
-            ? Math.max(-2400, Math.min(2400, Math.round(Number(body.manualTuneCents) || 0)))
+            ? Math.max(-100, Math.min(100, Math.round(Number(body.manualTuneCents) || 0)))
             : 0;
         syncSliceEnablementAndFiles(targetMidi);
       } else if (body.manualTuneCents !== undefined) {
-        // 3. Re-pitch / fine-tune clip on its current slot
+        // 3. Re-pitch / fine-tune clip on its current slot (strictly clamped to ±1 semitone / ±100 cents)
         ensureDspOriginalSnapshot();
         slice.manualTuneCents = Math.max(
-          -2400,
-          Math.min(2400, Math.round(Number(body.manualTuneCents) || 0))
+          -100,
+          Math.min(100, Math.round(Number(body.manualTuneCents) || 0))
         );
       }
 

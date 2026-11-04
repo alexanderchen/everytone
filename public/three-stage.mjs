@@ -3,19 +3,51 @@ import * as THREE from './vendor/three.module.min.js';
 // ============================================================================
 // Three.js 3D Stage Canvas
 // - Powered by THREE.Scene + THREE.PerspectiveCamera + THREE.InstancedBufferGeometry
-// - Ready for 3D spatial exploration; currently renders the Tier-1 video tile grid
+// - Renders a chromatic note-color dot on every video tile in the 3D grid
 // - Dynamically hides tiles from muted/disabled videos in the Video File Explorer
 // - Click, click-and-hold, or click-and-drag across tiles to trigger samples
 // ============================================================================
+
+const CHROMATIC_HEX = [
+  '#e33059', // C
+  '#f75839', // C#
+  '#f7943d', // D
+  '#f3b72f', // D#
+  '#edd929', // E
+  '#95c631', // F
+  '#56a754', // F#
+  '#11826d', // G
+  '#3160a3', // G#
+  '#5b37cc', // A
+  '#a347bf', // A#
+  '#ea57b2'  // B
+];
+const PERC_HEX = '#8c95a4';
+
+function hexToNormRgb(hex) {
+  const clean = String(hex || PERC_HEX).replace('#', '');
+  const n = parseInt(clean, 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
+function getMidiColorHex(midi) {
+  const m = Number.isFinite(midi) ? Math.round(midi) : 60;
+  if (m < 36) return PERC_HEX;
+  return CHROMATIC_HEX[((m % 12) + 12) % 12];
+}
 
 const TILE_VERT_SHADER = `
 attribute vec3 iOffsetScale; // x: worldX, y: worldY, z: cellSize
 attribute vec4 iUvRect;      // u0, v0, u1, v1
 attribute vec2 iState;       // x: activeAmount, y: hoverAmount
+attribute vec3 iNoteColor;   // r, g, b normalized note color
 
 varying vec2 vUv;
+varying vec2 vTileUv;
+varying float vCellPx;
 varying float vActive;
 varying float vHover;
+varying vec3 vNoteColor;
 
 void main() {
   vec3 worldPos = vec3(
@@ -28,8 +60,11 @@ void main() {
     mix(iUvRect.x, iUvRect.z, uv.x),
     mix(iUvRect.w, iUvRect.y, uv.y)
   );
+  vTileUv = uv;
+  vCellPx = iOffsetScale.z;
   vActive = iState.x;
   vHover = iState.y;
+  vNoteColor = iNoteColor;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPos, 1.0);
 }
 `;
@@ -41,8 +76,11 @@ uniform sampler2D uAtlas;
 uniform vec3 uBgColor;
 
 varying vec2 vUv;
+varying vec2 vTileUv;
+varying float vCellPx;
 varying float vActive;
 varying float vHover;
+varying vec3 vNoteColor;
 
 void main() {
   vec3 texRgb = texture2D(uAtlas, vUv).rgb;
@@ -50,14 +88,25 @@ void main() {
   vec3 bwRgb = vec3(luma);
 
   // Idle state: moody monochrome B&W (~20% opacity, subtle lift on hover)
-  float idleAlpha = mix(0.20, 0.42, clamp(vHover, 0.0, 1.0));
+  float hoverAmt = clamp(vHover, 0.0, 1.0);
+  float idleAlpha = mix(0.20, 0.42, hoverAmt);
   vec3 idleColor = mix(uBgColor, bwRgb, idleAlpha);
 
   // Active / playing state: full vivid color + brightness lift at 100% opacity
   vec3 activeColor = clamp(texRgb * 1.18 + 0.02, 0.0, 1.0);
 
   float t = smoothstep(0.0, 1.0, clamp(vActive, 0.0, 1.0));
-  gl_FragColor = vec4(mix(idleColor, activeColor, t), 1.0);
+  vec3 baseRgb = mix(idleColor, activeColor, t);
+
+  // Crisp centered chromatic note-color dot on every tile
+  vec2 deltaPx = (vTileUv - 0.5) * vCellPx;
+  float distPx = length(deltaPx);
+  float dotRadiusPx = clamp(vCellPx * 0.135, 2.1, 3.4);
+  float dotMask = 1.0 - smoothstep(dotRadiusPx - 0.7, dotRadiusPx + 0.55, distPx);
+  float dotAlpha = mix(0.84, 1.0, max(t, hoverAmt));
+  vec3 finalRgb = mix(baseRgb, vNoteColor, dotMask * dotAlpha);
+
+  gl_FragColor = vec4(finalRgb, 1.0);
 }
 `;
 
@@ -84,7 +133,7 @@ export function createThreeStage({
       powerPreference: 'high-performance'
     });
     renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
-    renderer.setClearColor(0x030406, 1);
+    renderer.setClearColor(0x000000, 1);
   } catch (err) {
     console.warn('Three.js WebGLRenderer fallback to 2D:', err);
     renderer = null;
@@ -94,7 +143,6 @@ export function createThreeStage({
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(FOV_DEG, 1, 1, 8000);
 
-  // Pre-allocated InstancedBufferGeometry so muting/unmuting videos updates in <0.2ms with zero GC churn
   const basePlane = new THREE.PlaneGeometry(1, 1);
   const instGeo = new THREE.InstancedBufferGeometry();
   instGeo.index = basePlane.index;
@@ -104,17 +152,21 @@ export function createThreeStage({
   const offsetScaleArray = new Float32Array(MAX_INSTANCES * 3);
   const uvRectArray = new Float32Array(MAX_INSTANCES * 4);
   const stateArray = new Float32Array(MAX_INSTANCES * 2);
+  const noteColorArray = new Float32Array(MAX_INSTANCES * 3);
 
   const attrOffsetScale = new THREE.InstancedBufferAttribute(offsetScaleArray, 3);
   const attrUvRect = new THREE.InstancedBufferAttribute(uvRectArray, 4);
   const attrState = new THREE.InstancedBufferAttribute(stateArray, 2);
+  const attrNoteColor = new THREE.InstancedBufferAttribute(noteColorArray, 3);
   attrOffsetScale.setUsage(THREE.DynamicDrawUsage);
   attrUvRect.setUsage(THREE.DynamicDrawUsage);
   attrState.setUsage(THREE.DynamicDrawUsage);
+  attrNoteColor.setUsage(THREE.DynamicDrawUsage);
 
   instGeo.setAttribute('iOffsetScale', attrOffsetScale);
   instGeo.setAttribute('iUvRect', attrUvRect);
   instGeo.setAttribute('iState', attrState);
+  instGeo.setAttribute('iNoteColor', attrNoteColor);
   instGeo.instanceCount = 0;
 
   const material = new THREE.ShaderMaterial({
@@ -122,7 +174,7 @@ export function createThreeStage({
     fragmentShader: TILE_FRAG_SHADER,
     uniforms: {
       uAtlas: { value: null },
-      uBgColor: { value: new THREE.Vector3(3 / 255, 4 / 255, 6 / 255) }
+      uBgColor: { value: new THREE.Vector3(0, 0, 0) }
     },
     depthTest: false,
     depthWrite: false
@@ -177,7 +229,6 @@ export function createThreeStage({
       const sx = originX + col * stride;
       const sy = originY + row * stride;
 
-      // Convert top-left CSS px -> centered 3D world coordinates at z=0 (1 world unit = 1 CSS px)
       const wx = sx + cell * 0.5 - cssW * 0.5;
       const wy = cssH * 0.5 - (sy + cell * 0.5);
 
@@ -185,6 +236,11 @@ export function createThreeStage({
       offsetScaleArray[o3] = wx;
       offsetScaleArray[o3 + 1] = wy;
       offsetScaleArray[o3 + 2] = cell;
+
+      const [nr, ng, nb] = hexToNormRgb(it.colorHex);
+      noteColorArray[o3] = nr;
+      noteColorArray[o3 + 1] = ng;
+      noteColorArray[o3 + 2] = nb;
 
       const o4 = i * 4;
       uvRectArray[o4] = it.u0;
@@ -195,6 +251,7 @@ export function createThreeStage({
 
     attrOffsetScale.needsUpdate = true;
     attrUvRect.needsUpdate = true;
+    attrNoteColor.needsUpdate = true;
   }
 
   function computeLayout() {
@@ -215,7 +272,6 @@ export function createThreeStage({
       }
     }
 
-    // Calibrate PerspectiveCamera Z so z=0 plane maps 1 world unit = 1 CSS pixel
     const halfRad = THREE.MathUtils.degToRad(FOV_DEG * 0.5);
     const camZ = (cssH * 0.5) / Math.tan(halfRad);
     camera.aspect = cssW / Math.max(1, cssH);
@@ -232,7 +288,6 @@ export function createThreeStage({
       return;
     }
 
-    // Center the tile grid in the 3D stage with generous breathing room around it
     const availW = Math.max(120, Math.round(cssW * 0.72));
     const availH = Math.max(96, Math.round(cssH * 0.72));
     const gap = cssW < 900 ? 2 : 3;
@@ -292,7 +347,12 @@ export function createThreeStage({
     }
 
     if (!catalog?.videos?.length) {
-      items = atlasManifest.items.filter(it => !(isVideoDisabled && isVideoDisabled(it.videoId)));
+      items = atlasManifest.items
+        .filter(it => !(isVideoDisabled && isVideoDisabled(it.videoId)))
+        .map(it => ({
+          ...it,
+          colorHex: getMidiColorHex(it.midi ?? 60)
+        }));
     } else {
       const activeVideos = catalog.videos
         .filter(v => !v.deleted && !(isVideoDisabled && isVideoDisabled(v.id)))
@@ -309,12 +369,16 @@ export function createThreeStage({
         for (const s of slices) {
           const uvEntry = atlasBySliceId.get(s.id);
           if (!uvEntry) continue;
+          const midi = Number.isFinite(s.manualMidi)
+            ? Number(s.manualMidi)
+            : Number(s.midi ?? uvEntry.midi ?? 60);
           nextItems.push({
             ...uvEntry,
             videoId: v.id,
             videoIndex: v.index,
             videoSlug: v.slug,
-            midi: Number.isFinite(s.manualMidi) ? Number(s.manualMidi) : Number(s.midi ?? uvEntry.midi ?? 60)
+            midi,
+            colorHex: getMidiColorHex(midi)
           });
         }
       }
@@ -334,7 +398,7 @@ export function createThreeStage({
   function drawFrameFallback2D() {
     if (!ctx2d) return;
     ctx2d.setTransform(1, 0, 0, 1, 0, 0);
-    ctx2d.fillStyle = '#030406';
+    ctx2d.fillStyle = '#000000';
     ctx2d.fillRect(0, 0, canvas.width, canvas.height);
     if (!atlasImage || !atlasManifest || items.length === 0) return;
 
@@ -343,6 +407,7 @@ export function createThreeStage({
     const stride = cell + gap;
     const aw = atlasManifest.atlasWidth;
     const ah = atlasManifest.atlasHeight;
+    const dotR = Math.max(2.1, Math.min(3.4, cell * 0.135));
 
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
@@ -362,6 +427,13 @@ export function createThreeStage({
         ctx2d.globalAlpha = i === hoveredIdx ? 0.42 : 0.20;
       }
       ctx2d.drawImage(atlasImage, sx, sy, sw, sh, x, y, cell, cell);
+
+      ctx2d.filter = 'none';
+      ctx2d.globalAlpha = activeValues[i] > 0.02 || i === hoveredIdx ? 1.0 : 0.84;
+      ctx2d.fillStyle = it.colorHex || PERC_HEX;
+      ctx2d.beginPath();
+      ctx2d.arc(x + cell * 0.5, y + cell * 0.5, dotR, 0, Math.PI * 2);
+      ctx2d.fill();
     }
     ctx2d.filter = 'none';
     ctx2d.globalAlpha = 1.0;
@@ -380,7 +452,7 @@ export function createThreeStage({
       const target = activeSet.has(items[i].sliceId) ? 1.0 : 0.0;
       const cur = activeValues[i];
       if (Math.abs(target - cur) > 0.004) {
-        const speed = target > cur ? dt / 0.065 : dt / 0.18;
+        const speed = target > cur ? dt / 0.065 : dt / 0.20;
         activeValues[i] = target > cur ? Math.min(1.0, cur + speed) : Math.max(0.0, cur - speed);
         if (Math.abs(target - activeValues[i]) > 0.004) {
           needsMoreFrames = true;

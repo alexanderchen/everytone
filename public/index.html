@@ -7,51 +7,35 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
+  <!-- Unified Far Top-Left Hamburger Toggle (Collapses/Expands Sidebar + Bottom Transport Together) -->
+  <button
+    id="chromeToggleBtn"
+    type="button"
+    class="chrome-hamburger-btn"
+    aria-label="Toggle Video Sidebar and Bottom Transport"
+    title="Toggle Video Sidebar &amp; Bottom Transport"
+  >
+    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+      <line x1="2.5" y1="4" x2="13.5" y2="4"></line>
+      <line x1="2.5" y1="8" x2="13.5" y2="8"></line>
+      <line x1="2.5" y1="12" x2="13.5" y2="12"></line>
+    </svg>
+  </button>
+
   <!-- 1. Upper Workspace: Left Collapsible Video File Explorer + Right Three.js 3D Stage -->
   <div class="upper-workspace">
     <aside class="file-explorer" id="fileExplorer">
       <div class="explorer-header">
         <div class="explorer-title-group">
           <span class="explorer-title">VIDEO FILES</span>
-          <span class="explorer-count" id="explorerActiveCount">0/0</span>
         </div>
-        <div class="explorer-header-actions">
-          <button id="explorerAllBtn" type="button" class="explorer-mini-btn" title="Enable all source videos">All</button>
-          <button id="explorerNoneBtn" type="button" class="explorer-mini-btn" title="Mute all source videos">None</button>
-          <button
-            id="explorerCollapseBtn"
-            type="button"
-            class="explorer-collapse-btn"
-            aria-label="Collapse Video File Explorer"
-            title="Collapse Video File Explorer"
-          >
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <rect x="2" y="2.5" width="12" height="11" rx="1.5"></rect>
-              <line x1="6" y1="2.5" x2="6" y2="13.5"></line>
-              <polyline points="10.5 6 8.5 8 10.5 10"></polyline>
-            </svg>
-          </button>
-        </div>
+        <span class="explorer-count" id="explorerActiveCount">0/0</span>
       </div>
 
       <div class="explorer-scroll-list" id="explorerList"></div>
     </aside>
 
     <main class="performance-canvas" id="videoStage">
-      <button
-        id="explorerExpandBtn"
-        type="button"
-        class="explorer-expand-tab hidden"
-        aria-label="Expand Video File Explorer"
-        title="Expand Video File Explorer"
-      >
-        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="2" y="2.5" width="12" height="11" rx="1.5"></rect>
-          <line x1="6" y1="2.5" x2="6" y2="13.5"></line>
-          <polyline points="8.5 6 10.5 8 8.5 10"></polyline>
-        </svg>
-      </button>
-
       <canvas id="threeStageCanvas" class="three-stage-bg"></canvas>
 
       <div class="poly-video-strip" id="polyVideoGrid">
@@ -71,7 +55,7 @@
     </main>
   </div>
 
-  <!-- 2. Persistent Bottom Bar: [ MIDI Transport ] | [ Single-Note Sample Controls ] | [ Keyline Keyboard ] -->
+  <!-- 2. Collapsible Bottom Bar: [ MIDI Transport ] | [ Single-Note Sample Controls ] | [ Keyline Keyboard ] -->
   <footer class="bottom-transport-dock" id="transportDock">
     <!-- Left: MIDI Player & Scrubbable Play Bar -->
     <section class="dock-zone transport-zone" id="midiTransportZone">
@@ -101,20 +85,17 @@
       </div>
     </section>
 
-    <!-- Center: Single-Note Sample Controls -->
+    <!-- Center: Single-Note Sample Controls (Clean Thumbnail Strip) -->
     <section class="dock-zone note-samples-zone" id="noteSamplesZone">
-      <div class="note-samples-header">
-        <span class="selected-note-pill" id="selectedNoteTag">C4</span>
-      </div>
       <div class="candidates-strip" id="candidatesGrid"></div>
     </section>
 
     <!-- Right: Connected Equal-Width Wireframe Keyline Chromatic Keyboard -->
     <section class="dock-zone keyboard-zone" id="keyboardZone">
       <div class="keyboard-octave-bar">
-        <button id="octDownBtn" type="button" class="oct-step-btn" title="Shift keyboard down 1 octave (Z)">◀ Z</button>
+        <button id="octDownBtn" type="button" class="oct-step-btn" title="Shift keyboard down 1 octave (Z)">◀</button>
         <span id="octaveRangeLabel" class="oct-range-label">C4–B6</span>
-        <button id="octUpBtn" type="button" class="oct-step-btn" title="Shift keyboard up 1 octave (X)">X ▶</button>
+        <button id="octUpBtn" type="button" class="oct-step-btn" title="Shift keyboard up 1 octave (X)">▶</button>
       </div>
       <div class="wireframe-keyboard-wrap">
         <div class="wireframe-keyboard" id="pianoKeyboard"></div>
@@ -122,21 +103,111 @@
     </section>
   </footer>
 
-  <!-- Universal Clip Inspector Overlay (Rename + Inline Reference Tone / Slot + Tall Spectrogram + Trim + Confirm Trash) -->
-  <div class="drawer-backdrop hidden" id="trimModal">
-    <div class="trim-modal-card">
+  <!-- 3A. Video File Inspector Overlay (Holistic Per-Video Volume dB + Rename + Slice Audition) -->
+  <div class="drawer-backdrop hidden" id="videoInspectorModal">
+    <div class="trim-modal-card video-inspector-card">
       <div class="trim-modal-header">
         <div class="inspector-title-row">
+          <span class="crumb-type-badge">VIDEO FILE</span>
           <input
-            id="inspectorSlugInput"
+            id="videoInspSlugInput"
             type="text"
             class="inspector-slug-input"
             value=""
             spellcheck="false"
-            title="Edit object name (renames sample folder &amp; files on Enter or click-away)"
+            title="Edit video file name (renames sample folder &amp; files on Enter or click-away)"
           />
+          <span class="video-insp-meta-pill" id="videoInspMetaPill">KEYS · 4 SAMPLES</span>
+        </div>
+        <button class="close-drawer-btn" data-close="videoInspectorModal">✕ Close</button>
+      </div>
 
-          <div class="inspector-slot-wrap" title="Audition reference tones across notes and assign this clip's MIDI slot">
+      <div class="trim-modal-body">
+        <div class="trim-video-col">
+          <div class="trim-video-square">
+            <video id="videoInspPreviewVideo" playsinline preload="auto"></video>
+          </div>
+          <div class="trim-video-meta-row">
+            <span class="trim-scrub-time" id="videoInspTimeReadout">Sample #1</span>
+            <button id="videoInspRotateBtn" type="button" class="ghost-btn tiny local-only-btn" title="Rotate video 90°">↻ 90°</button>
+          </div>
+          <button id="videoInspPreviewBtn" type="button" class="trim-btn-secondary full-w">
+            ▶ Preview (Space)
+          </button>
+        </div>
+
+        <div class="trim-timeline-col">
+          <!-- Holistic Per-Video Volume (Integer dB) -->
+          <div class="video-gain-panel">
+            <div class="inspector-subbar">
+              <span class="inspector-section-label">VIDEO VOLUME (HOLISTIC)</span>
+              <span class="inspector-spec-meta">Applies to all samples from this video file</span>
+            </div>
+
+            <div class="video-gain-controls-row">
+              <button id="videoGainMinusBtn" type="button" class="gain-step-btn" title="Decrease volume by 1 dB">−</button>
+              <span id="videoGainReadout" class="video-gain-readout">0 dB</span>
+              <button id="videoGainPlusBtn" type="button" class="gain-step-btn" title="Increase volume by 1 dB">+</button>
+              <input
+                id="videoGainSlider"
+                type="range"
+                min="-12"
+                max="12"
+                step="1"
+                value="0"
+                class="video-gain-slider"
+                title="Adjust holistic volume for this video file (−12 dB to +12 dB)"
+              />
+              <button id="videoGainZeroBtn" type="button" class="nudge-btn hidden" title="Reset volume to 0 dB">
+                0 dB
+              </button>
+            </div>
+          </div>
+
+          <!-- Extracted Samples from This Video File -->
+          <div class="video-slices-panel">
+            <div class="inspector-subbar">
+              <span class="inspector-section-label">EXTRACTED SAMPLES</span>
+              <span class="inspector-spec-meta">Click a sample to audition · Inspect to edit pitch or trim</span>
+            </div>
+            <div class="video-slices-list" id="videoInspSlicesList"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="trim-modal-footer">
+        <button id="videoInspTrashBtn" class="ghost-btn small danger-text local-only-btn" type="button" title="Move entire video file and its samples to _trash/">
+          Move Video to Trash
+        </button>
+        <div class="trim-footer-right">
+          <button type="button" class="trim-btn-primary" data-close="videoInspectorModal">
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3B. Individual Sample Inspector Overlay (Video Crumb › Sample + Pitch Slot + Spectrogram + Trim) -->
+  <div class="drawer-backdrop hidden" id="trimModal">
+    <div class="trim-modal-card">
+      <div class="trim-modal-header">
+        <div class="inspector-title-row">
+          <div class="inspector-breadcrumb">
+            <span class="crumb-type-badge">VIDEO FILE:</span>
+            <button
+              id="sampleInspParentBtn"
+              type="button"
+              class="crumb-video-link"
+              title="Open parent Video File Inspector (volume &amp; file settings)"
+            >
+              video-slug
+            </button>
+            <span class="crumb-sep">›</span>
+            <span class="crumb-sample-name" id="sampleInspSliceLabel">Sample #1</span>
+          </div>
+
+          <div class="inspector-slot-wrap" title="Audition reference tones across notes and assign this sample's MIDI slot">
             <span class="inspector-slot-tag">Note</span>
             <button
               id="inspectorSlotPrevBtn"
@@ -167,7 +238,7 @@
               id="inspectorAssignSlotBtn"
               type="button"
               class="assign-slot-btn hidden"
-              title="Move clip permanently to this MIDI slot at original 1.0x pitch"
+              title="Move sample permanently to this MIDI slot at original 1.0x pitch"
             >
               Move → C4
             </button>
@@ -177,7 +248,7 @@
             id="inspectorResetDspBtn"
             type="button"
             class="inspector-reset-dsp-btn hidden"
-            title="Revert clip back to its DSP-suggested MIDI note slot and tuning"
+            title="Revert sample back to its DSP-suggested MIDI note slot and tuning"
           >
             ↺ Reset to DSP
           </button>
@@ -186,23 +257,21 @@
       </div>
 
       <div class="trim-modal-body">
-        <!-- Left: Live 1:1 Square Scrub Video + Rotate + Preview Trigger -->
         <div class="trim-video-col">
           <div class="trim-video-square">
             <video id="trimScrubVideo" playsinline preload="auto"></video>
           </div>
           <div class="trim-video-meta-row">
             <span class="trim-scrub-time" id="trimScrubTimeReadout">Frame @ 0.00s</span>
-            <button id="inspectorRotateBtn" type="button" class="ghost-btn tiny" title="Rotate video 90°">↻ 90°</button>
+            <button id="inspectorRotateBtn" type="button" class="ghost-btn tiny local-only-btn" title="Rotate video 90°">↻ 90°</button>
           </div>
           <button id="trimPreviewBtn" type="button" class="trim-btn-secondary full-w">
             ▶ Preview (Space)
           </button>
         </div>
 
-        <!-- Right: Tall Immersive Spectrogram + Clean Re-Pitch + Draggable [ IN ... OUT ] Trim -->
         <div class="trim-timeline-col">
-          <!-- 1. Tall Log-Frequency Spectrogram -->
+          <!-- 1. Log/Perceptual Spectrogram -->
           <div class="inspector-spec-block">
             <div class="inspector-subbar">
               <span class="inspector-section-label">SPECTROGRAM</span>
@@ -217,12 +286,12 @@
               <input
                 id="inspectorTuneSlider"
                 type="range"
-                min="-1200"
-                max="1200"
-                step="5"
+                min="-100"
+                max="100"
+                step="1"
                 value="0"
                 class="inspector-tune-slider"
-                title="Fine-tune or re-pitch clip (−12 to +12 semitones)"
+                title="Fine-tune sample (−1 to +1 semitone / ±100 cents max)"
               />
               <span class="inspector-tune-readout" id="inspectorTuneReadout">0c · 1.00x</span>
               <button
@@ -274,8 +343,8 @@
       </div>
 
       <div class="trim-modal-footer">
-        <button id="inspectorTrashClipBtn" class="ghost-btn small danger-text" type="button" title="Move this clip to _trash/">
-          Move Clip to Trash
+        <button id="inspectorTrashClipBtn" class="ghost-btn small danger-text" type="button" title="Move this sample clip to _trash/">
+          Move Sample to Trash
         </button>
 
         <div class="trim-footer-right">

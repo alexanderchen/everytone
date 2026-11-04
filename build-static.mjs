@@ -76,6 +76,14 @@ export async function buildStaticSite(versionSlug = 'v1') {
     fs.mkdirSync(path.join(outDir, 'vendor'), { recursive: true });
     fs.copyFileSync(vendorSrc, path.join(outDir, 'vendor', 'three.module.min.js'));
   }
+  const fontsDirSrc = path.join(PUBLIC_DIR, 'vendor', 'fonts');
+  if (fs.existsSync(fontsDirSrc)) {
+    const fontsDirDst = path.join(outDir, 'vendor', 'fonts');
+    fs.mkdirSync(fontsDirDst, { recursive: true });
+    for (const ff of fs.readdirSync(fontsDirSrc)) {
+      fs.copyFileSync(path.join(fontsDirSrc, ff), path.join(fontsDirDst, ff));
+    }
+  }
 
   // 2. Copy spliced Tier-1 media (thumbnails + clip MP4s) and encode clip WAVs -> M4As
   const rawCatalog = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
@@ -128,6 +136,7 @@ export async function buildStaticSite(versionSlug = 'v1') {
       label: v.label,
       category: v.category,
       enabled: v.enabled !== false,
+      gainDb: Number.isFinite(v.gainDb) ? Math.round(v.gainDb) : 0,
       folderName: v.folderName,
       thumbFile: v.thumbFile,
       thumbUrl: `./samples/${v.folderName}/${v.thumbFile}`,
