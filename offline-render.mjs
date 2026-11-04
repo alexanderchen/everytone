@@ -361,12 +361,17 @@ export async function renderMidiPerformanceToMp4({
   report('Simulating MIDI performance', 2);
 
   const catalog = JSON.parse(fs.readFileSync(CATALOG_PATH, 'utf8'));
+  const disabledVideoIds = new Set(
+    (catalog.videos || []).filter(v => v.enabled === false).map(v => v.id)
+  );
   const keyMap = computeKeyboardMap(catalog.videos, catalog.keyboardConfig || {});
   const rng = makeSeededRng(20261103);
   const lastSliceByMidi = new Map();
 
   function pickCandidate(midi) {
-    const enabled = (keyMap[midi]?.candidates || []).filter(c => c.enabled);
+    const enabled = (keyMap[midi]?.candidates || []).filter(
+      c => c.enabled && !disabledVideoIds.has(c.videoId)
+    );
     if (!enabled.length) return null;
     if (enabled.length === 1) {
       lastSliceByMidi.set(midi, enabled[0].sliceId);

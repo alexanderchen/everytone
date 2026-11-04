@@ -61,7 +61,7 @@ export async function buildStaticSite(versionSlug = 'v1') {
     'styles.css',
     'app.js',
     'midi-parser.mjs',
-    'webgl-stage.mjs',
+    'three-stage.mjs',
     'stage-atlas.jpg',
     'stage-atlas.json'
   ];
@@ -70,6 +70,11 @@ export async function buildStaticSite(versionSlug = 'v1') {
     if (fs.existsSync(src)) {
       fs.copyFileSync(src, path.join(outDir, f));
     }
+  }
+  const vendorSrc = path.join(PUBLIC_DIR, 'vendor', 'three.module.min.js');
+  if (fs.existsSync(vendorSrc)) {
+    fs.mkdirSync(path.join(outDir, 'vendor'), { recursive: true });
+    fs.copyFileSync(vendorSrc, path.join(outDir, 'vendor', 'three.module.min.js'));
   }
 
   // 2. Copy spliced Tier-1 media (thumbnails + clip MP4s) and encode clip WAVs -> M4As
@@ -122,6 +127,7 @@ export async function buildStaticSite(versionSlug = 'v1') {
       slug: v.slug,
       label: v.label,
       category: v.category,
+      enabled: v.enabled !== false,
       folderName: v.folderName,
       thumbFile: v.thumbFile,
       thumbUrl: `./samples/${v.folderName}/${v.thumbFile}`,

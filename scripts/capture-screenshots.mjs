@@ -23,7 +23,7 @@ fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function waitForDebuggerUrl(port, timeoutMs = 10000) {
+async function waitForDebuggerUrl(port, timeoutMs = 3500) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -45,12 +45,16 @@ class CDPClient {
     this.ws = null;
     this.nextId = 1;
     this.pending = new Map();
+    this.consoleErrors = [];
   }
 
   async connect() {
     this.ws = new WebSocket(this.wsUrl);
     this.ws.addEventListener('message', ev => {
       const msg = JSON.parse(String(ev.data));
+      if (msg.method === 'Runtime.exceptionThrown') {
+        this.consoleErrors.push(msg.params?.exceptionDetails?.text || 'Uncaught exception');
+      }
       if (msg.id && this.pending.has(msg.id)) {
         const { resolve, reject } = this.pending.get(msg.id);
         this.pending.delete(msg.id);
@@ -97,6 +101,20 @@ class CDPClient {
   }
 }
 
+async function waitForAppReady(cdp) {
+  for (let i = 0; i < 60; i++) {
+    const ready = await cdp.evalJs(
+      `Boolean(
+        document.querySelectorAll('#pianoKeyboard .wf-key').length === 36 &&
+        document.querySelectorAll('#explorerList .explorer-video-row').length > 100
+      )`
+    );
+    if (ready) break;
+    await sleep(150);
+  }
+  await sleep(500);
+}
+
 async function main() {
   const chrome = spawn(
     CHROME_BIN,
@@ -131,75 +149,79 @@ async function main() {
       mobile: false
     });
 
-    // Wait for keyboard & WebGL stage atlas to finish loading
-    for (let i = 0; i < 50; i++) {
-      const ready = await cdp.evalJs(
-        `Boolean(document.querySelectorAll('#pianoKeyboard .key-cell').length === 80)`
-      );
-      if (ready) break;
-      await sleep(150);
-    }
-    await sleep(600);
+    await waitForAppReady(cdp);
 
-    // ------------------------------------------------------------------------
-    // Shot 07 (Salvaged pre-WebGL milestone):
-    // Pure black stage + 3 active clips + instant-pop note-tinted spectrograms with f0 stripes + enlarged chromatic dots
-    // ------------------------------------------------------------------------
+    // Ensure clean starting state (all videos enabled, C4–B6 octave)
     await cdp.evalJs(`(() => {
-      const bg = document.getElementById('webglStageBg');
-      if (bg) bg.style.visibility = 'hidden';
+      document.getElementById('explorerAllBtn')?.click();
     })()`);
-    await sleep(120);
+    await sleep(350);
 
+    const initialCheck = await cdp.evalJs(`({
+      explorerCount: document.getElementById('explorerActiveCount')?.textContent,
+      wfKeys: document.querySelectorAll('#pianoKeyboard .wf-key').length,
+      midiPlayDisabled: document.getElementById('midiPlayPauseBtn')?.disabled,
+      octLabel: document.getElementById('octaveRangeLabel')?.textContent,
+      c4Candidates: document.querySelectorAll('#candidatesGrid .candidate-card').length
+    })`);
+    console.log('Initial UI Check:', initialCheck);
+
+    // ------------------------------------------------------------------------
+    // Shot 11: Idle Music-Software UX Overhaul
+    // Left Video File Explorer + Three.js 3D Stage + 3-Zone Bottom Transport & Keyline Keyboard
+    // ------------------------------------------------------------------------
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '11_music-software-layout-idle.png'));
+
+    // Test muting first two rows in Explorer + reload persistence!
+    const mutedSlugs = await cdp.evalJs(`(() => {
+      const rows = Array.from(document.querySelectorAll('#explorerList .explorer-video-row')).slice(0, 3);
+      const names = rows.map(r => r.querySelector('.explorer-video-label')?.textContent);
+      rows.forEach(r => r.click());
+      return names;
+    })()`);
+    await sleep(300);
+
+    // Reload page and confirm muted switches persist across page load
+    await cdp.send('Page.reload', { ignoreCache: false });
+    await waitForAppReady(cdp);
+
+    const persistedCheck = await cdp.evalJs(`({
+      explorerCountAfterReload: document.getElementById('explorerActiveCount')?.textContent,
+      mutedRowCountAfterReload: document.querySelectorAll('#explorerList .explorer-video-row.is-muted').length
+    })`);
+    console.log('Reload Persistence Check (muted 3 videos):', mutedSlugs, persistedCheck);
+    if (persistedCheck.mutedRowCountAfterReload !== 3) {
+      throw new Error(`Expected 3 muted videos after reload, got ${persistedCheck.mutedRowCountAfterReload}`);
+    }
+
+    // ------------------------------------------------------------------------
+    // Shot 12: Active Polyphonic Performance + Muted Explorer Switches + Chromatic Keyline Hits
+    // Play C4 (KeyA) + D#4 (KeyE) + G4 (KeyG) so 3 foreground 100%-opacity video+spectrogram slots
+    // pop on and both natural + accidental wireframe keys light up in their chromatic colors
+    // ------------------------------------------------------------------------
     await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }))`);
-    await sleep(240);
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', bubbles: true }))`);
-    await sleep(240);
+    await sleep(180);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', key: 'e', bubbles: true }))`);
+    await sleep(180);
     await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyG', key: 'g', bubbles: true }))`);
     await sleep(340);
 
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '07_pure-chromatic-dots-and-f0-spectrograms.png'));
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '12_explorer-mute-and-keyline-polyphony.png'));
 
-    // ------------------------------------------------------------------------
-    // Shot 08 (Salvaged pre-WebGL milestone):
-    // Full-width bottom UX panel expanded via lower-right Material gear (left-aligned sample strip + MIDI transport)
-    // ------------------------------------------------------------------------
-    await cdp.evalJs(`document.getElementById('sampleDrawerToggleBtn')?.click()`);
-    await sleep(380);
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '08_collapsible-bottom-drawer-and-midi-transport.png'));
-
-    // Close bottom drawer and release held keys
-    await cdp.evalJs(`document.getElementById('sampleDrawerToggleBtn')?.click()`);
+    // Release keys and restore all 129/129 videos enabled so localhost catalog.json stays clean
     await cdp.evalJs(`(() => {
-      for (const code of ['KeyA', 'KeyD', 'KeyG']) {
+      for (const code of ['KeyA', 'KeyE', 'KeyG']) {
         window.dispatchEvent(new KeyboardEvent('keyup', { code, key: 'a', bubbles: true }));
       }
-    })()`);
-    await sleep(850);
-
-    // ------------------------------------------------------------------------
-    // Shot 09 (Current idle state):
-    // Compact, dim monochrome WebGL mosaic of all 439 Tier-1 clips floating above the lowered chromatic dot strip
-    // ------------------------------------------------------------------------
-    await cdp.evalJs(`(() => {
-      const bg = document.getElementById('webglStageBg');
-      if (bg) bg.style.visibility = 'visible';
-      window.dispatchEvent(new Event('resize'));
+      document.getElementById('explorerAllBtn')?.click();
     })()`);
     await sleep(400);
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '09_floating-webgl-mosaic-idle.png'));
 
-    // ------------------------------------------------------------------------
-    // Shot 10 (Current active state):
-    // 1 clip playing in Slot 0 (95% foreground opacity) while Slots 1-2 stay clear,
-    // revealing the uncovered WebGL mosaic on the right with the active clip glowing in color
-    // ------------------------------------------------------------------------
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF', key: 'f', bubbles: true }))`);
-    await sleep(360);
-
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '10_webgl-mosaic-playing-and-overlay.png'));
-
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyF', key: 'f', bubbles: true }))`);
+    if (cdp.consoleErrors.length > 0) {
+      console.warn('Console errors detected:', cdp.consoleErrors);
+    } else {
+      console.log('Zero uncaught runtime exceptions.');
+    }
   } finally {
     cdp?.close();
     chrome.kill('SIGTERM');

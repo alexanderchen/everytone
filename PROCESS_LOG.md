@@ -115,3 +115,12 @@
 
 - Exported a 96 MB static v1 instrument build to GitHub Pages.
 - Sketched a next-step layout with 3D canvas and file explorer. [img](screenshots/2026-11-04/everytone-ux-overhaul-sketch.jpg)
+
+
+## Nov 4, 2026 · 4:29 pm
+
+- Rebuilt the stage on Three.js and removed the rainbow dot row.
+- Added a collapsible video file explorer with persistent mute switches.
+- Docked MIDI scrub transport, sample toggles, and a keyline keyboard. [img](screenshots/2026-11-04/11_music-software-layout-idle.png)
+
+- Made connected black keys equal width and lit hits in 12 note colors. [img](screenshots/2026-11-04/12_explorer-mute-and-keyline-polyphony.png)

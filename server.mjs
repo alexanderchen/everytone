@@ -250,6 +250,26 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, saveCatalog(catalog));
     }
 
+    if (pathname === '/api/video/toggle' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const catalog = loadCatalog();
+      const targetIds = new Set(
+        Array.isArray(body.videoIds)
+          ? body.videoIds.map(String)
+          : body.videoId
+            ? [String(body.videoId)]
+            : []
+      );
+      if (targetIds.size === 0) return sendJson(res, 400, { error: 'No videoIds provided' });
+      const nextEnabled = Boolean(body.enabled);
+      for (const v of catalog.videos || []) {
+        if (targetIds.has(v.id)) {
+          v.enabled = nextEnabled;
+        }
+      }
+      return sendJson(res, 200, saveCatalog(catalog));
+    }
+
     if (pathname === '/api/video/rotate' && req.method === 'POST') {
       const body = await parseBody(req);
       const catalog = loadCatalog();

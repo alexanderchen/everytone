@@ -7,71 +7,120 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <!-- 1. Immersive Top Performance Canvas (Pushed up smoothly when Bottom UX Panel expands) -->
-  <main class="performance-canvas" id="videoStage">
-    <canvas id="webglStageBg" class="webgl-stage-bg"></canvas>
-
-    <div class="poly-video-strip" id="polyVideoGrid">
-      <div class="stage-slot-unit" data-slot="0">
-        <div class="stage-slot-video"></div>
-        <canvas class="slot-mini-spec" width="320" height="96"></canvas>
-      </div>
-      <div class="stage-slot-unit" data-slot="1">
-        <div class="stage-slot-video"></div>
-        <canvas class="slot-mini-spec" width="320" height="96"></canvas>
-      </div>
-      <div class="stage-slot-unit" data-slot="2">
-        <div class="stage-slot-video"></div>
-        <canvas class="slot-mini-spec" width="320" height="96"></canvas>
-      </div>
-    </div>
-
-    <section class="keyboard-dock">
-      <div class="keyline-scroll-wrap" id="keylineScrollWrap">
-        <div class="keyline-keyboard fit-mode" id="pianoKeyboard"></div>
-      </div>
-    </section>
-  </main>
-
-  <!-- 2. Full-Width Expanding Bottom UX Panel + Lower-Right Material Settings Gear -->
-  <div class="bottom-ux-shell" id="sampleDrawerWrap">
-    <button
-      id="sampleDrawerToggleBtn"
-      type="button"
-      class="sample-drawer-gear-btn"
-      aria-expanded="false"
-      title="Expand / collapse settings &amp; samples"
-    >
-      <!-- Official Google Material Icons 'settings' 24dp vector -->
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-      </svg>
-    </button>
-
-    <section class="bottom-ux-panel collapsed" id="sampleDrawer">
-      <div class="settings-samples-row">
-        <div class="selected-note-pill" id="selectedNoteTag">C4</div>
-        <div class="candidates-strip" id="candidatesGrid"></div>
-      </div>
-
-      <div class="midi-transport-bar">
-        <input id="midiFileInput" type="file" accept=".mid,.midi" class="hidden" />
-        <button id="midiUploadBtn" type="button" class="midi-pill-btn" title="Upload a Standard MIDI File (.mid)">
-          Load MIDI
-        </button>
-        <span id="midiFileLabel" class="midi-file-label">No MIDI loaded</span>
-
-        <div class="midi-transport-controls">
-          <button id="midiPlayPauseBtn" type="button" class="midi-icon-btn" disabled title="Play / Pause MIDI">
-            <span id="midiPlayPauseIcon">▶</span>
-          </button>
-          <button id="midiRestartBtn" type="button" class="midi-icon-btn" disabled title="Restart MIDI from beginning">
-            ↺
+  <!-- 1. Upper Workspace: Left Collapsible Video File Explorer + Right Three.js 3D Stage -->
+  <div class="upper-workspace">
+    <aside class="file-explorer" id="fileExplorer">
+      <div class="explorer-header">
+        <div class="explorer-title-group">
+          <span class="explorer-title">VIDEO FILES</span>
+          <span class="explorer-count" id="explorerActiveCount">0/0</span>
+        </div>
+        <div class="explorer-header-actions">
+          <button id="explorerAllBtn" type="button" class="explorer-mini-btn" title="Enable all source videos">All</button>
+          <button id="explorerNoneBtn" type="button" class="explorer-mini-btn" title="Mute all source videos">None</button>
+          <button
+            id="explorerCollapseBtn"
+            type="button"
+            class="explorer-collapse-btn"
+            aria-label="Collapse Video File Explorer"
+            title="Collapse Video File Explorer"
+          >
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="1.5"></rect>
+              <line x1="6" y1="2.5" x2="6" y2="13.5"></line>
+              <polyline points="10.5 6 8.5 8 10.5 10"></polyline>
+            </svg>
           </button>
         </div>
       </div>
-    </section>
+
+      <div class="explorer-scroll-list" id="explorerList"></div>
+    </aside>
+
+    <main class="performance-canvas" id="videoStage">
+      <button
+        id="explorerExpandBtn"
+        type="button"
+        class="explorer-expand-tab hidden"
+        aria-label="Expand Video File Explorer"
+        title="Expand Video File Explorer"
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2" y="2.5" width="12" height="11" rx="1.5"></rect>
+          <line x1="6" y1="2.5" x2="6" y2="13.5"></line>
+          <polyline points="8.5 6 10.5 8 8.5 10"></polyline>
+        </svg>
+      </button>
+
+      <canvas id="threeStageCanvas" class="three-stage-bg"></canvas>
+
+      <div class="poly-video-strip" id="polyVideoGrid">
+        <div class="stage-slot-unit" data-slot="0">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit" data-slot="1">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit" data-slot="2">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+      </div>
+    </main>
   </div>
+
+  <!-- 2. Persistent Bottom Bar: [ MIDI Transport ] | [ Single-Note Sample Controls ] | [ Keyline Keyboard ] -->
+  <footer class="bottom-transport-dock" id="transportDock">
+    <!-- Left: MIDI Player & Scrubbable Play Bar -->
+    <section class="dock-zone transport-zone" id="midiTransportZone">
+      <div class="transport-top-row">
+        <input id="midiFileInput" type="file" accept=".mid,.midi" class="hidden" />
+        <button id="midiUploadBtn" type="button" class="midi-load-btn" title="Load a Standard MIDI File (.mid)">
+          Load MIDI
+        </button>
+        <span id="midiFileLabel" class="midi-file-label">No MIDI loaded</span>
+      </div>
+
+      <div class="transport-scrub-row">
+        <button id="midiPlayPauseBtn" type="button" class="midi-play-btn" disabled title="Play / Pause MIDI">
+          <span id="midiPlayPauseIcon">▶</span>
+        </button>
+
+        <div class="midi-scrub-track is-disabled" id="midiScrubTrack" title="Drag to scrub through MIDI file">
+          <span class="scrub-endpoint left"></span>
+          <div class="scrub-rail">
+            <div class="scrub-fill" id="midiScrubFill"></div>
+            <div class="scrub-playhead" id="midiScrubThumb"></div>
+          </div>
+          <span class="scrub-endpoint right"></span>
+        </div>
+
+        <span id="midiTimeReadout" class="midi-time-readout">0:00</span>
+      </div>
+    </section>
+
+    <!-- Center: Single-Note Sample Controls -->
+    <section class="dock-zone note-samples-zone" id="noteSamplesZone">
+      <div class="note-samples-header">
+        <span class="selected-note-pill" id="selectedNoteTag">C4</span>
+      </div>
+      <div class="candidates-strip" id="candidatesGrid"></div>
+    </section>
+
+    <!-- Right: Connected Equal-Width Wireframe Keyline Chromatic Keyboard -->
+    <section class="dock-zone keyboard-zone" id="keyboardZone">
+      <div class="keyboard-octave-bar">
+        <button id="octDownBtn" type="button" class="oct-step-btn" title="Shift keyboard down 1 octave (Z)">◀ Z</button>
+        <span id="octaveRangeLabel" class="oct-range-label">C4–B6</span>
+        <button id="octUpBtn" type="button" class="oct-step-btn" title="Shift keyboard up 1 octave (X)">X ▶</button>
+      </div>
+      <div class="wireframe-keyboard-wrap">
+        <div class="wireframe-keyboard" id="pianoKeyboard"></div>
+      </div>
+    </section>
+  </footer>
 
   <!-- Universal Clip Inspector Overlay (Rename + Inline Reference Tone / Slot + Tall Spectrogram + Trim + Confirm Trash) -->
   <div class="drawer-backdrop hidden" id="trimModal">

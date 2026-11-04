@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-04T19:22:18.540Z",
+  "updatedAt": "2026-11-04T21:30:10.165Z",
   "stats": {
     "totalVideos": 129,
     "trashedVideos": 2,
@@ -1409,7 +1409,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "ukulele-frets-high_source.mp4"
+      "sourceFile": "ukulele-frets-high_source.mp4",
+      "enabled": true
     },
     {
       "id": "v02",
@@ -1951,7 +1952,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "ukulele-frets-low_source.mp4"
+      "sourceFile": "ukulele-frets-low_source.mp4",
+      "enabled": true
     },
     {
       "id": "v03",
@@ -2708,7 +2710,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "ukulele-frets-mid1_source.mp4"
+      "sourceFile": "ukulele-frets-mid1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v04",
@@ -3395,7 +3398,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "ukulele-frets-mid2_source.mp4"
+      "sourceFile": "ukulele-frets-mid2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v05",
@@ -5043,7 +5047,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bamboo-flute_source.mp4"
+      "sourceFile": "bamboo-flute_source.mp4",
+      "enabled": true
     },
     {
       "id": "v06",
@@ -5326,7 +5331,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "clock-chime-gears_source.mp4"
+      "sourceFile": "clock-chime-gears_source.mp4",
+      "enabled": true
     },
     {
       "id": "v07",
@@ -5659,7 +5665,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "clock-chime-bell_source.mp4"
+      "sourceFile": "clock-chime-bell_source.mp4",
+      "enabled": true
     },
     {
       "id": "v08",
@@ -6341,7 +6348,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "clock-pendulum-gong_source.mp4"
+      "sourceFile": "clock-pendulum-gong_source.mp4",
+      "enabled": true
     },
     {
       "id": "v09",
@@ -6849,7 +6857,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "glass-lamp-shade_source.mp4"
+      "sourceFile": "glass-lamp-shade_source.mp4",
+      "enabled": true
     },
     {
       "id": "v10",
@@ -7747,7 +7756,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "rubberband-bowl-1_source.mp4"
+      "sourceFile": "rubberband-bowl-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v11",
@@ -8085,7 +8095,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "rubberband-bowl-2_source.mp4"
+      "sourceFile": "rubberband-bowl-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v12",
@@ -9052,7 +9063,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "rubberband-bowl-3_source.mp4"
+      "sourceFile": "rubberband-bowl-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v13",
@@ -10718,7 +10730,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "rubberband-bowl-4_source.mp4"
+      "sourceFile": "rubberband-bowl-4_source.mp4",
+      "enabled": true
     },
     {
       "id": "v14",
@@ -11884,7 +11897,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "rubberband-bowl-bass_source.mp4"
+      "sourceFile": "rubberband-bowl-bass_source.mp4",
+      "enabled": true
     },
     {
       "id": "v15",
@@ -12248,7 +12262,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-rim_source.mp4"
+      "sourceFile": "wine-glass-rim_source.mp4",
+      "enabled": true
     },
     {
       "id": "v16",
@@ -12581,7 +12596,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-pour_source.mp4"
+      "sourceFile": "wine-glass-pour_source.mp4",
+      "enabled": true
     },
     {
       "id": "v17",
@@ -13013,7 +13029,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-water-1_source.mp4"
+      "sourceFile": "wine-glass-water-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v18",
@@ -13485,7 +13502,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-water-2_source.mp4"
+      "sourceFile": "wine-glass-water-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v19",
@@ -13758,7 +13776,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bike-bell-1_source.mp4"
+      "sourceFile": "bike-bell-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v20",
@@ -14041,7 +14060,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bike-bell-2_source.mp4"
+      "sourceFile": "bike-bell-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v21",
@@ -14403,7 +14423,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bike-bell-3_source.mp4"
+      "sourceFile": "bike-bell-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v22",
@@ -15006,7 +15027,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "drumhead-mallet-1_source.mp4"
+      "sourceFile": "drumhead-mallet-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v23",
@@ -15346,7 +15368,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "drumhead-mallet-2_source.mp4"
+      "sourceFile": "drumhead-mallet-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v24",
@@ -17367,7 +17390,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "ukulele-open-strings_source.mp4"
+      "sourceFile": "ukulele-open-strings_source.mp4",
+      "enabled": true
     },
     {
       "id": "v27",
@@ -17859,7 +17883,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "metal-bottle-blow_source.mp4"
+      "sourceFile": "metal-bottle-blow_source.mp4",
+      "enabled": true
     },
     {
       "id": "v28",
@@ -18132,7 +18157,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "brass-turn-doorbell_source.mp4"
+      "sourceFile": "brass-turn-doorbell_source.mp4",
+      "enabled": true
     },
     {
       "id": "v29",
@@ -18415,7 +18441,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "antique-bell-dome_source.mp4"
+      "sourceFile": "antique-bell-dome_source.mp4",
+      "enabled": true
     },
     {
       "id": "v30",
@@ -18757,7 +18784,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "metal-tank-mallet-1_source.mp4"
+      "sourceFile": "metal-tank-mallet-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v31",
@@ -19099,7 +19127,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "metal-tank-mallet-2_source.mp4"
+      "sourceFile": "metal-tank-mallet-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v32",
@@ -19372,7 +19401,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "ac-housing-mallet_source.mp4"
+      "sourceFile": "ac-housing-mallet_source.mp4",
+      "enabled": true
     },
     {
       "id": "v33",
@@ -19724,7 +19754,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "white-mailbox_source.mp4"
+      "sourceFile": "white-mailbox_source.mp4",
+      "enabled": true
     },
     {
       "id": "v34",
@@ -19997,7 +20028,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "silver-bike-bell-4_source.mp4"
+      "sourceFile": "silver-bike-bell-4_source.mp4",
+      "enabled": true
     },
     {
       "id": "v35",
@@ -20270,7 +20302,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "silver-bike-bell-5_source.mp4"
+      "sourceFile": "silver-bike-bell-5_source.mp4",
+      "enabled": true
     },
     {
       "id": "v36",
@@ -20543,7 +20576,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "unicorn-bike-bell_source.mp4"
+      "sourceFile": "unicorn-bike-bell_source.mp4",
+      "enabled": true
     },
     {
       "id": "v37",
@@ -20885,7 +20919,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "cellar-door-mallet-1_source.mp4"
+      "sourceFile": "cellar-door-mallet-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v38",
@@ -21158,7 +21193,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "cellar-door-mallet-2_source.mp4"
+      "sourceFile": "cellar-door-mallet-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v39",
@@ -21431,7 +21467,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "cellar-door-mallet-3_source.mp4"
+      "sourceFile": "cellar-door-mallet-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v40",
@@ -21745,7 +21782,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-01_source.mp4"
+      "sourceFile": "wood-log-mallet-01_source.mp4",
+      "enabled": true
     },
     {
       "id": "v41",
@@ -22019,7 +22057,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-02_source.mp4"
+      "sourceFile": "wood-log-mallet-02_source.mp4",
+      "enabled": true
     },
     {
       "id": "v42",
@@ -22293,7 +22332,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-03_source.mp4"
+      "sourceFile": "wood-log-mallet-03_source.mp4",
+      "enabled": true
     },
     {
       "id": "v43",
@@ -22597,7 +22637,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-04_source.mp4"
+      "sourceFile": "wood-log-mallet-04_source.mp4",
+      "enabled": true
     },
     {
       "id": "v44",
@@ -22881,7 +22922,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-05_source.mp4"
+      "sourceFile": "wood-log-mallet-05_source.mp4",
+      "enabled": true
     },
     {
       "id": "v45",
@@ -23149,7 +23191,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-06_source.mp4"
+      "sourceFile": "wood-log-mallet-06_source.mp4",
+      "enabled": true
     },
     {
       "id": "v46",
@@ -23453,7 +23496,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-07_source.mp4"
+      "sourceFile": "wood-log-mallet-07_source.mp4",
+      "enabled": true
     },
     {
       "id": "v47",
@@ -23721,7 +23765,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-08_source.mp4"
+      "sourceFile": "wood-log-mallet-08_source.mp4",
+      "enabled": true
     },
     {
       "id": "v48",
@@ -24035,7 +24080,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-09_source.mp4"
+      "sourceFile": "wood-log-mallet-09_source.mp4",
+      "enabled": true
     },
     {
       "id": "v49",
@@ -24439,7 +24485,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-10_source.mp4"
+      "sourceFile": "wood-log-mallet-10_source.mp4",
+      "enabled": true
     },
     {
       "id": "v50",
@@ -24893,7 +24940,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-11_source.mp4"
+      "sourceFile": "wood-log-mallet-11_source.mp4",
+      "enabled": true
     },
     {
       "id": "v51",
@@ -25267,7 +25315,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-12_source.mp4"
+      "sourceFile": "wood-log-mallet-12_source.mp4",
+      "enabled": true
     },
     {
       "id": "v52",
@@ -25621,7 +25670,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wood-log-mallet-13_source.mp4"
+      "sourceFile": "wood-log-mallet-13_source.mp4",
+      "enabled": true
     },
     {
       "id": "v53",
@@ -25981,7 +26031,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "puffball-mushroom-1_source.mp4"
+      "sourceFile": "puffball-mushroom-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v54",
@@ -26289,7 +26340,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "puffball-mushroom-2_source.mp4"
+      "sourceFile": "puffball-mushroom-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v55",
@@ -26573,7 +26625,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bird-feeder-1_source.mp4"
+      "sourceFile": "bird-feeder-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v56",
@@ -26857,7 +26910,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bird-feeder-2_source.mp4"
+      "sourceFile": "bird-feeder-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v57",
@@ -27141,7 +27195,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bird-feeder-3_source.mp4"
+      "sourceFile": "bird-feeder-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v58",
@@ -27435,7 +27490,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bird-feeder-4_source.mp4"
+      "sourceFile": "bird-feeder-4_source.mp4",
+      "enabled": true
     },
     {
       "id": "v59",
@@ -27719,7 +27775,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "bird-feeder-5_source.mp4"
+      "sourceFile": "bird-feeder-5_source.mp4",
+      "enabled": true
     },
     {
       "id": "v60",
@@ -27992,7 +28049,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "porcelain-crank-bell_source.mp4"
+      "sourceFile": "porcelain-crank-bell_source.mp4",
+      "enabled": true
     },
     {
       "id": "v61",
@@ -28285,7 +28343,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-1_source.mp4"
+      "sourceFile": "wind-chime-tube-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v62",
@@ -28778,7 +28837,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-2_source.mp4"
+      "sourceFile": "wind-chime-tube-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v63",
@@ -29281,7 +29341,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-3_source.mp4"
+      "sourceFile": "wind-chime-tube-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v64",
@@ -29713,7 +29774,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-4_source.mp4"
+      "sourceFile": "wind-chime-tube-4_source.mp4",
+      "enabled": true
     },
     {
       "id": "v65",
@@ -30056,7 +30118,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-5_source.mp4"
+      "sourceFile": "wind-chime-tube-5_source.mp4",
+      "enabled": true
     },
     {
       "id": "v66",
@@ -30548,7 +30611,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-6_source.mp4"
+      "sourceFile": "wind-chime-tube-6_source.mp4",
+      "enabled": true
     },
     {
       "id": "v67",
@@ -31180,7 +31244,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-7_source.mp4"
+      "sourceFile": "wind-chime-tube-7_source.mp4",
+      "enabled": true
     },
     {
       "id": "v68",
@@ -31732,7 +31797,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-8_source.mp4"
+      "sourceFile": "wind-chime-tube-8_source.mp4",
+      "enabled": true
     },
     {
       "id": "v69",
@@ -32005,7 +32071,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wind-chime-tube-9_source.mp4"
+      "sourceFile": "wind-chime-tube-9_source.mp4",
+      "enabled": true
     },
     {
       "id": "v70",
@@ -32347,7 +32414,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "faceted-glass-01_source.mp4"
+      "sourceFile": "faceted-glass-01_source.mp4",
+      "enabled": true
     },
     {
       "id": "v71",
@@ -32690,7 +32758,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "etched-glass-01_source.mp4"
+      "sourceFile": "etched-glass-01_source.mp4",
+      "enabled": true
     },
     {
       "id": "v72",
@@ -33033,7 +33102,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "etched-glass-02_source.mp4"
+      "sourceFile": "etched-glass-02_source.mp4",
+      "enabled": true
     },
     {
       "id": "v73",
@@ -33235,7 +33305,8 @@
       "allDetectedOnsets": [],
       "slices": [],
       "deleted": false,
-      "sourceFile": "faceted-glass-02_source.mp4"
+      "sourceFile": "faceted-glass-02_source.mp4",
+      "enabled": true
     },
     {
       "id": "v74",
@@ -33577,7 +33648,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "faceted-glass-03_source.mp4"
+      "sourceFile": "faceted-glass-03_source.mp4",
+      "enabled": true
     },
     {
       "id": "v75",
@@ -33919,7 +33991,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "faceted-glass-04_source.mp4"
+      "sourceFile": "faceted-glass-04_source.mp4",
+      "enabled": true
     },
     {
       "id": "v76",
@@ -34193,7 +34266,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "faceted-glass-05_source.mp4"
+      "sourceFile": "faceted-glass-05_source.mp4",
+      "enabled": true
     },
     {
       "id": "v77",
@@ -34466,7 +34540,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "faceted-glass-06_source.mp4"
+      "sourceFile": "faceted-glass-06_source.mp4",
+      "enabled": true
     },
     {
       "id": "v78",
@@ -34878,7 +34953,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-01_source.mp4"
+      "sourceFile": "wine-glass-tuned-01_source.mp4",
+      "enabled": true
     },
     {
       "id": "v79",
@@ -35151,7 +35227,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-02_source.mp4"
+      "sourceFile": "wine-glass-tuned-02_source.mp4",
+      "enabled": true
     },
     {
       "id": "v80",
@@ -35563,7 +35640,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-03_source.mp4"
+      "sourceFile": "wine-glass-tuned-03_source.mp4",
+      "enabled": true
     },
     {
       "id": "v81",
@@ -35765,7 +35843,8 @@
       "allDetectedOnsets": [],
       "slices": [],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-04_source.mp4"
+      "sourceFile": "wine-glass-tuned-04_source.mp4",
+      "enabled": true
     },
     {
       "id": "v82",
@@ -36120,7 +36199,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-05_source.mp4"
+      "sourceFile": "wine-glass-tuned-05_source.mp4",
+      "enabled": true
     },
     {
       "id": "v83",
@@ -36322,7 +36402,8 @@
       "allDetectedOnsets": [],
       "slices": [],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-06_source.mp4"
+      "sourceFile": "wine-glass-tuned-06_source.mp4",
+      "enabled": true
     },
     {
       "id": "v84",
@@ -36595,7 +36676,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-07_source.mp4"
+      "sourceFile": "wine-glass-tuned-07_source.mp4",
+      "enabled": true
     },
     {
       "id": "v85",
@@ -36868,7 +36950,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-08_source.mp4"
+      "sourceFile": "wine-glass-tuned-08_source.mp4",
+      "enabled": true
     },
     {
       "id": "v86",
@@ -37220,7 +37303,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wine-glass-tuned-09_source.mp4"
+      "sourceFile": "wine-glass-tuned-09_source.mp4",
+      "enabled": true
     },
     {
       "id": "v87",
@@ -37572,7 +37656,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "hex-jar-glass-1_source.mp4"
+      "sourceFile": "hex-jar-glass-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v88",
@@ -37934,7 +38019,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "hex-jar-glass-2_source.mp4"
+      "sourceFile": "hex-jar-glass-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v89",
@@ -38286,7 +38372,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "swingtop-glass-bottle_source.mp4"
+      "sourceFile": "swingtop-glass-bottle_source.mp4",
+      "enabled": true
     },
     {
       "id": "v90",
@@ -38659,7 +38746,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "painted-tumbler-glass_source.mp4"
+      "sourceFile": "painted-tumbler-glass_source.mp4",
+      "enabled": true
     },
     {
       "id": "v91",
@@ -39011,7 +39099,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "crystal-goblet-glass_source.mp4"
+      "sourceFile": "crystal-goblet-glass_source.mp4",
+      "enabled": true
     },
     {
       "id": "v92",
@@ -39373,7 +39462,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "small-jar-glass-1_source.mp4"
+      "sourceFile": "small-jar-glass-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v93",
@@ -39736,7 +39826,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "ribbed-tumbler-glass_source.mp4"
+      "sourceFile": "ribbed-tumbler-glass_source.mp4",
+      "enabled": true
     },
     {
       "id": "v94",
@@ -40149,7 +40240,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "blue-bottle-blow-1_source.mp4"
+      "sourceFile": "blue-bottle-blow-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v95",
@@ -40491,7 +40583,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "blue-bottle-blow-2_source.mp4"
+      "sourceFile": "blue-bottle-blow-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v96",
@@ -40863,7 +40956,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "blue-bottle-blow-3_source.mp4"
+      "sourceFile": "blue-bottle-blow-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v97",
@@ -41137,7 +41231,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "purple-bottle-blow-1_source.mp4"
+      "sourceFile": "purple-bottle-blow-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v98",
@@ -41479,7 +41574,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "purple-bottle-blow-2_source.mp4"
+      "sourceFile": "purple-bottle-blow-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v99",
@@ -41821,7 +41917,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "purple-bottle-blow-3_source.mp4"
+      "sourceFile": "purple-bottle-blow-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v100",
@@ -42233,7 +42330,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "purple-bottle-blow-4_source.mp4"
+      "sourceFile": "purple-bottle-blow-4_source.mp4",
+      "enabled": true
     },
     {
       "id": "v101",
@@ -42586,7 +42684,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wide-thermos-blow-1_source.mp4"
+      "sourceFile": "wide-thermos-blow-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v102",
@@ -42939,7 +43038,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wide-thermos-blow-2_source.mp4"
+      "sourceFile": "wide-thermos-blow-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v103",
@@ -43212,7 +43312,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wide-thermos-blow-3_source.mp4"
+      "sourceFile": "wide-thermos-blow-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v104",
@@ -43496,7 +43597,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "wide-thermos-blow-4_source.mp4"
+      "sourceFile": "wide-thermos-blow-4_source.mp4",
+      "enabled": true
     },
     {
       "id": "v105",
@@ -43908,7 +44010,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "silver-flask-blow-1_source.mp4"
+      "sourceFile": "silver-flask-blow-1_source.mp4",
+      "enabled": true
     },
     {
       "id": "v106",
@@ -44390,7 +44493,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "silver-flask-blow-2_source.mp4"
+      "sourceFile": "silver-flask-blow-2_source.mp4",
+      "enabled": true
     },
     {
       "id": "v107",
@@ -44812,7 +44916,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "silver-flask-blow-3_source.mp4"
+      "sourceFile": "silver-flask-blow-3_source.mp4",
+      "enabled": true
     },
     {
       "id": "v108",
@@ -45294,7 +45399,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "silver-flask-blow-4_source.mp4"
+      "sourceFile": "silver-flask-blow-4_source.mp4",
+      "enabled": true
     },
     {
       "id": "v109",
@@ -46199,7 +46305,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "music-box_source.mp4"
+      "sourceFile": "music-box_source.mp4",
+      "enabled": true
     },
     {
       "id": "v110",
@@ -46474,7 +46581,8 @@
         }
       ],
       "deleted": false,
-      "sourceFile": "ping-pong-ball_source.mp4"
+      "sourceFile": "ping-pong-ball_source.mp4",
+      "enabled": true
     },
     {
       "id": "v111",
@@ -46955,7 +47063,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v112",
@@ -47367,7 +47476,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v113",
@@ -48124,7 +48234,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v114",
@@ -48882,7 +48993,8 @@
         }
       ],
       "deleted": false,
-      "cropLeftFrac": 0.11
+      "cropLeftFrac": 0.11,
+      "enabled": true
     },
     {
       "id": "v115",
@@ -49225,7 +49337,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v116",
@@ -49499,7 +49612,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v117",
@@ -49842,7 +49956,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v118",
@@ -50185,7 +50300,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v119",
@@ -51287,7 +51403,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v120",
@@ -51808,7 +51925,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v121",
@@ -54936,7 +55054,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v122",
@@ -55418,7 +55537,8 @@
           "deleted": true
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v123",
@@ -56196,7 +56316,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v124",
@@ -56737,7 +56858,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v125",
@@ -57189,7 +57311,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v126",
@@ -58017,7 +58140,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v127",
@@ -59084,7 +59208,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v128",
@@ -59605,7 +59730,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v129",
@@ -60126,7 +60252,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v130",
@@ -60647,7 +60774,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     },
     {
       "id": "v131",
@@ -61168,7 +61296,8 @@
           "deleted": false
         }
       ],
-      "deleted": false
+      "deleted": false,
+      "enabled": true
     }
   ],
   "keyboardMap": {

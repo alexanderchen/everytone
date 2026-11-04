@@ -1,16 +1,16 @@
 :root {
-  --bg-0: #050608;
-  --bg-1: #0b0d11;
-  --bg-2: #12151c;
-  --bg-3: #1b202b;
-  --line-dim: rgba(255, 255, 255, 0.11);
-  --line-key: rgba(255, 255, 255, 0.24);
-  --line-oct: rgba(255, 255, 255, 0.56);
+  --bg-0: #030406;
+  --bg-1: #06080c;
+  --bg-2: #0d1017;
+  --bg-3: #171c26;
+  --line-subtle: rgba(255, 255, 255, 0.08);
+  --line-dim: rgba(255, 255, 255, 0.14);
+  --line-key: rgba(255, 255, 255, 0.32);
   --line-bright: #ffffff;
   --text-0: #f8fafc;
   --text-1: #cbd5e1;
   --text-2: #7c8798;
-  --text-3: #495262;
+  --text-3: #4b5565;
   --accent-new: #38bdf8;
   --accent-active: #10b981;
   --accent-amber: #fbbf24;
@@ -41,46 +41,351 @@ body {
 }
 
 /* ============================================================================
-   1. Unified Performance Canvas (Pushed up smoothly when Bottom UX Panel opens)
+   1. Upper Workspace: Left Collapsible Video File Explorer + Right 3D Stage
    ============================================================================ */
-.performance-canvas {
-  --tile-size: 290px;
-  --spec-height: 90px;
-  --strip-width: 918px;
-  --dot-size: 8.8px;
-  position: relative;
+.upper-workspace {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  background: #030406;
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--bg-0);
+}
+
+/* --- Left Sidebar: Video File Explorer --- */
+.file-explorer {
+  width: 248px;
+  min-width: 248px;
+  height: 100%;
+  background: var(--bg-1);
+  border-right: 1px solid var(--line-dim);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 20;
+  transition:
+    width 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    min-width 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.file-explorer.collapsed {
+  width: 0;
+  min-width: 0;
+  opacity: 0;
+  border-right-color: transparent;
+  pointer-events: none;
+}
+
+.explorer-header {
+  height: 36px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid var(--line-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.explorer-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.explorer-title {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.explorer-count {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.explorer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.explorer-mini-btn {
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  border: 1px solid var(--line-dim);
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.explorer-mini-btn:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.explorer-collapse-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.explorer-collapse-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--line-dim);
+}
+
+.explorer-scroll-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0 12px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+.explorer-scroll-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.explorer-scroll-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+
+.explorer-cat-group {
+  border-bottom: 1px solid var(--line-subtle);
+}
+
+.explorer-cat-header {
+  height: 28px;
+  padding: 0 10px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.explorer-cat-header:hover {
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.explorer-cat-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.explorer-cat-caret {
+  width: 12px;
+  font-size: 9px;
+  color: var(--text-2);
+  text-align: center;
+  transition: transform 0.14s ease;
+}
+
+.explorer-cat-group.is-collapsed .explorer-cat-caret {
+  transform: rotate(-90deg);
+}
+
+.explorer-cat-name {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-1);
+}
+
+.explorer-cat-count {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-2);
+}
+
+.explorer-cat-items {
+  display: flex;
+  flex-direction: column;
+  padding: 2px 0 4px;
+}
+
+.explorer-cat-group.is-collapsed .explorer-cat-items {
+  display: none;
+}
+
+.explorer-video-row {
+  height: 25px;
+  padding: 0 10px 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.explorer-video-row:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.explorer-video-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.12s ease, opacity 0.12s ease;
+}
+
+.explorer-video-row.is-muted .explorer-video-label {
+  color: rgba(255, 255, 255, 0.30);
+}
+
+.explorer-video-meta {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, 0.26);
+  flex-shrink: 0;
+}
+
+.explorer-video-row.is-muted .explorer-video-meta {
+  opacity: 0.45;
+}
+
+/* Tactile Pill Toggle Switch (.ui-switch) */
+.ui-switch {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.ui-switch::after {
+  content: "";
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.45);
+  transition: transform 0.14s cubic-bezier(0.22, 1, 0.36, 1), background 0.14s ease;
+}
+
+.ui-switch.is-on {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.68);
+}
+
+.ui-switch.is-on::after {
+  transform: translateX(12px);
+  background: #ffffff;
+}
+
+.ui-switch.is-partial {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+.ui-switch.is-partial::after {
+  transform: translateX(6px);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.ui-switch:hover {
+  border-color: #ffffff;
+}
+
+/* --- Right Main 3D Stage Canvas --- */
+.performance-canvas {
+  --tile-size: 260px;
+  --spec-height: 80px;
+  --strip-width: 828px;
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-0);
   isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 22px;
-  padding: clamp(56px, 8.8vh, 108px) clamp(56px, 7.5vw, 136px) clamp(14px, 2vh, 24px);
   overflow: hidden;
 }
 
-.webgl-stage-bg {
+.explorer-expand-tab {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid var(--line-dim);
+  background: rgba(10, 13, 19, 0.88);
+  backdrop-filter: blur(8px);
+  color: var(--text-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 15;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.explorer-expand-tab:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(20, 25, 36, 0.96);
+}
+
+.three-stage-bg {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
   z-index: 0;
-}
-
-.spec-f0-badge {
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--accent-active);
-  padding: 2px 7px;
-  border: 1px solid rgba(16, 185, 129, 0.45);
-  background: rgba(16, 185, 129, 0.12);
-  border-radius: 2px;
 }
 
 .poly-video-strip {
@@ -105,8 +410,9 @@ body {
   pointer-events: none;
 }
 
+/* 100% full opacity on active foreground video + spectrogram slots */
 .stage-slot-unit.is-occupied {
-  opacity: 0.95;
+  opacity: 1;
 }
 
 .stage-slot-video {
@@ -114,7 +420,7 @@ body {
   width: var(--tile-size);
   height: var(--tile-size);
   aspect-ratio: 1 / 1;
-  background: #030406;
+  background: var(--bg-0);
   border: none;
   box-shadow: none;
   overflow: hidden;
@@ -132,189 +438,595 @@ body {
   width: var(--tile-size);
   height: var(--spec-height);
   display: block;
-  background: #030406;
+  background: var(--bg-0);
   border: none;
 }
 
 /* ============================================================================
-   2. Full-Width Expanding Bottom UX Panel + Lower-Right Material Settings Gear
+   2. Persistent Bottom Bar: [ MIDI Transport ] | [ Sample Controls ] | [ Keyboard ]
    ============================================================================ */
-.bottom-ux-shell {
-  position: relative;
-  width: 100%;
+.bottom-transport-dock {
+  height: 112px;
   flex-shrink: 0;
-  z-index: 40;
-}
-
-.sample-drawer-gear-btn {
-  position: absolute;
-  right: 20px;
-  top: -54px;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(14, 17, 24, 0.85);
-  backdrop-filter: blur(10px);
-  color: rgba(255, 255, 255, 0.62);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 46;
-  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
-}
-
-.sample-drawer-gear-btn:hover {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.48);
-  background: rgba(24, 30, 42, 0.96);
-}
-
-.sample-drawer-gear-btn.is-open {
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.55);
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.sample-drawer-gear-btn svg {
-  display: block;
-  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.sample-drawer-gear-btn.is-open svg {
-  transform: rotate(45deg);
-}
-
-.bottom-ux-panel {
   width: 100%;
-  height: 158px;
-  background: #07090e;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-dim);
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  z-index: 30;
+}
+
+.dock-zone {
+  height: 100%;
+  min-width: 0;
+}
+
+/* --- Zone 1 (Left): MIDI Player & Scrubbable Play Bar --- */
+.transport-zone {
+  width: clamp(232px, 21vw, 296px);
+  flex-shrink: 0;
+  border-right: 1px solid var(--line-dim);
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  overflow: hidden;
-  opacity: 1;
-  transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease, border-color 0.18s ease;
+  gap: 8px;
 }
 
-.bottom-ux-panel.collapsed {
-  height: 0;
-  opacity: 0;
-  border-top-color: transparent;
-  pointer-events: none;
-}
-
-.settings-samples-row {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
+.transport-top-row {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  padding-left: 20px;
+  gap: 8px;
+  min-width: 0;
 }
 
-.selected-note-pill {
+.midi-load-btn {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.78);
-  padding: 4px 9px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  flex-shrink: 0;
-}
-
-/* Left-Aligned Full-Width Bottom Control Strip (MIDI + Future Settings) */
-.midi-transport-bar {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 8px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.015);
-  flex-shrink: 0;
-  flex-wrap: wrap;
-}
-
-.midi-pill-btn {
-  height: 26px;
-  padding: 0 11px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.88);
-  font-family: var(--sans);
-  font-size: 11px;
-  font-weight: 500;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, opacity 0.14s ease;
+  flex-shrink: 0;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 
-.midi-pill-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.5);
+.midi-load-btn:hover {
   color: #ffffff;
-}
-
-.midi-pill-btn:disabled {
-  opacity: 0.34;
-  cursor: default;
+  border-color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.10);
 }
 
 .midi-file-label {
   font-family: var(--mono);
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.52);
-  min-width: 110px;
-  max-width: 240px;
+  font-size: 10px;
+  color: var(--text-2);
+  min-width: 0;
+  flex: 1 1 auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.midi-transport-controls {
+.transport-scrub-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  height: 36px;
 }
 
-.midi-icon-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.06);
+.midi-play-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.30);
+  background: transparent;
   color: #ffffff;
   font-size: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   cursor: pointer;
-  transition: background 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, opacity 0.12s ease;
 }
 
-.midi-icon-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.55);
+.midi-play-btn:hover:not(:disabled) {
+  border-color: #ffffff;
+  background: rgba(255, 255, 255, 0.10);
 }
 
-.midi-icon-btn.is-playing {
+.midi-play-btn.is-playing {
   background: #ffffff;
   border-color: #ffffff;
   color: #050608;
 }
 
-.midi-icon-btn:disabled {
-  opacity: 0.3;
+.midi-play-btn:disabled {
+  opacity: 0.24;
+  border-color: rgba(255, 255, 255, 0.18);
   cursor: default;
 }
 
+/* Sketch-faithful o---|------o Scrubbable Play Bar */
+.midi-scrub-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.midi-scrub-track.is-disabled {
+  opacity: 0.28;
+  cursor: default;
+  pointer-events: none;
+}
+
+.scrub-endpoint {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.65);
+  flex-shrink: 0;
+}
+
+.scrub-rail {
+  position: relative;
+  flex: 1 1 auto;
+  height: 1.5px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.scrub-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0%;
+  background: #ffffff;
+  pointer-events: none;
+}
+
+.scrub-playhead {
+  position: absolute;
+  top: 50%;
+  left: 0%;
+  width: 2px;
+  height: 14px;
+  background: #ffffff;
+  border-radius: 1px;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  transition: height 0.1s ease;
+}
+
+.midi-scrub-track:hover .scrub-playhead,
+.midi-scrub-track.is-scrubbing .scrub-playhead {
+  height: 18px;
+}
+
+.midi-time-readout {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* --- Zone 2 (Center): Single-Note Sample Controls --- */
+.note-samples-zone {
+  flex: 1 1 0;
+  min-width: 0;
+  border-right: 1px solid var(--line-dim);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 0 12px;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.note-samples-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.selected-note-pill {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffffff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  min-width: 40px;
+  text-align: center;
+}
+
+.candidates-strip {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 6px 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+.candidates-strip::-webkit-scrollbar {
+  height: 5px;
+}
+
+.candidates-strip::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+
+.candidate-card {
+  width: 62px;
+  flex: 0 0 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.cand-thumb-wrap {
+  position: relative;
+  width: 62px;
+  height: 62px;
+  border-radius: 4px;
+  background: #0b0e14;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  overflow: hidden;
+  transition: border-color 0.14s ease, transform 0.14s ease;
+}
+
+.cand-thumb-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0.28;
+  filter: saturate(0.2) brightness(0.78);
+  transition: opacity 0.16s ease, filter 0.16s ease;
+}
+
+.candidate-card.is-enabled .cand-thumb-wrap {
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.candidate-card.is-enabled .cand-thumb-wrap img {
+  opacity: 1;
+  filter: none;
+}
+
+.candidate-card:hover .cand-thumb-wrap {
+  border-color: rgba(255, 255, 255, 0.68);
+}
+
+.candidate-card:not(.is-enabled):hover .cand-thumb-wrap img {
+  opacity: 0.5;
+  filter: saturate(0.45) brightness(0.9);
+}
+
+.candidate-card.audition-focus .cand-thumb-wrap {
+  border-color: rgba(255, 255, 255, 0.85);
+}
+
+.toggle-on-btn {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(5, 7, 11, 0.72);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.14s ease, transform 0.12s ease;
+}
+
+.toggle-on-btn:hover {
+  background: rgba(5, 7, 11, 0.92);
+  transform: scale(1.08);
+}
+
+.transport-led {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.42);
+  background: transparent;
+  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.toggle-on-btn.is-on .transport-led {
+  background: #ffffff;
+  border-color: #ffffff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
+.cand-inspect-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(5, 7, 11, 0.72);
+  backdrop-filter: blur(4px);
+  color: rgba(255, 255, 255, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease, transform 0.12s ease;
+}
+
+.candidate-card:hover .cand-inspect-btn,
+.candidate-card.audition-focus .cand-inspect-btn {
+  opacity: 1;
+}
+
+body.static-mode .cand-inspect-btn {
+  display: none !important;
+}
+
+.cand-inspect-btn:hover {
+  background: rgba(255, 255, 255, 0.95);
+  color: #050608;
+  transform: scale(1.06);
+}
+
+.cand-slug-title {
+  width: 100%;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.36);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.14s ease;
+}
+
+.candidate-card.is-enabled .cand-slug-title {
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.candidate-card:hover .cand-slug-title {
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.empty-key-state {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  color: rgba(255, 255, 255, 0.34);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* --- Zone 3 (Right): Connected Equal-Width Wireframe Keyline Keyboard --- */
+.keyboard-zone {
+  width: clamp(360px, 38vw, 560px);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+}
+
+.keyboard-octave-bar {
+  height: 24px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.oct-step-btn {
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+
+.oct-step-btn:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: var(--line-dim);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.oct-step-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.oct-range-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-1);
+}
+
+.wireframe-keyboard-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.wireframe-keyboard {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-1);
+}
+
+/* Pure Wireframe Keylines — No White or Black Solid Fills */
+.wf-key {
+  --note-color: #8c95a4;
+  position: absolute;
+  top: 0;
+  background: var(--bg-1);
+  cursor: pointer;
+  transition: background 0.09s ease, box-shadow 0.09s ease;
+}
+
+.wf-key.natural {
+  height: 100%;
+  z-index: 1;
+  border-right: 1px solid var(--line-key);
+}
+
+.wf-key.natural.last-natural {
+  border-right: none;
+}
+
+.wf-key.natural.octave-start:not(:first-child) {
+  border-left: 1px solid rgba(255, 255, 255, 0.48);
+}
+
+/* Connected, touching equal-width accidentals sitting above natural stems */
+.wf-key.accidental {
+  height: 55%;
+  z-index: 2;
+  background: var(--bg-1);
+  border-left: 1px solid var(--line-key);
+  border-right: 1px solid var(--line-key);
+  border-bottom: 1px solid var(--line-key);
+}
+
+/* Adjacent accidentals (D#, G#, A#) touch C#, F#, G# cleanly without double 2px seams */
+.wf-key.accidental.touch-left {
+  border-left: none;
+}
+
+.wf-key.natural:hover:not(.active-play) {
+  background: #10141d;
+}
+
+.wf-key.accidental:hover:not(.active-play) {
+  background: #121722;
+}
+
+/* Subtle bottom micro-pip on keys that have active samples */
+.wf-key.configured-key::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.42);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.wf-key.accidental.configured-key::before {
+  bottom: 4px;
+}
+
+/* Subtle octave tag (C4, C5...) at bottom of C keys */
+.wf-key-label {
+  position: absolute;
+  left: 50%;
+  bottom: 11px;
+  transform: translateX(-50%);
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: rgba(255, 255, 255, 0.34);
+  pointer-events: none;
+  line-height: 1;
+}
+
+/* Selected Note Ring (currently inspected in Single-Note Sample Controls)
+   Natural keys stay z-index 1..3 behind accidentals (z-index 4..6) so L-shaped
+   and stem keys never overlap the connected accidental boxes above them! */
+.wf-key.natural.selected-key {
+  z-index: 2;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.88);
+}
+
+/* Active Hit: 12 Chromatic Note Colors */
+.wf-key.natural.active-play {
+  z-index: 3;
+  background: var(--note-color);
+  background: color-mix(in srgb, var(--note-color) 48%, var(--bg-1));
+  box-shadow:
+    inset 0 0 0 1.5px var(--note-color),
+    0 0 14px color-mix(in srgb, var(--note-color) 42%, transparent);
+}
+
+.wf-key.accidental {
+  z-index: 4;
+}
+
+.wf-key.accidental.selected-key {
+  z-index: 5;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.88);
+}
+
+.wf-key.accidental.active-play {
+  z-index: 6;
+  background: var(--note-color);
+  background: color-mix(in srgb, var(--note-color) 48%, var(--bg-1));
+  box-shadow:
+    inset 0 0 0 1.5px var(--note-color),
+    0 0 14px color-mix(in srgb, var(--note-color) 42%, transparent);
+}
+
+.wf-key.active-play .wf-key-label {
+  color: #ffffff;
+}
+
+/* ============================================================================
+   3. Shared Buttons & Universal Clip Inspector Overlay (#trimModal)
+   ============================================================================ */
 .ghost-btn {
   background: transparent;
   color: var(--text-1);
@@ -360,291 +1072,6 @@ body {
   font-weight: 700;
 }
 
-/* Thumbnail-Centric Left-Aligned Sample Strip */
-.candidates-strip {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 10px 20px 8px 14px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-}
-
-.candidate-card {
-  width: 78px;
-  flex: 0 0 78px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
-.cand-thumb-wrap {
-  position: relative;
-  width: 78px;
-  height: 78px;
-  border-radius: 6px;
-  background: #0b0e14;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  overflow: hidden;
-  transition: border-color 0.14s ease, transform 0.14s ease;
-}
-
-.cand-thumb-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  opacity: 0.32;
-  filter: saturate(0.2) brightness(0.8);
-  transition: opacity 0.16s ease, filter 0.16s ease, transform 0.2s ease;
-}
-
-.candidate-card.is-enabled .cand-thumb-wrap {
-  border-color: rgba(255, 255, 255, 0.26);
-}
-
-.candidate-card.is-enabled .cand-thumb-wrap img {
-  opacity: 1;
-  filter: none;
-}
-
-.candidate-card:hover .cand-thumb-wrap {
-  border-color: rgba(255, 255, 255, 0.55);
-}
-
-.candidate-card:not(.is-enabled):hover .cand-thumb-wrap img {
-  opacity: 0.52;
-  filter: saturate(0.45) brightness(0.9);
-}
-
-.candidate-card.audition-focus .cand-thumb-wrap {
-  border-color: rgba(255, 255, 255, 0.72);
-}
-
-/* Transport-Style Circular Active / Bypass Toggle (Top-Left of Thumbnail) */
-.toggle-on-btn {
-  position: absolute;
-  top: 5px;
-  left: 5px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(5, 7, 11, 0.68);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 2;
-  transition: background 0.14s ease, transform 0.12s ease;
-}
-
-.toggle-on-btn:hover {
-  background: rgba(5, 7, 11, 0.9);
-  transform: scale(1.08);
-}
-
-.transport-led {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.42);
-  background: transparent;
-  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
-}
-
-.toggle-on-btn.is-on .transport-led {
-  background: #ffffff;
-  border-color: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
-}
-
-/* Minimal Icon-Only Inspect Trigger (Top-Right of Thumbnail) */
-.cand-inspect-btn {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(5, 7, 11, 0.68);
-  backdrop-filter: blur(4px);
-  color: rgba(255, 255, 255, 0.78);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 2;
-  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease, transform 0.12s ease;
-}
-
-.candidate-card:hover .cand-inspect-btn,
-.candidate-card.audition-focus .cand-inspect-btn {
-  opacity: 1;
-}
-
-/* Hide local disk-authoring inspector button in static web builds (GitHub Pages) */
-body.static-mode .cand-inspect-btn {
-  display: none !important;
-}
-
-.cand-inspect-btn:hover {
-  background: rgba(255, 255, 255, 0.95);
-  color: #050608;
-  transform: scale(1.06);
-}
-
-/* Subtle Slug Caption Below Thumbnail */
-.cand-slug-title {
-  width: 100%;
-  text-align: center;
-  font-family: var(--sans);
-  font-size: 10.5px;
-  font-weight: 400;
-  letter-spacing: 0.01em;
-  color: rgba(255, 255, 255, 0.36);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: color 0.14s ease;
-}
-
-.candidate-card.is-enabled .cand-slug-title {
-  color: rgba(255, 255, 255, 0.72);
-}
-
-.candidate-card:hover .cand-slug-title {
-  color: rgba(255, 255, 255, 0.92);
-}
-
-.empty-key-state {
-  display: flex;
-  align-items: center;
-  padding: 0 4px;
-  color: rgba(255, 255, 255, 0.34);
-  font-size: 11.5px;
-  font-weight: 400;
-}
-
-/* ============================================================================
-   3. Centered Floating Chromatic Dots Row (2x Hit Enlarge + Screen Blend Mode)
-   ============================================================================ */
-.keyboard-dock {
-  position: relative;
-  z-index: 3;
-  width: var(--strip-width);
-  height: 36px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: visible;
-}
-
-.keyline-scroll-wrap {
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-
-.keyline-keyboard {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  overflow: visible;
-  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.78));
-}
-
-/* NOTE: Do NOT set z-index/transform/opacity on .key-cell so sibling .key-dot
-   elements share the same stacking context and blend with mix-blend-mode: screen */
-.key-cell {
-  --note-color: #8c95a4;
-  position: relative;
-  flex: 1 1 0;
-  min-width: 0;
-  height: 100%;
-  background: transparent;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  overflow: visible;
-}
-
-.key-cell.tonal-start {
-  margin-left: 11px;
-}
-
-.key-dot {
-  width: var(--dot-size, 8.8px);
-  height: var(--dot-size, 8.8px);
-  border-radius: 50%;
-  background: var(--note-color);
-  flex-shrink: 0;
-  mix-blend-mode: screen;
-  pointer-events: none;
-  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.14s ease;
-}
-
-/* Candidates present, all bypassed */
-.key-dot.muted-dot {
-  background: transparent;
-  box-shadow: inset 0 0 0 1.5px var(--note-color);
-  opacity: 0.5;
-}
-
-/* Empty slot (0 candidates) */
-.key-dot.empty-dot {
-  background: rgba(255, 255, 255, 0.16);
-  transform: scale(0.34);
-}
-
-.key-cell.octave-start .key-dot.empty-dot {
-  background: rgba(255, 255, 255, 0.28);
-  transform: scale(0.4);
-}
-
-/* Subtle hover feedback only when not actively booming */
-.key-cell:not(.active-play):hover .key-dot {
-  transform: scale(1.24);
-}
-
-.key-cell:not(.active-play):hover .key-dot.empty-dot {
-  background: rgba(255, 255, 255, 0.45);
-  transform: scale(0.68);
-}
-
-/* Selection keyline ring appears ONLY while the upper-right Settings panel is open,
-   keeping default performance mode 100% faithful to the 4:3 video render */
-body.settings-open .key-cell.selected-key::after {
-  content: "";
-  position: absolute;
-  width: calc(var(--dot-size, 8.8px) + 7px);
-  height: calc(var(--dot-size, 8.8px) + 7px);
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.92);
-  pointer-events: none;
-}
-
-/* ~2X Enlarge on Hit — overlaps neighboring dots with true Screen blending */
-.key-cell.configured-key.active-play .key-dot {
-  transform: scale(2.05);
-  transition: transform 0.065s cubic-bezier(0.2, 0.9, 0.3, 1);
-}
-
-/* ============================================================================
-   5. Universal Clip Inspector Overlay (Deeper Spectrogram + Trim In / Out)
-   ============================================================================ */
 .drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -1126,37 +1553,6 @@ body.settings-open .key-cell.selected-key::after {
   opacity: 1;
 }
 
-.trim-readouts-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.trim-nudge-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: var(--bg-1);
-  border: 1px solid var(--line-dim);
-  padding: 4px 7px;
-  border-radius: 3px;
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-.nudge-label {
-  font-weight: 700;
-  font-size: 10px;
-}
-
-.nudge-val {
-  min-width: 44px;
-  text-align: center;
-  color: #ffffff;
-}
-
 .nudge-btn {
   background: var(--bg-2);
   color: var(--text-1);
@@ -1170,16 +1566,6 @@ body.settings-open .key-cell.selected-key::after {
 
 .nudge-btn:hover {
   border-color: #ffffff;
-  color: #ffffff;
-}
-
-.trim-len-pill {
-  font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-2);
-}
-
-.trim-len-pill strong {
   color: #ffffff;
 }
 

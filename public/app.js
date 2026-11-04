@@ -1,5 +1,5 @@
 import { parseMidiFile } from './midi-parser.mjs';
-import { createWebglStage } from './webgl-stage.mjs';
+import { createThreeStage } from './three-stage.mjs';
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const CHROMATIC_COLORS = [
@@ -19,8 +19,18 @@ const CHROMATIC_COLORS = [
 const PERC_NOTE_COLOR = '#8c95a4';
 
 const ACCIDENTAL_SEMITONES = new Set([1, 3, 6, 8, 10]);
-const MIN_MIDI = 24; // C1 (Start of 12-key Percussion Octave C1–B1; Tonal C2–G7 starts at 36)
+const TOUCH_LEFT_ACCIDENTALS = new Set([3, 8, 10]); // D#, G#, A# touch C#, F#, G#
+const NATURAL_INDEX_BY_PC = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
+const ACCIDENTAL_OFFSET_BY_PC = { 1: 0.5, 3: 1.5, 6: 3.5, 8: 4.5, 10: 5.5 };
+
+const MIN_MIDI = 24; // C1 (Percussion Octave C1–B1; Tonal C2–G7 starts at 36)
 const MAX_MIDI = 103; // G7
+const MIN_BASE_OCTAVE_MIDI = 24; // C1–B3
+const MAX_BASE_OCTAVE_MIDI = 72; // C5–B7
+const VISIBLE_OCTAVES = 3; // 36 chromatic keys (21 natural keys wide)
+
+const PREFS_STORAGE_KEY = 'everytone_prefs_v2';
+const CATEGORY_ORDER = ['strings', 'winds', 'keys', 'metal', 'glass', 'wood', 'toms', 'percussion'];
 
 // Standard chromatic QWERTY layout (18 keys starting at baseOctaveMidi)
 const QWERTY_MAP = [
@@ -51,10 +61,13 @@ const state = {
   catalog: null,
   selectedMidi: 60, // Defaults to C4
   auditionIndex: 0,
-  sampleDrawerOpen: false, // Collapsed by default for clean fullscreen stage + circle strip
+  explorerCollapsed: false,
+  disabledVideoIds: new Set(),
+  collapsedCategories: new Set(),
+  sliceToggleOverrides: {}, // Static-mode per-slice toggle persistence
   releaseSec: 0.40, // Permanent 0.40s universal release decay
   highpassHz: 80, // Permanent 80Hz master low-cut filter
-  baseOctaveMidi: 60, // C4 (Z/X shifts QWERTY octave)
+  baseOctaveMidi: 60, // C4 (Z/X shifts visible 3-octave keyboard & QWERTY octave)
   sustainPedalDown: false,
   lastPlayedVideoId: null,
   lastPlayedSliceId: null,
@@ -62,18 +75,86 @@ const state = {
   assetBust: 0
 };
 
-// Track last-played slice per MIDI key for no-immediate-repeat randomization when 2+ clips are ON
+// Track last-played slice per MIDI key for round-robin rotation when 2+ clips are ON
 const lastPlayedSliceByMidi = new Map();
 
-function midiToName(midi) {
-  return NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
+// ============================================================================
+// Persistent Preferences (Cross-Reload Video Switch & UI State)
+// ============================================================================
+function normalizeBaseOctaveMidi(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 60;
+  const snapped = Math.round(n / 12) * 12;
+  return Math.max(MIN_BASE_OCTAVE_MIDI, Math.min(MAX_BASE_OCTAVE_MIDI, snapped));
 }
 
-function midiToShortLabel(midi) {
-  const pc = ((midi % 12) + 12) % 12;
-  const oct = Math.floor(midi / 12) - 1;
-  if (pc === 0) return NOTE_NAMES[pc] + oct;
-  return NOTE_NAMES[pc];
+function loadPrefsFromStorage() {
+  try {
+    const raw = window.localStorage.getItem(PREFS_STORAGE_KEY);
+    if (!raw) {
+      return {
+        hasSavedDisabledVideos: false,
+        disabledVideoIds: [],
+        sliceToggles: {},
+        explorerCollapsed: false,
+        collapsedCategories: [],
+        baseOctaveMidi: 60
+      };
+    }
+    const parsed = JSON.parse(raw);
+    return {
+      hasSavedDisabledVideos: Array.isArray(parsed?.disabledVideoIds),
+      disabledVideoIds: Array.isArray(parsed?.disabledVideoIds)
+        ? parsed.disabledVideoIds.map(String)
+        : [],
+      sliceToggles:
+        parsed?.sliceToggles && typeof parsed.sliceToggles === 'object' ? parsed.sliceToggles : {},
+      explorerCollapsed: Boolean(parsed?.explorerCollapsed),
+      collapsedCategories: Array.isArray(parsed?.collapsedCategories)
+        ? parsed.collapsedCategories.map(String)
+        : [],
+      baseOctaveMidi: normalizeBaseOctaveMidi(parsed?.baseOctaveMidi ?? 60)
+    };
+  } catch {
+    return {
+      hasSavedDisabledVideos: false,
+      disabledVideoIds: [],
+      sliceToggles: {},
+      explorerCollapsed: false,
+      collapsedCategories: [],
+      baseOctaveMidi: 60
+    };
+  }
+}
+
+function savePrefsToStorage() {
+  try {
+    const payload = {
+      disabledVideoIds: Array.from(state.disabledVideoIds),
+      sliceToggles: state.sliceToggleOverrides,
+      explorerCollapsed: state.explorerCollapsed,
+      collapsedCategories: Array.from(state.collapsedCategories),
+      baseOctaveMidi: state.baseOctaveMidi
+    };
+    window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {}
+}
+
+function isVideoDisabled(videoId) {
+  return Boolean(videoId && state.disabledVideoIds.has(videoId));
+}
+
+function getVisibleCandidatesForMidi(midi) {
+  const entry = state.catalog?.keyboardMap?.[midi];
+  if (!entry?.candidates?.length) return [];
+  return entry.candidates.filter(c => !isVideoDisabled(c.videoId));
+}
+
+// ============================================================================
+// Pitch & Chromatic Color Helpers
+// ============================================================================
+function midiToName(midi) {
+  return NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1);
 }
 
 function getNoteColor(midi) {
@@ -212,7 +293,7 @@ async function loadAudioBuffer(url) {
 }
 
 // ============================================================================
-// Fixed 3-Slot 1:1 Square Stage + Instant-Pop Tinted Spectrograms + f0 Stripe
+// Three.js 3D Stage + 3 Foreground 100%-Opacity Slots + Tinted Spectrograms
 // ============================================================================
 const STAGE_SLOT_COUNT = 3;
 const SPEC_MIN_FREQ = 45;
@@ -221,10 +302,10 @@ const SPEC_LOG_MIN = Math.log(SPEC_MIN_FREQ);
 const SPEC_LOG_MAX = Math.log(SPEC_MAX_FREQ);
 
 let stageSlotSeq = 0;
-let currentStageTileSize = 290;
-let currentMiniSpecH = 90;
+let currentStageTileSize = 260;
+let currentMiniSpecH = 80;
 let miniSpecAnimId = null;
-let webglStage = null;
+let threeStage = null;
 const miniSpecBitmapCache = new Map();
 
 const stageSlots = [
@@ -253,10 +334,13 @@ function resolvePlayableSliceById(sliceId) {
   const keyMap = state.catalog.keyboardMap || {};
   for (const entry of Object.values(keyMap)) {
     const found = (entry.candidates || []).find(c => c.sliceId === sliceId);
-    if (found) return found;
+    if (found) {
+      if (isVideoDisabled(found.videoId)) return null;
+      return found;
+    }
   }
   for (const v of state.catalog.videos || []) {
-    if (v.deleted) continue;
+    if (v.deleted || isVideoDisabled(v.id)) continue;
     const s = (v.slices || []).find(sl => sl.id === sliceId && !sl.deleted);
     if (s) {
       const midi = Number.isFinite(s.manualMidi) ? Number(s.manualMidi) : Number(s.midi ?? 60);
@@ -288,18 +372,16 @@ function updateStageTileSizes() {
   if (!stageEl || !grid) return;
 
   const gap = 24;
-  const padX = Math.max(112, Math.round(stageEl.clientWidth * 0.14));
-  const padY = Math.max(76, Math.round(stageEl.clientHeight * 0.12));
-  const dotsRowAndGap = 58; // 36px lowered dots row + 22px gap below spectrograms
+  const padX = Math.max(88, Math.round(stageEl.clientWidth * 0.13));
+  const padY = Math.max(64, Math.round(stageEl.clientHeight * 0.14));
 
-  const availW = Math.max(270, stageEl.clientWidth - padX - gap * (STAGE_SLOT_COUNT - 1));
-  const availHForSlotUnit = Math.max(160, stageEl.clientHeight - padY - dotsRowAndGap);
+  const availW = Math.max(240, stageEl.clientWidth - padX - gap * (STAGE_SLOT_COUNT - 1));
+  const availHForSlotUnit = Math.max(140, stageEl.clientHeight - padY);
   // Each slot unit height = side + 7 + 0.31 * side = 1.31 * side + 7
   const maxSideByH = Math.floor((availHForSlotUnit - 7) / 1.31);
-  const side = Math.max(104, Math.floor(Math.min(maxSideByH, availW / STAGE_SLOT_COUNT)));
-  const specH = Math.max(68, Math.round(side * 0.31)); // ~60% taller spectrogram
+  const side = Math.max(96, Math.floor(Math.min(maxSideByH, availW / STAGE_SLOT_COUNT)));
+  const specH = Math.max(62, Math.round(side * 0.31));
   const stripW = side * STAGE_SLOT_COUNT + gap * (STAGE_SLOT_COUNT - 1);
-  const dotSize = Number(Math.max(6.2, Math.min(11.2, ((stripW - 11) / 80) * 0.74)).toFixed(2));
 
   currentStageTileSize = side;
   currentMiniSpecH = specH;
@@ -307,38 +389,17 @@ function updateStageTileSizes() {
   stageEl.style.setProperty('--tile-size', `${side}px`);
   stageEl.style.setProperty('--spec-height', `${specH}px`);
   stageEl.style.setProperty('--strip-width', `${stripW}px`);
-  stageEl.style.setProperty('--dot-size', `${dotSize}px`);
 
-  webglStage?.resize();
+  threeStage?.resize();
 }
 
 window.addEventListener('resize', updateStageTileSizes);
-
-function setSampleDrawerOpen(nextOpen) {
-  const isOpen = Boolean(nextOpen);
-  state.sampleDrawerOpen = isOpen;
-  document.body.classList.toggle('settings-open', isOpen);
-
-  const drawerEl = document.getElementById('sampleDrawer');
-  const toggleBtn = document.getElementById('sampleDrawerToggleBtn');
-  if (drawerEl) {
-    drawerEl.classList.toggle('collapsed', !isOpen);
-  }
-  if (toggleBtn) {
-    toggleBtn.classList.toggle('is-open', isOpen);
-    toggleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-  }
-  if (isOpen) {
-    selectKeyForConfig(state.selectedMidi, false);
-  }
-}
 
 function getSliceIdentityKey(slice) {
   return String(slice?.sliceId || slice?.id || slice?.videoUrl || '');
 }
 
 function allocateStageSlotIndex(sliceKey) {
-  // 1. If this exact video clip is already occupying a slot, steal that slot!
   if (sliceKey) {
     for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
       if (stageSlots[i].occupied && stageSlots[i].sliceKey === sliceKey) {
@@ -346,12 +407,9 @@ function allocateStageSlotIndex(sliceKey) {
       }
     }
   }
-  // 2. Otherwise occupy the next open slot from left to right (0 -> 1 -> 2)
   for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
     if (!stageSlots[i].occupied) return i;
   }
-  // 3. Prefer stealing a slot whose clip has already finished playback and is only
-  //    sitting frozen on its last frame because a key/MIDI note is still held down
   let oldestFrozenIdx = -1;
   for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
     if (stageSlots[i].voice?.audioCompleted) {
@@ -362,7 +420,6 @@ function allocateStageSlotIndex(sliceKey) {
   }
   if (oldestFrozenIdx !== -1) return oldestFrozenIdx;
 
-  // 4. All 3 slots are actively mid-playback: steal the oldest active slot
   let oldestIdx = 0;
   for (let i = 1; i < STAGE_SLOT_COUNT; i++) {
     if (stageSlots[i].seq < stageSlots[oldestIdx].seq) {
@@ -421,7 +478,7 @@ function displaceStageSlotVoice(prevVoice, isSameClip = false) {
       prevVoice.src.stop(now + fadeSec + 0.01);
     } catch {}
   }
-  webglStage?.notifyActivity();
+  threeStage?.notifyActivity();
 }
 
 function createStageSquareTile(slice, playbackRate = 1.0) {
@@ -476,7 +533,7 @@ function createStageSquareTile(slice, playbackRate = 1.0) {
   videoEl.currentTime = Math.max(0, Number(slice.trimIn ?? 0));
   videoEl.play().catch(() => {});
 
-  webglStage?.notifyActivity();
+  threeStage?.notifyActivity();
 
   return { slotIdx, token, tile: videoWrap, videoEl };
 }
@@ -510,7 +567,7 @@ function removeStageTile(tileObj) {
     miniBitmap: null
   };
 
-  webglStage?.notifyActivity();
+  threeStage?.notifyActivity();
 }
 
 function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, bufferSpanSec = null, noteRgb = null) {
@@ -582,13 +639,11 @@ function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, buff
 
 function computeVoiceStripeAlpha(voice, now) {
   if (!voice) return 0;
-  // Early user release
   if (voice.releaseStartCtxTime !== null) {
     const dt = Math.max(0, now - voice.releaseStartCtxTime);
     const rel = Math.max(0.025, voice.releaseDur || state.releaseSec);
     return Math.max(0, Math.min(1, 1 - dt / rel));
   }
-  // Automatic forced end-of-clip release
   const elapsed = Math.max(0, now - voice.startedAt);
   const fStart = voice.forcedReleaseStartOffset ?? Math.max(0.012, voice.naturalDur - state.releaseSec);
   if (elapsed <= fStart) return 1;
@@ -617,12 +672,10 @@ function drawSlotMiniSpecFrame(slotIdx, now) {
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // Full spectrogram pops in immediately and stays 100% visible until hard-cut with the video
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(slot.miniBitmap, 0, 0, cssW, cssH);
 
   if (slot.voice.isPerc) {
-    // Percussive sound: no horizontal f0 line; thin 50% white vertical playhead synced to playback speed
     const elapsed = Math.max(0, now - slot.voice.startedAt);
     const progress = Math.max(0, Math.min(1, elapsed / Math.max(0.05, slot.voice.naturalDur)));
     const xPos = progress * (cssW - 1);
@@ -635,7 +688,6 @@ function drawSlotMiniSpecFrame(slotIdx, now) {
     ctx.stroke();
     ctx.restore();
   } else {
-    // Tonal sound: thin solid horizontal fundamental frequency stripe matching note color, fading out on release
     const f0Hz = slot.voice.f0Hz;
     const stripeAlpha = computeVoiceStripeAlpha(slot.voice, now);
     if (stripeAlpha > 0.005 && f0Hz >= SPEC_MIN_FREQ && f0Hz <= SPEC_MAX_FREQ) {
@@ -674,7 +726,6 @@ function attachSlotMiniSpectrogram(tileObj, slice, buffer, voice) {
   slotState.voice = voice;
   slotState.miniBitmap = bmp;
 
-  // Render full spectrogram + f0 stripe immediately on this exact frame
   if (audioCtx) {
     drawSlotMiniSpecFrame(tileObj.slotIdx, audioCtx.currentTime);
   }
@@ -743,7 +794,7 @@ async function startHeldVoice({
   const ctx = ensureAudioContext();
   if (midi !== null) setKeyActiveClass(midi, true);
 
-  if (!slice) {
+  if (!slice || isVideoDisabled(slice.videoId)) {
     if (midi !== null) {
       setTimeout(() => {
         if (!isMidiStillHeld(midi)) setKeyActiveClass(midi, false);
@@ -786,10 +837,17 @@ async function startHeldVoice({
     releaseDur: state.releaseSec
   };
   activeVoices.set(triggerId, voice);
-  webglStage?.notifyActivity();
+  threeStage?.notifyActivity();
 
   try {
     const buffer = await loadAudioBuffer(slice.audioUrl);
+    if (voice.released || isVideoDisabled(slice.videoId)) {
+      activeVoices.delete(triggerId);
+      if (midi !== null && !isMidiStillHeld(midi)) setKeyActiveClass(midi, false);
+      threeStage?.notifyActivity();
+      return;
+    }
+
     const tileObj = createStageSquareTile(slice, playbackRate);
     voice.tileObj = tileObj;
 
@@ -803,11 +861,9 @@ async function startHeldVoice({
     const trimOut = Math.max(trimIn + 0.08, Math.min(rawLimit, Number(slice.trimOut ?? rawLimit)));
     const unpitchedSpan = Math.max(0.08, trimOut - trimIn);
 
-    // Universal 2.50s cap on real-time playback duration
     const playDur = Math.min(MAX_CLIP_DUR, unpitchedSpan / playbackRate);
     const bufferPlaySpan = Math.min(buffer.duration - trimIn, playDur * playbackRate);
 
-    // Universal forced end-of-clip release decay (default 0.40s) so clip ALWAYS decays cleanly before its end
     const forcedRelDur = Math.min(state.releaseSec, playDur * 0.78);
     const forcedRelStart = Math.max(0.012, playDur - forcedRelDur);
 
@@ -845,8 +901,6 @@ async function startHeldVoice({
       voice.naturalTimer = setTimeout(() => {
         voice.naturalTimer = null;
         if (!voice.released) {
-          // Key / MIDI note is still held down after clip finishes:
-          // stay frozen on the last frame in silence with the spectrogram visible until key-up (or slot steal)!
           voice.audioCompleted = true;
           const vid = voice.tileObj?.videoEl;
           if (vid) {
@@ -870,7 +924,7 @@ async function startHeldVoice({
     console.warn('Error starting voice:', err);
     if (voice.tileObj) removeStageTile(voice.tileObj);
     activeVoices.delete(triggerId);
-    webglStage?.notifyActivity();
+    threeStage?.notifyActivity();
   }
 }
 
@@ -893,8 +947,6 @@ function applyVoiceReleaseRamp(voice, customReleaseSec = null) {
 
   voice.released = true;
 
-  // If the clip already finished playing in silence while frozen on its last frame,
-  // clear the frozen frame & spectrogram immediately on key-up!
   if (voice.audioCompleted || (voice.startedAt && voice.naturalDur && now - voice.startedAt >= voice.naturalDur)) {
     voice.audioCompleted = true;
     voice.releaseStartCtxTime = now;
@@ -957,7 +1009,7 @@ function isMidiStillHeld(midi) {
 }
 
 function setKeyActiveClass(midi, active) {
-  const el = document.querySelector(`.key-cell[data-midi="${midi}"]`);
+  const el = document.querySelector(`.wf-key[data-midi="${midi}"]`);
   if (el) el.classList.toggle('active-play', active);
 }
 
@@ -1164,10 +1216,189 @@ function buildSpectrogramOffscreen(
 }
 
 // ============================================================================
+// Left Collapsible Sidebar: Video File Explorer & Persistent Video Muting
+// ============================================================================
+function setExplorerCollapsed(nextCollapsed) {
+  state.explorerCollapsed = Boolean(nextCollapsed);
+  savePrefsToStorage();
+
+  const explorerEl = document.getElementById('fileExplorer');
+  const expandBtn = document.getElementById('explorerExpandBtn');
+  if (explorerEl) {
+    explorerEl.classList.toggle('collapsed', state.explorerCollapsed);
+  }
+  if (expandBtn) {
+    expandBtn.classList.toggle('hidden', !state.explorerCollapsed);
+  }
+}
+
+function setVideosEnabled(videoIds, enabled) {
+  if (!Array.isArray(videoIds) || videoIds.length === 0) return;
+  const isEn = Boolean(enabled);
+  const idSet = new Set(videoIds.map(String));
+
+  for (const id of idSet) {
+    if (isEn) state.disabledVideoIds.delete(id);
+    else state.disabledVideoIds.add(id);
+  }
+
+  for (const v of state.catalog?.videos || []) {
+    if (idSet.has(v.id)) {
+      v.enabled = isEn;
+    }
+  }
+
+  // If videos were muted, cleanly fade out any voices currently playing from them
+  if (!isEn) {
+    for (const [trigId, voice] of Array.from(activeVoices.entries())) {
+      if (voice.slice?.videoId && idSet.has(voice.slice.videoId)) {
+        releaseHeldVoice(trigId, 0.08);
+      }
+    }
+  }
+
+  savePrefsToStorage();
+  refreshAllUI();
+
+  if (!state.isStaticMode) {
+    fetch('./api/video/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoIds: Array.from(idSet), enabled: isEn })
+    }).catch(() => {});
+  }
+}
+
+function renderFileExplorer() {
+  const listEl = document.getElementById('explorerList');
+  const countEl = document.getElementById('explorerActiveCount');
+  if (!listEl) return;
+
+  const prevScrollTop = listEl.scrollTop;
+  const activeVideos = (state.catalog?.videos || [])
+    .filter(v => !v.deleted)
+    .slice()
+    .sort((a, b) => String(a.slug || '').localeCompare(String(b.slug || '')));
+
+  const enabledTotal = activeVideos.filter(v => !isVideoDisabled(v.id)).length;
+  if (countEl) {
+    countEl.textContent = `${enabledTotal}/${activeVideos.length}`;
+  }
+
+  const byCat = new Map();
+  for (const v of activeVideos) {
+    const cat = String(v.category || 'other').toLowerCase();
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(v);
+  }
+
+  const orderedCats = [
+    ...CATEGORY_ORDER.filter(c => byCat.has(c)),
+    ...Array.from(byCat.keys())
+      .filter(c => !CATEGORY_ORDER.includes(c))
+      .sort()
+  ];
+
+  listEl.innerHTML = '';
+
+  for (const cat of orderedCats) {
+    const catVideos = byCat.get(cat) || [];
+    if (catVideos.length === 0) continue;
+
+    const enabledInCat = catVideos.filter(v => !isVideoDisabled(v.id)).length;
+    const isCollapsed = state.collapsedCategories.has(cat);
+
+    const groupEl = document.createElement('div');
+    groupEl.className = `explorer-cat-group${isCollapsed ? ' is-collapsed' : ''}`;
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'explorer-cat-header';
+
+    let catSwitchClass = 'ui-switch';
+    if (enabledInCat === catVideos.length) {
+      catSwitchClass = 'ui-switch is-on';
+    } else if (enabledInCat > 0) {
+      catSwitchClass = 'ui-switch is-partial';
+    }
+
+    headerEl.innerHTML = `
+      <div class="explorer-cat-left">
+        <span class="explorer-cat-caret">▾</span>
+        <span class="explorer-cat-name">${cat}</span>
+        <span class="explorer-cat-count">${enabledInCat}/${catVideos.length}</span>
+      </div>
+      <button
+        type="button"
+        class="${catSwitchClass}"
+        role="switch"
+        aria-checked="${enabledInCat > 0 ? 'true' : 'false'}"
+        title="${enabledInCat > 0 ? `Mute all ${cat} videos` : `Enable all ${cat} videos`}"
+      ></button>
+    `;
+
+    headerEl.addEventListener('click', e => {
+      if (e.target.closest('.ui-switch')) return;
+      if (state.collapsedCategories.has(cat)) state.collapsedCategories.delete(cat);
+      else state.collapsedCategories.add(cat);
+      savePrefsToStorage();
+      groupEl.classList.toggle('is-collapsed', state.collapsedCategories.has(cat));
+    });
+
+    const catSwitchBtn = headerEl.querySelector('.ui-switch');
+    catSwitchBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const nextEnabled = enabledInCat === 0;
+      setVideosEnabled(
+        catVideos.map(v => v.id),
+        nextEnabled
+      );
+    });
+
+    const itemsEl = document.createElement('div');
+    itemsEl.className = 'explorer-cat-items';
+
+    for (const v of catVideos) {
+      const muted = isVideoDisabled(v.id);
+      const sliceCount = (v.slices || []).filter(s => !s.deleted).length;
+
+      const rowEl = document.createElement('div');
+      rowEl.className = `explorer-video-row${muted ? ' is-muted' : ''}`;
+      rowEl.dataset.videoId = v.id;
+      rowEl.title = `${v.slug} (${sliceCount} sample${sliceCount === 1 ? '' : 's'}) — click to ${muted ? 'enable' : 'mute'}`;
+
+      rowEl.innerHTML = `
+        <span class="explorer-video-label">${v.slug}</span>
+        <span class="explorer-video-meta">${sliceCount}</span>
+        <button
+          type="button"
+          class="ui-switch${muted ? '' : ' is-on'}"
+          role="switch"
+          aria-checked="${muted ? 'false' : 'true'}"
+          title="${muted ? `Enable ${v.slug}` : `Mute ${v.slug}`}"
+        ></button>
+      `;
+
+      rowEl.addEventListener('click', e => {
+        e.stopPropagation();
+        setVideosEnabled([v.id], muted);
+      });
+
+      itemsEl.appendChild(rowEl);
+    }
+
+    groupEl.appendChild(headerEl);
+    groupEl.appendChild(itemsEl);
+    listEl.appendChild(groupEl);
+  }
+
+  listEl.scrollTop = prevScrollTop;
+}
+
+// ============================================================================
 // Piano Key & Multi-Candidate Sequential Round-Robin Trigger Helpers
 // ============================================================================
-function pickEnabledCandidateForMidi(midi, entry) {
-  const enabledCands = (entry?.candidates || []).filter(c => c.enabled);
+function pickEnabledCandidateForMidi(midi) {
+  const enabledCands = getVisibleCandidatesForMidi(midi).filter(c => c.enabled);
   if (enabledCands.length === 0) return null;
   if (enabledCands.length === 1) {
     lastPlayedSliceByMidi.set(midi, enabledCands[0].sliceId);
@@ -1187,8 +1418,7 @@ function startPianoKeyHold(triggerId, midi, velocity = 0.92, selectInDeck = true
     selectKeyForConfig(midi, false);
   }
 
-  const entry = state.catalog?.keyboardMap?.[midi];
-  const cand = pickEnabledCandidateForMidi(midi, entry);
+  const cand = pickEnabledCandidateForMidi(midi);
   if (!cand) {
     startHeldVoice({ triggerId, midi, slice: null, velocity });
     return;
@@ -1252,15 +1482,15 @@ function selectKeyForConfig(midi, shouldTapPreview = false) {
   const clamped = Math.max(MIN_MIDI, Math.min(MAX_MIDI, midi));
   state.selectedMidi = clamped;
 
-  const entry = state.catalog?.keyboardMap?.[clamped];
-  if (entry && entry.candidates?.length) {
-    const firstEnabledIdx = entry.candidates.findIndex(c => c.enabled);
+  const visCands = getVisibleCandidatesForMidi(clamped);
+  if (visCands.length > 0) {
+    const firstEnabledIdx = visCands.findIndex(c => c.enabled);
     state.auditionIndex = firstEnabledIdx >= 0 ? firstEnabledIdx : 0;
   } else {
     state.auditionIndex = 0;
   }
 
-  document.querySelectorAll('.key-cell').forEach(el => {
+  document.querySelectorAll('.wf-key').forEach(el => {
     const m = Number(el.dataset.midi);
     el.classList.toggle('selected-key', m === clamped);
   });
@@ -1273,80 +1503,108 @@ function selectKeyForConfig(midi, shouldTapPreview = false) {
 }
 
 // ============================================================================
-// Rendering: Pure Chromatic Circle Strip & Collapsible Thumbnail Sample Tray
+// Wireframe Keyline Chromatic Keyboard (3 Visible Octaves, Equal-Width Keys)
 // ============================================================================
+let wfKeyboardDragActive = false;
+let wfKeyboardDragMidi = null;
+let wfKeyboardDragStartMs = 0;
+
+function shiftKeyboardOctave(deltaOctaves) {
+  const nextBase = normalizeBaseOctaveMidi(state.baseOctaveMidi + deltaOctaves * 12);
+  if (nextBase === state.baseOctaveMidi) return;
+  state.baseOctaveMidi = nextBase;
+  savePrefsToStorage();
+  renderPianoKeyboard();
+}
+
 function renderPianoKeyboard() {
   const container = document.getElementById('pianoKeyboard');
   if (!container) return;
   container.innerHTML = '';
 
+  const startMidi = normalizeBaseOctaveMidi(state.baseOctaveMidi);
+  const endMidi = startMidi + VISIBLE_OCTAVES * 12 - 1;
+
+  const rangeLabel = document.getElementById('octaveRangeLabel');
+  if (rangeLabel) {
+    rangeLabel.textContent = `${midiToName(startMidi)}–${midiToName(endMidi)}`;
+  }
+  const octDownBtn = document.getElementById('octDownBtn');
+  if (octDownBtn) octDownBtn.disabled = startMidi <= MIN_BASE_OCTAVE_MIDI;
+  const octUpBtn = document.getElementById('octUpBtn');
+  if (octUpBtn) octUpBtn.disabled = startMidi >= MAX_BASE_OCTAVE_MIDI;
+
+  const totalNaturals = VISIBLE_OCTAVES * 7; // 21 equal-width units
+  const unitWidthPct = 100 / totalNaturals;
   const keyMap = state.catalog?.keyboardMap || {};
 
-  for (let midi = MIN_MIDI; midi <= MAX_MIDI; midi++) {
-    const pc = ((midi % 12) + 12) % 12;
+  for (let i = 0; i < VISIBLE_OCTAVES * 12; i++) {
+    const midi = startMidi + i;
+    const octIdx = Math.floor(i / 12);
+    const pc = i % 12;
     const isAccidental = ACCIDENTAL_SEMITONES.has(pc);
     const isOctaveStart = pc === 0;
-    const isPercKey = midi < 36;
-    const isTonalStart = midi === 36;
+    const inRange = midi >= MIN_MIDI && midi <= MAX_MIDI;
 
-    const entry = keyMap[midi];
-    const candCount = entry?.candidateCount || 0;
-    const enabledCount = entry?.enabledCount || 0;
-    const isEmpty = enabledCount === 0;
+    const visCands = inRange ? getVisibleCandidatesForMidi(midi) : [];
+    const candCount = visCands.length;
+    const enabledCount = visCands.filter(c => c.enabled).length;
 
-    const cell = document.createElement('div');
-    cell.className = [
-      'key-cell',
-      isPercKey ? 'perc-key' : 'tonal-key',
-      isTonalStart ? 'tonal-start' : '',
+    const leftUnits = isAccidental
+      ? octIdx * 7 + ACCIDENTAL_OFFSET_BY_PC[pc]
+      : octIdx * 7 + NATURAL_INDEX_BY_PC[pc];
+
+    const isLastNatural = !isAccidental && octIdx === VISIBLE_OCTAVES - 1 && pc === 11;
+
+    const keyEl = document.createElement('div');
+    keyEl.className = [
+      'wf-key',
       isAccidental ? 'accidental' : 'natural',
+      isAccidental && TOUCH_LEFT_ACCIDENTALS.has(pc) ? 'touch-left' : '',
       isOctaveStart ? 'octave-start' : '',
-      isEmpty ? 'empty-key' : 'configured-key',
+      isLastNatural ? 'last-natural' : '',
+      enabledCount > 0 ? 'configured-key' : 'empty-key',
       midi === state.selectedMidi ? 'selected-key' : '',
       isMidiStillHeld(midi) ? 'active-play' : ''
     ]
       .filter(Boolean)
       .join(' ');
-    cell.dataset.midi = midi;
-    cell.style.setProperty('--note-color', getNoteColor(midi));
 
-    let dotClass = 'key-dot';
-    if (enabledCount > 0) {
-      dotClass = 'key-dot';
-    } else if (candCount > 0) {
-      dotClass = 'key-dot muted-dot';
-    } else {
-      dotClass = 'key-dot empty-dot';
+    keyEl.dataset.midi = String(midi);
+    keyEl.style.left = `${(leftUnits * unitWidthPct).toFixed(4)}%`;
+    keyEl.style.width = `${unitWidthPct.toFixed(4)}%`;
+    keyEl.style.setProperty('--note-color', getNoteColor(midi));
+
+    if (isOctaveStart) {
+      const lbl = document.createElement('span');
+      lbl.className = 'wf-key-label';
+      lbl.textContent = midiToName(midi);
+      keyEl.appendChild(lbl);
     }
-
-    cell.innerHTML = `<span class="${dotClass}"></span>`;
 
     const fullNoteName = midiToName(midi);
-    const roleMeta = isPercKey
-      ? entry?.percRole || 'Percussion'
-      : `${midiToFreq(midi)} Hz`;
+    const entry = keyMap[midi];
+    const roleMeta = midi < 36 ? entry?.percRole || 'Percussion' : `${midiToFreq(midi)} Hz`;
 
-    if (enabledCount > 0) {
-      cell.title = `${fullNoteName} · ${roleMeta} — ${enabledCount} / ${candCount} active`;
+    if (!inRange) {
+      keyEl.title = `${fullNoteName} (out of range)`;
+    } else if (enabledCount > 0) {
+      keyEl.title = `${fullNoteName} · ${roleMeta} — ${enabledCount} / ${candCount} active`;
     } else if (candCount > 0) {
-      cell.title = `${fullNoteName} · ${roleMeta} — Bypassed (${candCount})`;
+      keyEl.title = `${fullNoteName} · ${roleMeta} — Bypassed (${candCount})`;
     } else {
-      cell.title = `${fullNoteName} (${roleMeta})`;
+      keyEl.title = `${fullNoteName} (${roleMeta})`;
     }
 
-    cell.addEventListener('mousedown', e => {
-      if (e.button !== 0) return;
-      selectKeyForConfig(midi, false);
-      triggerDefaultPianoGate(`ui_key_${midi}`, midi, 0.92, false);
-    });
-
-    container.appendChild(cell);
+    container.appendChild(keyEl);
   }
 }
 
+// ============================================================================
+// Center Bottom Zone: Single-Note Sample Controls
+// ============================================================================
 function getCandidatesForSelectedKey() {
-  const entry = state.catalog?.keyboardMap?.[state.selectedMidi];
-  return entry?.candidates || [];
+  return getVisibleCandidatesForMidi(state.selectedMidi);
 }
 
 function renderSelectedKeyDeck() {
@@ -1364,14 +1622,19 @@ function renderSelectedKeyDeck() {
   }
 
   const grid = document.getElementById('candidatesGrid');
+  if (!grid) return;
   grid.innerHTML = '';
 
   const candidates = getCandidatesForSelectedKey();
+  if (state.auditionIndex >= candidates.length) {
+    state.auditionIndex = 0;
+  }
+
   if (candidates.length === 0) {
     const emptyDiv = document.createElement('div');
     emptyDiv.className = 'empty-key-state';
     const metaLabel = isPercKey ? entry?.percRole || 'Percussion' : `${freqStr} Hz`;
-    emptyDiv.textContent = `${noteName} · ${metaLabel} — no samples`;
+    emptyDiv.textContent = `${noteName} · ${metaLabel} — no active video samples`;
     grid.appendChild(emptyDiv);
     return;
   }
@@ -1404,7 +1667,7 @@ function renderSelectedKeyDeck() {
           title="Inspect clip"
           aria-label="Inspect clip"
         >
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
             <line x1="2.5" y1="4" x2="13.5" y2="4"></line>
             <circle cx="6" cy="4" r="1.4" fill="currentColor"></circle>
             <line x1="2.5" y1="8" x2="13.5" y2="8"></line>
@@ -1652,7 +1915,6 @@ async function startTrimPreview() {
   const outSec = Math.max(inSec + 0.08, Math.min(rawLimit, trimState.outSec));
   const unpitchedSpan = Math.max(0.08, outSec - inSec);
 
-  // Respect trimmed [inSec -> outSec] with universal 2.50s cap and 0.40s forced end-of-clip decay
   const playDur = Math.min(MAX_CLIP_DUR, unpitchedSpan / rate);
   const bufferPlaySpan = Math.min(buffer.duration - inSec, playDur * rate);
   const effectiveOutSec = inSec + bufferPlaySpan;
@@ -1784,7 +2046,6 @@ function renderInspectorSpectrogram() {
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // Draw Reference Tone horizontal guide when testing an alternate note (or tonal reference on a perc clip)
   const refMidi = trimState.refMidi;
   if (Number.isFinite(refMidi) && (refMidi !== trimState.assignedMidi || (isPerc && refMidi >= 36))) {
     const refFreq = Number(midiToFreq(refMidi));
@@ -1939,7 +2200,6 @@ function renderTrimWaveformCanvas() {
     }
   }
 
-  // Visualize forced end-of-clip release decay envelope inside [inSec, outSec]
   const rate = Math.max(0.25, Math.min(4.0, trimState.playbackRate || 1.0));
   const unpitchedSpan = Math.max(0.08, trimState.outSec - trimState.inSec);
   const playDur = Math.min(MAX_CLIP_DUR, unpitchedSpan / rate);
@@ -1964,7 +2224,6 @@ function renderTrimWaveformCanvas() {
   ctx.stroke();
   ctx.restore();
 
-  // Time ruler along bottom (0.00s .. rawDur <= 2.50s)
   ctx.fillStyle = 'rgba(0, 0, 0, 0.58)';
   ctx.fillRect(0, waveAreaH, cssW, 18);
   ctx.font = '10px "SF Mono", Menlo, monospace';
@@ -2115,7 +2374,6 @@ function populateInspectorHeaderAndPeaks() {
 
   document.getElementById('inspectorSlugInput').value = video.slug || '';
 
-  // Populate MIDI Note Slot selector (24 C1 .. 103 G7)
   const slotSelect = document.getElementById('inspectorSlotSelect');
   if (slotSelect) {
     slotSelect.innerHTML = '';
@@ -2149,7 +2407,6 @@ function populateInspectorHeaderAndPeaks() {
 
   updateInspectorRefUi();
 
-  // Show/hide "↺ Reset to DSP" button whenever slot or tuning was overridden
   const resetDspBtn = document.getElementById('inspectorResetDspBtn');
   if (resetDspBtn) {
     if (isOverridden) {
@@ -2160,7 +2417,6 @@ function populateInspectorHeaderAndPeaks() {
     }
   }
 
-  // Populate Re-Pitch controls
   const activeShiftCents =
     cand?.shiftCents ??
     Math.round(1200 * Math.log2(Math.max(0.25, trimState.playbackRate || 1.0)));
@@ -2265,28 +2521,48 @@ function closeTrimModal() {
 }
 
 // ============================================================================
-// API & Event Bindings
+// API & State Refresh
 // ============================================================================
-async function apiPost(url, body) {
-  if (state.isStaticMode) {
-    if (url === '/api/keyboard/toggle' && body && state.catalog?.keyboardMap) {
-      const entry = state.catalog.keyboardMap[body.midi];
-      if (entry) {
-        for (const c of entry.candidates || []) {
-          if (c.sliceId === body.sliceId) {
-            c.enabled = Boolean(body.enabled);
-          }
-        }
-        entry.enabledSliceIds = (entry.candidates || []).filter(c => c.enabled).map(c => c.sliceId);
-        entry.enabledCount = entry.enabledSliceIds.length;
-        entry.primary = (entry.candidates || []).find(c => c.enabled) || null;
-        entry.activeSliceId = entry.primary ? entry.primary.sliceId : null;
-        entry.isCleared = entry.enabledCount === 0;
-        refreshAllUI();
+function applySliceToggleLocally(midi, sliceId, enabled) {
+  const isEn = Boolean(enabled);
+  state.sliceToggleOverrides[sliceId] = isEn;
+  savePrefsToStorage();
+
+  const entry = state.catalog?.keyboardMap?.[midi];
+  if (entry) {
+    for (const c of entry.candidates || []) {
+      if (c.sliceId === sliceId) {
+        c.enabled = isEn;
       }
     }
-    return { ok: true };
+    entry.enabledSliceIds = (entry.candidates || []).filter(c => c.enabled).map(c => c.sliceId);
+    entry.enabledCount = entry.enabledSliceIds.length;
+    entry.primary = (entry.candidates || []).find(c => c.enabled) || null;
+    entry.activeSliceId = entry.primary ? entry.primary.sliceId : null;
+    entry.isCleared = entry.enabledCount === 0;
   }
+}
+
+async function apiPost(url, body) {
+  if (url === '/api/keyboard/toggle' && body) {
+    applySliceToggleLocally(body.midi, body.sliceId, body.enabled);
+    if (state.isStaticMode) {
+      refreshAllUI();
+      return { ok: true };
+    }
+    const res = await fetch(resolveAssetUrl(url), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      state.catalog = await res.json();
+    }
+    refreshAllUI();
+    return res;
+  }
+
+  if (state.isStaticMode) return { ok: true };
 
   const res = await fetch(resolveAssetUrl(url), {
     method: 'POST',
@@ -2306,15 +2582,16 @@ async function apiPost(url, body) {
 }
 
 function refreshAllUI() {
+  renderFileExplorer();
   renderPianoKeyboard();
   renderSelectedKeyDeck();
-  webglStage?.syncCatalog(state.catalog);
+  threeStage?.syncCatalog(state.catalog);
 }
 
 function stepToAdjacentPopulatedKey(dir) {
   let m = state.selectedMidi + dir;
   while (m >= MIN_MIDI && m <= MAX_MIDI) {
-    if ((state.catalog?.keyboardMap?.[m]?.candidateCount || 0) > 0) {
+    if (getVisibleCandidatesForMidi(m).length > 0) {
       selectKeyForConfig(m, true);
       return;
     }
@@ -2323,12 +2600,13 @@ function stepToAdjacentPopulatedKey(dir) {
 }
 
 // ============================================================================
-// MIDI File Transport (Upload + Play / Pause / Restart + Offline 4:3 Render)
+// Left Bottom Zone: MIDI File Transport & Scrubbable Play Bar
 // ============================================================================
 const midiPlayer = {
   fileName: '',
   parsed: null,
   playing: false,
+  scrubbing: false,
   elapsedSec: 0,
   lastPerfMs: 0,
   nextEventIdx: 0,
@@ -2349,7 +2627,10 @@ function updateMidiTransportUi() {
   const labelEl = document.getElementById('midiFileLabel');
   const playBtn = document.getElementById('midiPlayPauseBtn');
   const playIcon = document.getElementById('midiPlayPauseIcon');
-  const restartBtn = document.getElementById('midiRestartBtn');
+  const scrubTrack = document.getElementById('midiScrubTrack');
+  const scrubFill = document.getElementById('midiScrubFill');
+  const scrubThumb = document.getElementById('midiScrubThumb');
+  const timeReadout = document.getElementById('midiTimeReadout');
 
   const hasMidi = Boolean(midiPlayer.parsed);
   if (playBtn) {
@@ -2359,15 +2640,26 @@ function updateMidiTransportUi() {
   if (playIcon) {
     playIcon.textContent = midiPlayer.playing ? '❚❚' : '▶';
   }
-  if (restartBtn) {
-    restartBtn.disabled = !hasMidi;
+  if (scrubTrack) {
+    scrubTrack.classList.toggle('is-disabled', !hasMidi);
+    scrubTrack.classList.toggle('is-scrubbing', midiPlayer.scrubbing);
   }
+
+  const dur = hasMidi ? Math.max(0.01, Number(midiPlayer.parsed.durationSec || 0.01)) : 1;
+  const clampedElapsed = hasMidi ? Math.max(0, Math.min(dur, midiPlayer.elapsedSec)) : 0;
+  const pct = hasMidi ? (clampedElapsed / dur) * 100 : 0;
+
+  if (scrubFill) scrubFill.style.width = `${pct.toFixed(2)}%`;
+  if (scrubThumb) scrubThumb.style.left = `${pct.toFixed(2)}%`;
+
   if (labelEl) {
-    if (!hasMidi) {
-      labelEl.textContent = 'No MIDI loaded';
-    } else {
-      labelEl.textContent = `${midiPlayer.fileName} · ${formatClockSec(midiPlayer.elapsedSec)} / ${formatClockSec(midiPlayer.parsed.durationSec)}`;
-    }
+    labelEl.textContent = hasMidi ? midiPlayer.fileName : 'No MIDI loaded';
+    labelEl.title = hasMidi ? midiPlayer.fileName : '';
+  }
+  if (timeReadout) {
+    timeReadout.textContent = hasMidi
+      ? `${formatClockSec(clampedElapsed)} / ${formatClockSec(dur)}`
+      : '0:00';
   }
 }
 
@@ -2393,6 +2685,17 @@ function seekMidiEventCursor(targetSec) {
   midiPlayer.nextEventIdx = idx;
 }
 
+function seekMidiTransportTo(targetSec) {
+  if (!midiPlayer.parsed) return;
+  const dur = Math.max(0, Number(midiPlayer.parsed.durationSec || 0));
+  const clamped = Math.max(0, Math.min(dur, targetSec));
+  silenceAllMidiTransportVoices(0.06);
+  midiPlayer.elapsedSec = clamped;
+  midiPlayer.lastPerfMs = performance.now();
+  seekMidiEventCursor(clamped);
+  updateMidiTransportUi();
+}
+
 function tickMidiTransport() {
   if (!midiPlayer.playing || !midiPlayer.parsed) {
     midiPlayer.rafId = null;
@@ -2402,51 +2705,54 @@ function tickMidiTransport() {
   const nowMs = performance.now();
   const dt = Math.min(0.1, Math.max(0, (nowMs - midiPlayer.lastPerfMs) / 1000));
   midiPlayer.lastPerfMs = nowMs;
-  midiPlayer.elapsedSec += dt;
 
-  const evs = midiPlayer.parsed.events;
-  while (
-    midiPlayer.nextEventIdx < evs.length &&
-    evs[midiPlayer.nextEventIdx].timeSec <= midiPlayer.elapsedSec
-  ) {
-    const ev = evs[midiPlayer.nextEventIdx++];
-    if (ev.type === 'sustain') {
-      midiPlayer.pedalDown = !!ev.pedalDown;
-      if (!midiPlayer.pedalDown) {
-        for (const tid of Array.from(midiPlayer.pendingPedalIds)) {
-          midiPlayer.pendingPedalIds.delete(tid);
+  if (!midiPlayer.scrubbing) {
+    midiPlayer.elapsedSec += dt;
+
+    const evs = midiPlayer.parsed.events;
+    while (
+      midiPlayer.nextEventIdx < evs.length &&
+      evs[midiPlayer.nextEventIdx].timeSec <= midiPlayer.elapsedSec
+    ) {
+      const ev = evs[midiPlayer.nextEventIdx++];
+      if (ev.type === 'sustain') {
+        midiPlayer.pedalDown = !!ev.pedalDown;
+        if (!midiPlayer.pedalDown) {
+          for (const tid of Array.from(midiPlayer.pendingPedalIds)) {
+            midiPlayer.pendingPedalIds.delete(tid);
+            midiPlayer.activeTriggerIds.delete(tid);
+            releaseHeldVoice(tid);
+          }
+        }
+      } else if (ev.type === 'noteOn') {
+        const tid = `midifile_${ev.channel}_${ev.midi}`;
+        midiPlayer.pendingPedalIds.delete(tid);
+        midiPlayer.activeTriggerIds.add(tid);
+        startPianoKeyHold(tid, ev.midi, ev.velocity, false);
+      } else if (ev.type === 'noteOff') {
+        const tid = `midifile_${ev.channel}_${ev.midi}`;
+        if (midiPlayer.pedalDown && midiPlayer.activeTriggerIds.has(tid)) {
+          midiPlayer.pendingPedalIds.add(tid);
+        } else {
           midiPlayer.activeTriggerIds.delete(tid);
           releaseHeldVoice(tid);
         }
       }
-    } else if (ev.type === 'noteOn') {
-      const tid = `midifile_${ev.channel}_${ev.midi}`;
-      midiPlayer.pendingPedalIds.delete(tid);
-      midiPlayer.activeTriggerIds.add(tid);
-      startPianoKeyHold(tid, ev.midi, ev.velocity, false);
-    } else if (ev.type === 'noteOff') {
-      const tid = `midifile_${ev.channel}_${ev.midi}`;
-      if (midiPlayer.pedalDown && midiPlayer.activeTriggerIds.has(tid)) {
-        midiPlayer.pendingPedalIds.add(tid);
-      } else {
-        midiPlayer.activeTriggerIds.delete(tid);
-        releaseHeldVoice(tid);
-      }
     }
-  }
 
-  updateMidiTransportUi();
-
-  if (
-    midiPlayer.nextEventIdx >= evs.length &&
-    midiPlayer.elapsedSec >= midiPlayer.parsed.durationSec + 0.45
-  ) {
-    silenceAllMidiTransportVoices();
-    midiPlayer.playing = false;
-    midiPlayer.elapsedSec = midiPlayer.parsed.durationSec;
-    midiPlayer.rafId = null;
     updateMidiTransportUi();
-    return;
+
+    if (
+      midiPlayer.nextEventIdx >= evs.length &&
+      midiPlayer.elapsedSec >= midiPlayer.parsed.durationSec + 0.45
+    ) {
+      silenceAllMidiTransportVoices();
+      midiPlayer.playing = false;
+      midiPlayer.elapsedSec = midiPlayer.parsed.durationSec;
+      midiPlayer.rafId = null;
+      updateMidiTransportUi();
+      return;
+    }
   }
 
   midiPlayer.rafId = requestAnimationFrame(tickMidiTransport);
@@ -2456,7 +2762,7 @@ function playMidiTransport() {
   if (!midiPlayer.parsed || midiPlayer.playing) return;
   ensureAudioContext();
 
-  if (midiPlayer.elapsedSec >= midiPlayer.parsed.durationSec) {
+  if (midiPlayer.elapsedSec >= midiPlayer.parsed.durationSec - 0.02) {
     midiPlayer.elapsedSec = 0;
     midiPlayer.nextEventIdx = 0;
   } else {
@@ -2480,23 +2786,6 @@ function pauseMidiTransport() {
   updateMidiTransportUi();
 }
 
-function restartMidiTransport() {
-  if (!midiPlayer.parsed) return;
-  const wasPlaying = midiPlayer.playing;
-  if (midiPlayer.rafId) {
-    cancelAnimationFrame(midiPlayer.rafId);
-    midiPlayer.rafId = null;
-  }
-  midiPlayer.playing = false;
-  silenceAllMidiTransportVoices(0.08);
-  midiPlayer.elapsedSec = 0;
-  midiPlayer.nextEventIdx = 0;
-  updateMidiTransportUi();
-  if (wasPlaying) {
-    playMidiTransport();
-  }
-}
-
 async function handleMidiFileSelected(file) {
   if (!file) return;
   pauseMidiTransport();
@@ -2511,6 +2800,9 @@ async function handleMidiFileSelected(file) {
   updateMidiTransportUi();
 }
 
+// ============================================================================
+// Event Bindings
+// ============================================================================
 function setupEventListeners() {
   window.addEventListener('blur', () => {
     for (const key of Array.from(activeVoices.keys())) {
@@ -2518,19 +2810,102 @@ function setupEventListeners() {
         releaseHeldVoice(key, 0.25);
       }
     }
+    wfKeyboardDragActive = false;
+    wfKeyboardDragMidi = null;
   });
 
-  const drawerToggleBtn = document.getElementById('sampleDrawerToggleBtn');
-  if (drawerToggleBtn) {
-    drawerToggleBtn.addEventListener('click', () => {
-      setSampleDrawerOpen(!state.sampleDrawerOpen);
+  // Left Collapsible Video File Explorer controls
+  const collapseBtn = document.getElementById('explorerCollapseBtn');
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', () => setExplorerCollapsed(true));
+  }
+  const expandBtn = document.getElementById('explorerExpandBtn');
+  if (expandBtn) {
+    expandBtn.addEventListener('click', () => setExplorerCollapsed(false));
+  }
+  const allBtn = document.getElementById('explorerAllBtn');
+  if (allBtn) {
+    allBtn.addEventListener('click', () => {
+      const ids = (state.catalog?.videos || []).filter(v => !v.deleted).map(v => v.id);
+      setVideosEnabled(ids, true);
+    });
+  }
+  const noneBtn = document.getElementById('explorerNoneBtn');
+  if (noneBtn) {
+    noneBtn.addEventListener('click', () => {
+      const ids = (state.catalog?.videos || []).filter(v => !v.deleted).map(v => v.id);
+      setVideosEnabled(ids, false);
     });
   }
 
+  // Wireframe Keyboard Octave Step Buttons + Click/Drag Glissando
+  const octDownBtn = document.getElementById('octDownBtn');
+  if (octDownBtn) {
+    octDownBtn.addEventListener('click', () => shiftKeyboardOctave(-1));
+  }
+  const octUpBtn = document.getElementById('octUpBtn');
+  if (octUpBtn) {
+    octUpBtn.addEventListener('click', () => shiftKeyboardOctave(1));
+  }
+
+  const pianoKeyboardEl = document.getElementById('pianoKeyboard');
+  if (pianoKeyboardEl) {
+    pianoKeyboardEl.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      const keyEl = e.target.closest('.wf-key');
+      if (!keyEl) return;
+      e.preventDefault();
+      const midi = Number(keyEl.dataset.midi);
+      if (!Number.isFinite(midi) || midi < MIN_MIDI || midi > MAX_MIDI) return;
+
+      wfKeyboardDragActive = true;
+      wfKeyboardDragMidi = midi;
+      wfKeyboardDragStartMs = performance.now();
+      selectKeyForConfig(midi, false);
+      startPianoKeyHold('ui_wf_drag', midi, 0.92, false);
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (!wfKeyboardDragActive) return;
+      const elUnder = document.elementFromPoint(e.clientX, e.clientY);
+      const keyEl = elUnder?.closest?.('.wf-key');
+      if (!keyEl) {
+        if (wfKeyboardDragMidi !== null) {
+          releaseHeldVoice('ui_wf_drag', 0.14);
+          wfKeyboardDragMidi = null;
+        }
+        return;
+      }
+      const nextMidi = Number(keyEl.dataset.midi);
+      if (!Number.isFinite(nextMidi) || nextMidi < MIN_MIDI || nextMidi > MAX_MIDI) return;
+      if (nextMidi !== wfKeyboardDragMidi) {
+        wfKeyboardDragMidi = nextMidi;
+        wfKeyboardDragStartMs = performance.now();
+        selectKeyForConfig(nextMidi, false);
+        startPianoKeyHold('ui_wf_drag', nextMidi, 0.92, false);
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!wfKeyboardDragActive) return;
+      wfKeyboardDragActive = false;
+      if (wfKeyboardDragMidi !== null) {
+        const heldSec = Math.max(0, (performance.now() - wfKeyboardDragStartMs) / 1000);
+        if (heldSec < 0.26) {
+          scheduleDefaultVoiceGate('ui_wf_drag', 0.26 - heldSec);
+        } else {
+          releaseHeldVoice('ui_wf_drag');
+        }
+        wfKeyboardDragMidi = null;
+      }
+    });
+  }
+
+  // MIDI Transport Load + Play/Pause + Scrub Bar
   const midiUploadBtn = document.getElementById('midiUploadBtn');
   const midiFileInput = document.getElementById('midiFileInput');
   const midiPlayPauseBtn = document.getElementById('midiPlayPauseBtn');
-  const midiRestartBtn = document.getElementById('midiRestartBtn');
+  const midiScrubTrack = document.getElementById('midiScrubTrack');
 
   if (midiUploadBtn && midiFileInput) {
     midiUploadBtn.addEventListener('click', () => midiFileInput.click());
@@ -2555,9 +2930,32 @@ function setupEventListeners() {
     });
   }
 
-  if (midiRestartBtn) {
-    midiRestartBtn.addEventListener('click', () => {
-      restartMidiTransport();
+  if (midiScrubTrack) {
+    const scrubFromPointer = clientX => {
+      if (!midiPlayer.parsed) return;
+      const rail = midiScrubTrack.querySelector('.scrub-rail') || midiScrubTrack;
+      const rect = rail.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+      seekMidiTransportTo(ratio * (midiPlayer.parsed.durationSec || 0));
+    };
+
+    midiScrubTrack.addEventListener('mousedown', e => {
+      if (e.button !== 0 || !midiPlayer.parsed) return;
+      e.preventDefault();
+      midiPlayer.scrubbing = true;
+      scrubFromPointer(e.clientX);
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (!midiPlayer.scrubbing) return;
+      scrubFromPointer(e.clientX);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!midiPlayer.scrubbing) return;
+      midiPlayer.scrubbing = false;
+      midiPlayer.lastPerfMs = performance.now();
+      updateMidiTransportUi();
     });
   }
 
@@ -2633,7 +3031,7 @@ function setupEventListeners() {
     }
   });
 
-  // Inspector Inline Note Reference & Slot Assignment (◀ / Select / ▶ + ♪ Tone + Move → Note)
+  // Inspector Inline Note Reference & Slot Assignment
   const setInspectorRefMidi = (nextMidi, shouldPlayTone = true) => {
     const clamped = Math.max(MIN_MIDI, Math.min(MAX_MIDI, Math.round(Number(nextMidi) || 60)));
     trimState.refMidi = clamped;
@@ -2697,7 +3095,6 @@ function setupEventListeners() {
     });
   }
 
-  // Inspector "↺ Reset to DSP" Button
   const resetDspBtn = document.getElementById('inspectorResetDspBtn');
   if (resetDspBtn) {
     resetDspBtn.addEventListener('click', async () => {
@@ -2792,9 +3189,7 @@ function setupEventListeners() {
     });
   }
 
-  // ==========================================================================
-  // Single-Clip Non-Destructive Sub-Trim Bindings (0.00s .. rawDur <= 2.50s)
-  // ==========================================================================
+  // Single-Clip Non-Destructive Sub-Trim Bindings
   const beginTrimDrag = (mode, e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -2876,7 +3271,6 @@ function setupEventListeners() {
     }
   });
 
-  // "↺ Reset Full Sample" Button — restores full DSP-cropped sample [0.00s, rawDur]
   const trimResetBtn = document.getElementById('trimResetBtn');
   if (trimResetBtn) {
     trimResetBtn.addEventListener('click', async () => {
@@ -2944,7 +3338,7 @@ function setupEventListeners() {
     }
   });
 
-  // QWERTY Keydown / Keyup (Hold to Sustain + Lift to Decay!)
+  // QWERTY Keydown / Keyup (Hold to Sustain + Z/X Octave Shift!)
   window.addEventListener('keydown', async e => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.metaKey || e.ctrlKey) {
       return;
@@ -3017,11 +3411,13 @@ function setupEventListeners() {
     if (e.repeat) return;
 
     if (e.code === 'KeyZ') {
-      state.baseOctaveMidi = Math.max(MIN_MIDI, state.baseOctaveMidi - 12);
+      e.preventDefault();
+      shiftKeyboardOctave(-1);
       return;
     }
     if (e.code === 'KeyX') {
-      state.baseOctaveMidi = Math.min(84, state.baseOctaveMidi + 12);
+      e.preventDefault();
+      shiftKeyboardOctave(1);
       return;
     }
 
@@ -3082,13 +3478,22 @@ function initWebMIDI() {
 // Boot
 // ============================================================================
 async function init() {
-  const bgCanvas = document.getElementById('webglStageBg');
-  if (bgCanvas) {
+  const prefs = loadPrefsFromStorage();
+  state.explorerCollapsed = Boolean(prefs.explorerCollapsed);
+  state.collapsedCategories = new Set(prefs.collapsedCategories || []);
+  state.sliceToggleOverrides = prefs.sliceToggles || {};
+  state.baseOctaveMidi = normalizeBaseOctaveMidi(prefs.baseOctaveMidi ?? 60);
+
+  setExplorerCollapsed(state.explorerCollapsed);
+  updateMidiTransportUi();
+
+  const threeCanvas = document.getElementById('threeStageCanvas');
+  if (threeCanvas) {
     const MIN_SCRUB_HOLD_SEC = 0.18;
-    webglStage = createWebglStage({
-      canvas: bgCanvas,
-      dockSelector: '.keyboard-dock',
+    threeStage = createThreeStage({
+      canvas: threeCanvas,
       getActiveSliceIds: getActiveStageSliceIds,
+      isVideoDisabled: id => isVideoDisabled(id),
       formatTooltip: item => `${item.videoSlug} · ${midiToName(item.midi ?? 60)}`,
       onSliceEnter: item => {
         const cand = resolvePlayableSliceById(item.sliceId);
@@ -3096,11 +3501,7 @@ async function init() {
         state.lastPlayedVideoId = cand.videoId;
         state.lastPlayedSliceId = cand.sliceId;
         if (cand.midi >= MIN_MIDI && cand.midi <= MAX_MIDI && state.selectedMidi !== cand.midi) {
-          if (state.sampleDrawerOpen) {
-            selectKeyForConfig(cand.midi, false);
-          } else {
-            state.selectedMidi = cand.midi;
-          }
+          selectKeyForConfig(cand.midi, false);
         }
         startHeldVoice({
           triggerId: `bg_${item.sliceId}`,
@@ -3130,7 +3531,7 @@ async function init() {
   setupEventListeners();
   initWebMIDI();
 
-  const atlasPromise = webglStage ? webglStage.loadAtlas() : Promise.resolve();
+  const atlasPromise = threeStage ? threeStage.loadAtlas() : Promise.resolve();
 
   let loadedFromLocalServer = false;
   const isLocalHost =
@@ -3152,8 +3553,63 @@ async function init() {
     state.catalog = await staticRes.json();
   }
 
+  // Restore persistent per-video enabled/disabled switch states across reloads
+  const validVideos = (state.catalog?.videos || []).filter(v => !v.deleted);
+  const validIdSet = new Set(validVideos.map(v => v.id));
+  const catalogDisabled = new Set(validVideos.filter(v => v.enabled === false).map(v => v.id));
+
+  if (prefs.hasSavedDisabledVideos) {
+    state.disabledVideoIds = new Set(prefs.disabledVideoIds.filter(id => validIdSet.has(id)));
+    for (const v of validVideos) {
+      v.enabled = !state.disabledVideoIds.has(v.id);
+    }
+    if (!state.isStaticMode) {
+      const toDisable = Array.from(state.disabledVideoIds).filter(id => !catalogDisabled.has(id));
+      const toEnable = Array.from(catalogDisabled).filter(id => !state.disabledVideoIds.has(id));
+      if (toDisable.length > 0) {
+        fetch('./api/video/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoIds: toDisable, enabled: false })
+        }).catch(() => {});
+      }
+      if (toEnable.length > 0) {
+        fetch('./api/video/toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoIds: toEnable, enabled: true })
+        }).catch(() => {});
+      }
+    }
+  } else {
+    state.disabledVideoIds = catalogDisabled;
+    savePrefsToStorage();
+  }
+
+  // In static mode, also restore saved per-slice toggles across reloads
+  if (state.isStaticMode && state.catalog?.keyboardMap) {
+    for (const entry of Object.values(state.catalog.keyboardMap)) {
+      let changed = false;
+      for (const c of entry.candidates || []) {
+        if (Object.prototype.hasOwnProperty.call(state.sliceToggleOverrides, c.sliceId)) {
+          c.enabled = Boolean(state.sliceToggleOverrides[c.sliceId]);
+          changed = true;
+        }
+      }
+      if (changed) {
+        entry.enabledSliceIds = (entry.candidates || []).filter(c => c.enabled).map(c => c.sliceId);
+        entry.enabledCount = entry.enabledSliceIds.length;
+        entry.primary = (entry.candidates || []).find(c => c.enabled) || null;
+        entry.activeSliceId = entry.primary ? entry.primary.sliceId : null;
+        entry.isCleared = entry.enabledCount === 0;
+      }
+    }
+  }
+
   if (!state.catalog?.keyboardMap?.[60]) {
-    const firstKey = Object.keys(state.catalog?.keyboardMap || {}).map(Number).sort((a, b) => a - b)[0];
+    const firstKey = Object.keys(state.catalog?.keyboardMap || {})
+      .map(Number)
+      .sort((a, b) => a - b)[0];
     if (firstKey) state.selectedMidi = firstKey;
   }
 
@@ -3161,17 +3617,16 @@ async function init() {
   refreshAllUI();
   updateStageTileSizes();
 
-  // In static web mode, quietly background-warm enabled scale audio bytes (without opening AudioContext before gesture)
+  // In static web mode, quietly background-warm enabled scale audio bytes
   if (state.isStaticMode && state.catalog?.keyboardMap) {
     setTimeout(async () => {
       const urls = [];
-      // Prioritize central octaves (C3..C6) first, then outer octaves
       const entries = Object.values(state.catalog.keyboardMap).sort(
         (a, b) => Math.abs((a.targetMidi || 60) - 60) - Math.abs((b.targetMidi || 60) - 60)
       );
       for (const entry of entries) {
         for (const c of entry.candidates || []) {
-          if (c.enabled && c.audioUrl) urls.push(c.audioUrl);
+          if (c.enabled && !isVideoDisabled(c.videoId) && c.audioUrl) urls.push(c.audioUrl);
         }
       }
       let cursor = 0;
