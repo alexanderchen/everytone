@@ -52,12 +52,12 @@
 
 - Made the mini spectrogram strips taller under each square.
 
-- Played square clips above taller mini spectrogram strips. [img](screenshots/01_three-slot-stage-and-spectrograms.png)
+- Played square clips above taller mini spectrogram strips. [img](screenshots/2026-11-02/01_three-slot-stage-and-spectrograms.png)
 
 - Replaced the library inspector with a single-clip trim modal.
 - Added draggable In and Out bars with live frame scrubbing.
 
-- Built a single-clip trim modal with draggable In and Out. [img](screenshots/02_trim-clip-in-out-modal.png)
+- Built a single-clip trim modal with draggable In and Out. [img](screenshots/2026-11-02/02_trim-clip-in-out-modal.png)
 
 
 ## Nov 2, 2026 · 8:09 pm
@@ -65,11 +65,11 @@
 - Removed the top-left title, batch flags, and side inspector.
 - Unveiled each mini spectrogram left to right as clips play.
 
-- Centered three square clips above unveiling spectrograms. [img](screenshots/03_centered-three-slot-stage-unveil.png)
+- Centered three square clips above unveiling spectrograms. [img](screenshots/2026-11-02/03_centered-three-slot-stage-unveil.png)
 
 - Combined deeper harmonics and In/Out handles in one overlay.
 
-- Inspected harmonics and In/Out handles in one overlay. [img](screenshots/04_universal-clip-inspector-overlay.png)
+- Inspected harmonics and In/Out handles in one overlay. [img](screenshots/2026-11-02/04_universal-clip-inspector-overlay.png)
 
 
 ## Nov 2, 2026 · 9:20 pm
@@ -78,8 +78,40 @@
 - Switched candidates to ON/OFF toggles with random play.
 - Shrank the bottom keyboard to slim note-name bars.
 
-- Enabled two G4 clips above slim note-name key bars. [img](screenshots/05_minimal-note-bars-and-on-off-candidates.png)
+- Enabled two G4 clips above slim note-name key bars. [img](screenshots/2026-11-02/05_minimal-note-bars-and-on-off-candidates.png)
 
 - Added a low C1–B1 percussion octave below C2 tonal keys.
 
-- Triggered puffball kicks and wood log on the C1 octave. [img](screenshots/06_low-percussion-octave-puffball-kicks.png)
+- Triggered puffball kicks and wood log on the C1 octave. [img](screenshots/2026-11-02/06_low-percussion-octave-puffball-kicks.png)
+
+
+## Nov 3, 2026 · 6:30 pm
+
+- Replaced note-name bars with a minimal chromatic circle row.
+- Enlarged active circles 2x on hit with screen blend mode.
+- Swapped unveil spectrograms for instant-pop f0 stripe graphs.
+
+- Played three clips over f0 stripes and chromatic dots. [img](screenshots/2026-11-03/07_pure-chromatic-dots-and-f0-spectrograms.png)
+
+- Moved sample thumbnails and MIDI transport into a bottom bar.
+
+- Expanded the bottom sample strip and MIDI transport bar. [img](screenshots/2026-11-03/08_collapsible-bottom-drawer-and-midi-transport.png)
+
+
+## Nov 3, 2026 · 10:45 pm
+
+- Imported 12 more object clips to reach 439 active moments.
+- Packed all 439 start frames into a dim WebGL background grid.
+- Grouped grid thumbnails by source video above the dot strip.
+
+- Floated a dim monochrome WebGL grid above the dot row. [img](screenshots/2026-11-03/09_floating-webgl-mosaic-idle.png)
+
+- Added click-and-drag strumming and color highlights on play.
+
+- Lit the active melodica cell beside its 95% stage video. [img](screenshots/2026-11-03/10_webgl-mosaic-playing-and-overlay.png)
+
+
+## Nov 4, 2026 · 2:15 pm
+
+- Exported a 96 MB static v1 instrument build to GitHub Pages.
+- Sketched a next-step layout with 3D canvas and file explorer. [img](screenshots/2026-11-04/everytone-ux-overhaul-sketch.jpg)

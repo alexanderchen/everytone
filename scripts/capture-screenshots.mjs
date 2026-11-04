@@ -4,17 +4,18 @@ import path from 'node:path';
 import os from 'node:os';
 
 const ROOT = process.cwd();
-const SCREENSHOTS_DIR = path.join(ROOT, 'screenshots');
+const TODAY_FOLDER = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local timezone
+const SCREENSHOTS_DIR = path.join(ROOT, 'screenshots', TODAY_FOLDER);
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
 const CHROME_BIN = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PORT = 9294;
+const PORT = 9295;
 const PROFILE_DIR = path.join(
   os.homedir(),
   '.gemini',
   'antigravity',
   'brain',
-  'f2b71b43-15a7-43c7-9e5e-0c2f8e2a9377',
+  '4965288b-1305-43e9-aaca-8a123f443bb8',
   'scratch',
   'chrome-shot-profile'
 );
@@ -22,7 +23,7 @@ fs.mkdirSync(PROFILE_DIR, { recursive: true });
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function waitForDebuggerUrl(port, timeoutMs = 8000) {
+async function waitForDebuggerUrl(port, timeoutMs = 10000) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -107,6 +108,8 @@ async function main() {
       '--autoplay-policy=no-user-gesture-required',
       '--mute-audio',
       '--hide-scrollbars',
+      '--use-gl=angle',
+      '--use-angle=metal',
       '--no-first-run',
       '--no-default-browser-check',
       'http://localhost:3456'
@@ -128,70 +131,75 @@ async function main() {
       mobile: false
     });
 
-    for (let i = 0; i < 40; i++) {
+    // Wait for keyboard & WebGL stage atlas to finish loading
+    for (let i = 0; i < 50; i++) {
       const ready = await cdp.evalJs(
         `Boolean(document.querySelectorAll('#pianoKeyboard .key-cell').length === 80)`
       );
       if (ready) break;
       await sleep(150);
     }
-    await sleep(300);
+    await sleep(600);
 
-    // Screenshot 05: Stagger 3 tonal notes (D4, F#4, G4) on the larger 3-slot stage,
-    // temporarily toggle a 2nd candidate ON on G4 (MIDI 67) to illustrate multi-candidate ON/OFF randomization,
-    // capture, and then restore G4 back to single ON!
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyS', key: 's', bubbles: true }))`);
-    await sleep(300);
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyT', key: 't', bubbles: true }))`);
-    await sleep(260);
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyG', key: 'g', bubbles: true }))`);
-    await sleep(200);
-
-    const toggledOffBtnExists = await cdp.evalJs(`(() => {
-      const offBtn = document.querySelector('#candidatesGrid .toggle-on-btn.is-off');
-      if (offBtn) { offBtn.click(); return true; }
-      return false;
-    })()`);
-    await sleep(320);
-
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '05_minimal-note-bars-and-on-off-candidates.png'));
-
-    // Restore that second candidate back to OFF so saved state remains pristine
-    if (toggledOffBtnExists) {
-      await cdp.evalJs(`(() => {
-        const onBtns = document.querySelectorAll('#candidatesGrid .toggle-on-btn.is-on');
-        if (onBtns.length >= 2) onBtns[1].click();
-      })()`);
-      await sleep(250);
-    }
-
+    // ------------------------------------------------------------------------
+    // Shot 07 (Salvaged pre-WebGL milestone):
+    // Pure black stage + 3 active clips + instant-pop note-tinted spectrograms with f0 stripes + enlarged chromatic dots
+    // ------------------------------------------------------------------------
     await cdp.evalJs(`(() => {
-      for (const code of ['KeyS', 'KeyT', 'KeyG']) {
-        window.dispatchEvent(new KeyboardEvent('keyup', { code, key: 'a', bubbles: true }));
-      }
+      const bg = document.getElementById('webglStageBg');
+      if (bg) bg.style.visibility = 'hidden';
     })()`);
-    await sleep(750);
+    await sleep(120);
 
-    // Screenshot 06: Shift QWERTY down 3 octaves to C1 (MIDI 24) Percussion Octave,
-    // trigger F1 (Warm Wood Log -> KeyF), C#1 (Puffball 2 -> KeyW), and C1 (Puffball 1 -> KeyA) last so C1 is selected!
-    for (let k = 0; k < 3; k++) {
-      await cdp.evalJs(`document.getElementById('octDownBtn')?.click()`);
-      await sleep(60);
-    }
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF', key: 'f', bubbles: true }))`);
-    await sleep(220);
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', key: 'w', bubbles: true }))`);
-    await sleep(220);
     await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }))`);
-    await sleep(280);
+    await sleep(240);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', bubbles: true }))`);
+    await sleep(240);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyG', key: 'g', bubbles: true }))`);
+    await sleep(340);
 
-    await cdp.savePng(path.join(SCREENSHOTS_DIR, '06_low-percussion-octave-puffball-kicks.png'));
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '07_pure-chromatic-dots-and-f0-spectrograms.png'));
 
+    // ------------------------------------------------------------------------
+    // Shot 08 (Salvaged pre-WebGL milestone):
+    // Full-width bottom UX panel expanded via lower-right Material gear (left-aligned sample strip + MIDI transport)
+    // ------------------------------------------------------------------------
+    await cdp.evalJs(`document.getElementById('sampleDrawerToggleBtn')?.click()`);
+    await sleep(380);
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '08_collapsible-bottom-drawer-and-midi-transport.png'));
+
+    // Close bottom drawer and release held keys
+    await cdp.evalJs(`document.getElementById('sampleDrawerToggleBtn')?.click()`);
     await cdp.evalJs(`(() => {
-      for (const code of ['KeyF', 'KeyW', 'KeyA']) {
+      for (const code of ['KeyA', 'KeyD', 'KeyG']) {
         window.dispatchEvent(new KeyboardEvent('keyup', { code, key: 'a', bubbles: true }));
       }
     })()`);
+    await sleep(850);
+
+    // ------------------------------------------------------------------------
+    // Shot 09 (Current idle state):
+    // Compact, dim monochrome WebGL mosaic of all 439 Tier-1 clips floating above the lowered chromatic dot strip
+    // ------------------------------------------------------------------------
+    await cdp.evalJs(`(() => {
+      const bg = document.getElementById('webglStageBg');
+      if (bg) bg.style.visibility = 'visible';
+      window.dispatchEvent(new Event('resize'));
+    })()`);
+    await sleep(400);
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '09_floating-webgl-mosaic-idle.png'));
+
+    // ------------------------------------------------------------------------
+    // Shot 10 (Current active state):
+    // 1 clip playing in Slot 0 (95% foreground opacity) while Slots 1-2 stay clear,
+    // revealing the uncovered WebGL mosaic on the right with the active clip glowing in color
+    // ------------------------------------------------------------------------
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyF', key: 'f', bubbles: true }))`);
+    await sleep(360);
+
+    await cdp.savePng(path.join(SCREENSHOTS_DIR, '10_webgl-mosaic-playing-and-overlay.png'));
+
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyF', key: 'f', bubbles: true }))`);
   } finally {
     cdp?.close();
     chrome.kill('SIGTERM');
