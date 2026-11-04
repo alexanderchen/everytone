@@ -9,5 +9,6 @@ samples/
 _trash/
 temp-photo-import/
 
-# Rendered MP4 exports (keep scripts, diagrams, screenshots, and PROCESS_LOG.md tracked)
+# Rendered MP4 exports & static site build output (keep scripts, diagrams, screenshots, and PROCESS_LOG.md tracked)
 renders/*.mp4
+dist/

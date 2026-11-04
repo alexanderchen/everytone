@@ -58,6 +58,7 @@ const state = {
   sustainPedalDown: false,
   lastPlayedVideoId: null,
   lastPlayedSliceId: null,
+  isStaticMode: false,
   assetBust: 0
 };
 
@@ -138,6 +139,7 @@ let audioCtx = null;
 let masterBus = null;
 let sampleHighpass = null;
 const audioBufferCache = new Map();
+const rawAudioBytesCache = new Map();
 
 const activeVoices = new Map();
 const sustainedVoicesPendingRelease = new Set();
@@ -169,17 +171,41 @@ function ensureAudioContext() {
   return audioCtx;
 }
 
+function resolveAssetUrl(url) {
+  if (!url) return url;
+  if (/^(https?:|blob:|data:|\.)/.test(url)) return url;
+  return url.startsWith('/') ? `.${url}` : `./${url}`;
+}
+
 function withBust(url) {
-  if (!url || !state.assetBust) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}v=${state.assetBust}`;
+  const rel = resolveAssetUrl(url);
+  if (!rel || !state.assetBust) return rel;
+  return `${rel}${rel.includes('?') ? '&' : '?'}v=${state.assetBust}`;
+}
+
+async function prefetchRawAudioBytes(url) {
+  const bustedUrl = withBust(url);
+  if (!bustedUrl || audioBufferCache.has(bustedUrl) || rawAudioBytesCache.has(bustedUrl)) return;
+  const p = fetch(bustedUrl)
+    .then(r => (r.ok ? r.arrayBuffer() : null))
+    .catch(() => null);
+  rawAudioBytesCache.set(bustedUrl, p);
+  await p;
 }
 
 async function loadAudioBuffer(url) {
   const bustedUrl = withBust(url);
   if (audioBufferCache.has(bustedUrl)) return audioBufferCache.get(bustedUrl);
   const ctx = ensureAudioContext();
-  const res = await fetch(bustedUrl);
-  const arr = await res.arrayBuffer();
+  let arr = null;
+  if (rawAudioBytesCache.has(bustedUrl)) {
+    arr = await rawAudioBytesCache.get(bustedUrl);
+    rawAudioBytesCache.delete(bustedUrl);
+  }
+  if (!arr) {
+    const res = await fetch(bustedUrl);
+    arr = await res.arrayBuffer();
+  }
   const decoded = await ctx.decodeAudioData(arr);
   audioBufferCache.set(bustedUrl, decoded);
   return decoded;
@@ -2242,7 +2268,27 @@ function closeTrimModal() {
 // API & Event Bindings
 // ============================================================================
 async function apiPost(url, body) {
-  const res = await fetch(url, {
+  if (state.isStaticMode) {
+    if (url === '/api/keyboard/toggle' && body && state.catalog?.keyboardMap) {
+      const entry = state.catalog.keyboardMap[body.midi];
+      if (entry) {
+        for (const c of entry.candidates || []) {
+          if (c.sliceId === body.sliceId) {
+            c.enabled = Boolean(body.enabled);
+          }
+        }
+        entry.enabledSliceIds = (entry.candidates || []).filter(c => c.enabled).map(c => c.sliceId);
+        entry.enabledCount = entry.enabledSliceIds.length;
+        entry.primary = (entry.candidates || []).find(c => c.enabled) || null;
+        entry.activeSliceId = entry.primary ? entry.primary.sliceId : null;
+        entry.isCleared = entry.enabledCount === 0;
+        refreshAllUI();
+      }
+    }
+    return { ok: true };
+  }
+
+  const res = await fetch(resolveAssetUrl(url), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -2250,6 +2296,7 @@ async function apiPost(url, body) {
   if (res.ok) {
     state.assetBust = Date.now();
     audioBufferCache.clear();
+    rawAudioBytesCache.clear();
     spectrogramBitmapCache.clear();
     miniSpecBitmapCache.clear();
     state.catalog = await res.json();
@@ -3084,8 +3131,26 @@ async function init() {
   initWebMIDI();
 
   const atlasPromise = webglStage ? webglStage.loadAtlas() : Promise.resolve();
-  const res = await fetch('/api/catalog');
-  state.catalog = await res.json();
+
+  let loadedFromLocalServer = false;
+  const isLocalHost =
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (isLocalHost) {
+    try {
+      const res = await fetch('./api/catalog');
+      if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
+        state.catalog = await res.json();
+        loadedFromLocalServer = true;
+      }
+    } catch {}
+  }
+
+  if (!loadedFromLocalServer) {
+    state.isStaticMode = true;
+    document.body.classList.add('static-mode');
+    const staticRes = await fetch('./catalog.json');
+    state.catalog = await staticRes.json();
+  }
 
   if (!state.catalog?.keyboardMap?.[60]) {
     const firstKey = Object.keys(state.catalog?.keyboardMap || {}).map(Number).sort((a, b) => a - b)[0];
@@ -3095,6 +3160,30 @@ async function init() {
   await atlasPromise;
   refreshAllUI();
   updateStageTileSizes();
+
+  // In static web mode, quietly background-warm enabled scale audio bytes (without opening AudioContext before gesture)
+  if (state.isStaticMode && state.catalog?.keyboardMap) {
+    setTimeout(async () => {
+      const urls = [];
+      // Prioritize central octaves (C3..C6) first, then outer octaves
+      const entries = Object.values(state.catalog.keyboardMap).sort(
+        (a, b) => Math.abs((a.targetMidi || 60) - 60) - Math.abs((b.targetMidi || 60) - 60)
+      );
+      for (const entry of entries) {
+        for (const c of entry.candidates || []) {
+          if (c.enabled && c.audioUrl) urls.push(c.audioUrl);
+        }
+      }
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < urls.length) {
+          const u = urls[cursor++];
+          await prefetchRawAudioBytes(u);
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
+    }, 350);
+  }
 }
 
 init();

@@ -123,6 +123,7 @@ const MIME_TYPES = {
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
   '.mp4': 'video/mp4'
 };
 

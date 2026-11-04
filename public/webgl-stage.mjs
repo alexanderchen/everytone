@@ -578,7 +578,7 @@ export function createWebglStage({
 
   async function loadAtlas(initialCatalog = null) {
     try {
-      const res = await fetch('/stage-atlas.json');
+      const res = await fetch('./stage-atlas.json');
       if (!res.ok) return;
       atlasManifest = await res.json();
       atlasBySliceId = new Map((atlasManifest.items || []).map(it => [it.sliceId, it]));
@@ -588,7 +588,7 @@ export function createWebglStage({
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = reject;
-        img.src = '/stage-atlas.jpg';
+        img.src = './stage-atlas.jpg';
       });
       atlasImage = img;
 

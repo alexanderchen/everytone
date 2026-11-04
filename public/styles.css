@@ -491,6 +491,11 @@ body {
   opacity: 1;
 }
 
+/* Hide local disk-authoring inspector button in static web builds (GitHub Pages) */
+body.static-mode .cand-inspect-btn {
+  display: none !important;
+}
+
 .cand-inspect-btn:hover {
   background: rgba(255, 255, 255, 0.95);
   color: #050608;
