@@ -1,0 +1,1235 @@
+:root {
+  --bg-0: #050608;
+  --bg-1: #0b0d11;
+  --bg-2: #12151c;
+  --bg-3: #1b202b;
+  --line-dim: rgba(255, 255, 255, 0.11);
+  --line-key: rgba(255, 255, 255, 0.24);
+  --line-oct: rgba(255, 255, 255, 0.56);
+  --line-bright: #ffffff;
+  --text-0: #f8fafc;
+  --text-1: #cbd5e1;
+  --text-2: #7c8798;
+  --text-3: #495262;
+  --accent-new: #38bdf8;
+  --accent-active: #10b981;
+  --accent-amber: #fbbf24;
+  --danger: #ef4444;
+  --mono: "SF Mono", "JetBrains Mono", "Menlo", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--sans);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ============================================================================
+   1. Unified Performance Canvas (Pushed up smoothly when Bottom UX Panel opens)
+   ============================================================================ */
+.performance-canvas {
+  --tile-size: 290px;
+  --spec-height: 90px;
+  --strip-width: 918px;
+  --dot-size: 8.8px;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  background: #030406;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: clamp(56px, 8.8vh, 108px) clamp(56px, 7.5vw, 136px) clamp(14px, 2vh, 24px);
+  overflow: hidden;
+}
+
+.webgl-stage-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+}
+
+.spec-f0-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-active);
+  padding: 2px 7px;
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.12);
+  border-radius: 2px;
+}
+
+.poly-video-strip {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+  width: var(--strip-width);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 24px;
+  flex-shrink: 0;
+}
+
+.stage-slot-unit {
+  width: var(--tile-size);
+  flex: 0 0 var(--tile-size);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stage-slot-unit.is-occupied {
+  opacity: 0.95;
+}
+
+.stage-slot-video {
+  position: relative;
+  width: var(--tile-size);
+  height: var(--tile-size);
+  aspect-ratio: 1 / 1;
+  background: #030406;
+  border: none;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.stage-slot-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border: none;
+}
+
+.slot-mini-spec {
+  width: var(--tile-size);
+  height: var(--spec-height);
+  display: block;
+  background: #030406;
+  border: none;
+}
+
+/* ============================================================================
+   2. Full-Width Expanding Bottom UX Panel + Lower-Right Material Settings Gear
+   ============================================================================ */
+.bottom-ux-shell {
+  position: relative;
+  width: 100%;
+  flex-shrink: 0;
+  z-index: 40;
+}
+
+.sample-drawer-gear-btn {
+  position: absolute;
+  right: 20px;
+  top: -54px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(14, 17, 24, 0.85);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 46;
+  transition: color 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+}
+
+.sample-drawer-gear-btn:hover {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.48);
+  background: rgba(24, 30, 42, 0.96);
+}
+
+.sample-drawer-gear-btn.is-open {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.sample-drawer-gear-btn svg {
+  display: block;
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sample-drawer-gear-btn.is-open svg {
+  transform: rotate(45deg);
+}
+
+.bottom-ux-panel {
+  width: 100%;
+  height: 158px;
+  background: #07090e;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  opacity: 1;
+  transition: height 0.24s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease, border-color 0.18s ease;
+}
+
+.bottom-ux-panel.collapsed {
+  height: 0;
+  opacity: 0;
+  border-top-color: transparent;
+  pointer-events: none;
+}
+
+.settings-samples-row {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding-left: 20px;
+}
+
+.selected-note-pill {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.78);
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+
+/* Left-Aligned Full-Width Bottom Control Strip (MIDI + Future Settings) */
+.midi-transport-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.015);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.midi-pill-btn {
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.88);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, opacity 0.14s ease;
+}
+
+.midi-pill-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #ffffff;
+}
+
+.midi-pill-btn:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.midi-file-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.52);
+  min-width: 110px;
+  max-width: 240px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.midi-transport-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.midi-icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+}
+
+.midi-icon-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.midi-icon-btn.is-playing {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #050608;
+}
+
+.midi-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.ghost-btn {
+  background: transparent;
+  color: var(--text-1);
+  border: 1px solid var(--line-key);
+  border-radius: 2px;
+  padding: 4px 9px;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.ghost-btn.small {
+  padding: 5px 10px;
+  font-family: var(--mono);
+}
+
+.ghost-btn.tiny {
+  padding: 2px 6px;
+  font-size: 10px;
+  font-family: var(--mono);
+}
+
+.ghost-btn:hover {
+  border-color: #ffffff;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ghost-btn.danger-text {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.ghost-btn.danger-text:hover {
+  color: #ffffff;
+  background: rgba(239, 68, 68, 0.2);
+  border-color: var(--danger);
+}
+
+.ghost-btn.danger-text.confirm-armed {
+  color: #ffffff;
+  background: #dc2626;
+  border-color: #ef4444;
+  font-weight: 700;
+}
+
+/* Thumbnail-Centric Left-Aligned Sample Strip */
+.candidates-strip {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 10px 20px 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.candidate-card {
+  width: 78px;
+  flex: 0 0 78px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.cand-thumb-wrap {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  border-radius: 6px;
+  background: #0b0e14;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  transition: border-color 0.14s ease, transform 0.14s ease;
+}
+
+.cand-thumb-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  opacity: 0.32;
+  filter: saturate(0.2) brightness(0.8);
+  transition: opacity 0.16s ease, filter 0.16s ease, transform 0.2s ease;
+}
+
+.candidate-card.is-enabled .cand-thumb-wrap {
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.candidate-card.is-enabled .cand-thumb-wrap img {
+  opacity: 1;
+  filter: none;
+}
+
+.candidate-card:hover .cand-thumb-wrap {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.candidate-card:not(.is-enabled):hover .cand-thumb-wrap img {
+  opacity: 0.52;
+  filter: saturate(0.45) brightness(0.9);
+}
+
+.candidate-card.audition-focus .cand-thumb-wrap {
+  border-color: rgba(255, 255, 255, 0.72);
+}
+
+/* Transport-Style Circular Active / Bypass Toggle (Top-Left of Thumbnail) */
+.toggle-on-btn {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(5, 7, 11, 0.68);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.14s ease, transform 0.12s ease;
+}
+
+.toggle-on-btn:hover {
+  background: rgba(5, 7, 11, 0.9);
+  transform: scale(1.08);
+}
+
+.transport-led {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.42);
+  background: transparent;
+  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.toggle-on-btn.is-on .transport-led {
+  background: #ffffff;
+  border-color: #ffffff;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+}
+
+/* Minimal Icon-Only Inspect Trigger (Top-Right of Thumbnail) */
+.cand-inspect-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(5, 7, 11, 0.68);
+  backdrop-filter: blur(4px);
+  color: rgba(255, 255, 255, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 2;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease, transform 0.12s ease;
+}
+
+.candidate-card:hover .cand-inspect-btn,
+.candidate-card.audition-focus .cand-inspect-btn {
+  opacity: 1;
+}
+
+/* Hide local disk-authoring inspector button in static web builds (GitHub Pages) */
+body.static-mode .cand-inspect-btn {
+  display: none !important;
+}
+
+.cand-inspect-btn:hover {
+  background: rgba(255, 255, 255, 0.95);
+  color: #050608;
+  transform: scale(1.06);
+}
+
+/* Subtle Slug Caption Below Thumbnail */
+.cand-slug-title {
+  width: 100%;
+  text-align: center;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  color: rgba(255, 255, 255, 0.36);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.14s ease;
+}
+
+.candidate-card.is-enabled .cand-slug-title {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.candidate-card:hover .cand-slug-title {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.empty-key-state {
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  color: rgba(255, 255, 255, 0.34);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+
+/* ============================================================================
+   3. Centered Floating Chromatic Dots Row (2x Hit Enlarge + Screen Blend Mode)
+   ============================================================================ */
+.keyboard-dock {
+  position: relative;
+  z-index: 3;
+  width: var(--strip-width);
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.keyline-scroll-wrap {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.keyline-keyboard {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  overflow: visible;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.78));
+}
+
+/* NOTE: Do NOT set z-index/transform/opacity on .key-cell so sibling .key-dot
+   elements share the same stacking context and blend with mix-blend-mode: screen */
+.key-cell {
+  --note-color: #8c95a4;
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: visible;
+}
+
+.key-cell.tonal-start {
+  margin-left: 11px;
+}
+
+.key-dot {
+  width: var(--dot-size, 8.8px);
+  height: var(--dot-size, 8.8px);
+  border-radius: 50%;
+  background: var(--note-color);
+  flex-shrink: 0;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.14s ease;
+}
+
+/* Candidates present, all bypassed */
+.key-dot.muted-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--note-color);
+  opacity: 0.5;
+}
+
+/* Empty slot (0 candidates) */
+.key-dot.empty-dot {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.34);
+}
+
+.key-cell.octave-start .key-dot.empty-dot {
+  background: rgba(255, 255, 255, 0.28);
+  transform: scale(0.4);
+}
+
+/* Subtle hover feedback only when not actively booming */
+.key-cell:not(.active-play):hover .key-dot {
+  transform: scale(1.24);
+}
+
+.key-cell:not(.active-play):hover .key-dot.empty-dot {
+  background: rgba(255, 255, 255, 0.45);
+  transform: scale(0.68);
+}
+
+/* Selection keyline ring appears ONLY while the upper-right Settings panel is open,
+   keeping default performance mode 100% faithful to the 4:3 video render */
+body.settings-open .key-cell.selected-key::after {
+  content: "";
+  position: absolute;
+  width: calc(var(--dot-size, 8.8px) + 7px);
+  height: calc(var(--dot-size, 8.8px) + 7px);
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+}
+
+/* ~2X Enlarge on Hit — overlaps neighboring dots with true Screen blending */
+.key-cell.configured-key.active-play .key-dot {
+  transform: scale(2.05);
+  transition: transform 0.065s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+/* ============================================================================
+   5. Universal Clip Inspector Overlay (Deeper Spectrogram + Trim In / Out)
+   ============================================================================ */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.76);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.close-drawer-btn {
+  height: 30px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #050608;
+  border: none;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.trim-modal-card {
+  width: min(920px, 95vw);
+  background: #0b0e14;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.85);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.trim-modal-header {
+  padding: 12px 16px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--line-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.inspector-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inspector-slug-input {
+  width: 196px;
+  height: 28px;
+  background: var(--bg-0);
+  border: 1px solid var(--line-key);
+  border-radius: 2px;
+  color: #ffffff;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 0 8px;
+}
+
+.inspector-slug-input:focus {
+  outline: none;
+  border-color: #ffffff;
+}
+
+.inspector-slot-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  background: var(--bg-0);
+  border: 1px solid var(--line-key);
+  border-radius: 2px;
+  padding: 0 4px 0 7px;
+}
+
+.inspector-slot-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+  margin-right: 2px;
+}
+
+.slot-step-btn {
+  width: 22px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-1);
+  border: 1px solid var(--line-dim);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.slot-step-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.inspector-slot-select {
+  background: var(--bg-0);
+  color: #ffffff;
+  border: none;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 2px 2px;
+  cursor: pointer;
+}
+
+.inspector-slot-select:focus {
+  outline: none;
+}
+
+.test-tone-btn {
+  height: 20px;
+  padding: 0 8px;
+  background: rgba(56, 189, 248, 0.14);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.48);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.test-tone-btn:hover,
+.test-tone-btn.ringing {
+  background: rgba(56, 189, 248, 0.3);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.assign-slot-btn {
+  height: 20px;
+  padding: 0 8px;
+  background: #10b981;
+  color: #03150e;
+  border: 1px solid #10b981;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.assign-slot-btn:hover {
+  background: #34d399;
+  border-color: #34d399;
+}
+
+.inspector-reset-dsp-btn {
+  height: 26px;
+  padding: 0 9px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.inspector-reset-dsp-btn:hover {
+  background: rgba(245, 158, 11, 0.28);
+  border-color: #fbbf24;
+  color: #ffffff;
+}
+
+.in-color {
+  color: #10b981;
+}
+
+.out-color {
+  color: #f59e0b;
+}
+
+.trim-modal-body {
+  padding: 18px;
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.trim-video-col {
+  width: 248px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.trim-video-square {
+  width: 248px;
+  height: 248px;
+  aspect-ratio: 1 / 1;
+  background: #030406;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.trim-video-square video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.trim-video-meta-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.trim-scrub-time {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-1);
+}
+
+.trim-btn-secondary.full-w {
+  width: 100%;
+}
+
+.trim-timeline-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.inspector-spec-block,
+.inspector-trim-block {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.inspector-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.inspector-section-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+}
+
+.inspector-spec-meta {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-2);
+}
+
+.inspector-spec-stage {
+  position: relative;
+  width: 100%;
+  height: 248px;
+  background: #05070b;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+#inspectorSpectrogramCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.inspector-spec-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0%;
+  width: 1.5px;
+  background: rgba(255, 255, 255, 0.78);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.inspector-spec-playhead.visible {
+  opacity: 1;
+}
+
+.inspector-tune-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.inspector-tune-slider {
+  flex: 1 1 160px;
+  max-width: 240px;
+  accent-color: #10b981;
+  cursor: pointer;
+}
+
+.inspector-tune-readout {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #ffffff;
+  min-width: 112px;
+}
+
+.peaks-mini-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-2);
+}
+
+.trim-view-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.trim-bar-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.trim-span-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-1);
+}
+
+.trim-timeline-stage {
+  position: relative;
+  width: 100%;
+  height: 96px;
+  background: #05070b;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+
+#trimWaveformCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.trim-curtain {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(3, 4, 7, 0.72);
+  pointer-events: none;
+}
+
+.trim-curtain.left {
+  left: 0;
+}
+
+.trim-curtain.right {
+  right: 0;
+}
+
+.trim-window-box {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-top: 2px solid rgba(255, 255, 255, 0.75);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.75);
+  cursor: grab;
+}
+
+.trim-window-box:active {
+  cursor: grabbing;
+}
+
+.trim-handle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  z-index: 4;
+}
+
+.trim-handle.in-handle {
+  left: -7px;
+  background: #10b981;
+  border-radius: 3px 0 0 3px;
+}
+
+.trim-handle.out-handle {
+  right: -7px;
+  background: #f59e0b;
+  border-radius: 0 3px 3px 0;
+}
+
+.handle-grip {
+  width: 2px;
+  height: 24px;
+  background: rgba(0, 0, 0, 0.65);
+  border-radius: 1px;
+}
+
+.handle-tag {
+  position: absolute;
+  padding: 1px 4px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 2px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.in-handle .handle-tag {
+  top: 4px;
+  left: 16px;
+  background: rgba(16, 185, 129, 0.92);
+  color: #03150e;
+}
+
+.out-handle .handle-tag {
+  bottom: 20px;
+  right: 16px;
+  background: rgba(245, 158, 11, 0.95);
+  color: #1c0f02;
+}
+
+.trim-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0%;
+  width: 1.5px;
+  background: rgba(255, 255, 255, 0.78);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.trim-playhead.visible {
+  opacity: 1;
+}
+
+.trim-readouts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.trim-nudge-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-1);
+  border: 1px solid var(--line-dim);
+  padding: 4px 7px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.nudge-label {
+  font-weight: 700;
+  font-size: 10px;
+}
+
+.nudge-val {
+  min-width: 44px;
+  text-align: center;
+  color: #ffffff;
+}
+
+.nudge-btn {
+  background: var(--bg-2);
+  color: var(--text-1);
+  border: 1px solid var(--line-dim);
+  border-radius: 2px;
+  padding: 2px 5px;
+  font-family: var(--mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.nudge-btn:hover {
+  border-color: #ffffff;
+  color: #ffffff;
+}
+
+.trim-len-pill {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.trim-len-pill strong {
+  color: #ffffff;
+}
+
+.trim-modal-footer {
+  padding: 12px 16px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--line-dim);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trim-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.trim-btn-secondary {
+  height: 32px;
+  padding: 0 14px;
+  background: var(--bg-2);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trim-btn-secondary:hover {
+  border-color: #ffffff;
+}
+
+.trim-btn-primary {
+  height: 32px;
+  padding: 0 16px;
+  background: #10b981;
+  color: #03150e;
+  border: 1px solid #10b981;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.trim-btn-primary:hover {
+  background: #34d399;
+  border-color: #34d399;
+}
