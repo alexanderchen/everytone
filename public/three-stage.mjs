@@ -195,6 +195,12 @@ export function createThreeStage({
   let cssW = 1;
   let cssH = 1;
   let dpr = 1;
+  let layoutSpec = {
+    stripW: 0,
+    topStripH: 0,
+    betweenGap: 24,
+    marginY: 28
+  };
   let layout = {
     cols: 1,
     rows: 1,
@@ -203,7 +209,8 @@ export function createThreeStage({
     gridW: 20,
     gridH: 20,
     originX: 0,
-    originY: 0
+    originY: 0,
+    stackTopY: 28
   };
 
   let hoveredIdx = -1;
@@ -282,33 +289,53 @@ export function createThreeStage({
     camera.updateProjectionMatrix();
 
     const N = Math.min(items.length, MAX_INSTANCES);
+    const topStripH = Math.max(0, Number(layoutSpec.topStripH) || 0);
+    const betweenGap = topStripH > 0 ? Math.max(14, Number(layoutSpec.betweenGap) || 24) : 0;
+    const marginY = Math.max(14, Number(layoutSpec.marginY) || 24);
+
     if (N === 0) {
       instGeo.instanceCount = 0;
-      layout = { cols: 1, rows: 1, cell: 20, gap: 3, gridW: 0, gridH: 0, originX: 0, originY: 0 };
-      return;
+      const stackTopY = Math.max(marginY, Math.round((cssH - topStripH) * 0.5));
+      layout = {
+        cols: 1,
+        rows: 1,
+        cell: 20,
+        gap: 3,
+        gridW: 0,
+        gridH: 0,
+        originX: 0,
+        originY: stackTopY + topStripH + betweenGap,
+        stackTopY
+      };
+      return layout;
     }
 
-    const availW = Math.max(120, Math.round(cssW * 0.72));
-    const availH = Math.max(96, Math.round(cssH * 0.72));
+    const targetW = Math.max(
+      180,
+      Math.min(cssW - 32, Number(layoutSpec.stripW) > 0 ? Number(layoutSpec.stripW) : Math.round(cssW * 0.78))
+    );
+    const availH = Math.max(76, cssH - topStripH - betweenGap - marginY * 2);
     const gap = cssW < 900 ? 2 : 3;
-    const maxCellPx = N < 120 ? 34 : 24;
-    const targetAspect = Math.max(1.3, Math.min(2.6, availW / Math.max(1, availH)));
+    const maxCellPx = N < 80 ? 38 : 34;
 
-    let bestCols = Math.max(1, Math.round(Math.sqrt(N * targetAspect)));
-    let bestCell = 10;
+    let bestCols = Math.max(1, Math.ceil(Math.sqrt(N * (targetW / Math.max(1, availH)))));
+    let bestCell = 12;
     let bestScore = -1e9;
 
     for (let cols = 1; cols <= N; cols++) {
       const rows = Math.ceil(N / cols);
-      const maxCellW = (availW - (cols - 1) * gap) / cols;
-      const maxCellH = (availH - (rows - 1) * gap) / rows;
-      const cell = Math.min(maxCellPx, Math.floor(Math.min(maxCellW, maxCellH)));
+      const cellByW = (targetW - (cols - 1) * gap) / cols;
+      const cellByH = (availH - (rows - 1) * gap) / rows;
+      const cell = Math.min(maxCellPx, cellByW, cellByH);
       if (cell < 5) continue;
 
+      const usedW = cols * cell + (cols - 1) * gap;
+      const widthFill = usedW / Math.max(1, targetW);
       const lastRowCount = N - (rows - 1) * cols;
       const lastRowFill = lastRowCount / cols;
-      const aspectDiff = Math.abs(cols / rows - targetAspect);
-      const score = cell * 10 + lastRowFill * 2.4 - aspectDiff * 1.1;
+
+      // Strongly reward spanning the full 3-video strip width with crisp ~16..24px tiles & filled final row
+      const score = widthFill * 46 + cell * 2.4 + lastRowFill * 5.2;
       if (score > bestScore) {
         bestScore = score;
         bestCols = cols;
@@ -319,8 +346,10 @@ export function createThreeStage({
     const rows = Math.ceil(N / bestCols);
     const gridW = bestCols * bestCell + (bestCols - 1) * gap;
     const gridH = rows * bestCell + (rows - 1) * gap;
-    const originX = Math.round((cssW - gridW) * 0.5);
-    const originY = Math.round((cssH - gridH) * 0.5);
+    const totalStackH = topStripH + (topStripH > 0 ? betweenGap : 0) + gridH;
+    const stackTopY = Math.max(12, Math.round((cssH - totalStackH) * 0.5));
+    const originX = (cssW - gridW) * 0.5;
+    const originY = stackTopY + topStripH + (topStripH > 0 ? betweenGap : 0);
 
     layout = {
       cols: bestCols,
@@ -330,10 +359,12 @@ export function createThreeStage({
       gridW,
       gridH,
       originX,
-      originY
+      originY,
+      stackTopY
     };
 
     syncInstanceTransformsAndUvs();
+    return layout;
   }
 
   function rebuildItemsFromCatalog(catalog) {
@@ -639,10 +670,18 @@ export function createThreeStage({
     loadAtlas,
     syncCatalog(catalog) {
       rebuildItemsFromCatalog(catalog);
+      return layout;
+    },
+    setStageLayoutSpec(nextSpec = {}) {
+      layoutSpec = { ...layoutSpec, ...nextSpec };
+      const res = computeLayout();
+      scheduleRender();
+      return res;
     },
     resize() {
-      computeLayout();
+      const res = computeLayout();
       scheduleRender();
+      return res;
     },
     notifyActivity() {
       scheduleRender();

@@ -289,12 +289,14 @@ async function loadAudioBuffer(url) {
 const STAGE_SLOT_COUNT = 3;
 const STAGE_FADE_OUT_MS = 200; // 0.20s smooth visual fade-out on note release
 
-// Cropped low-rumble (< 125 Hz) + Mel-like perceptual frequency warp (125 Hz .. 5000 Hz)
-const SPEC_MIN_FREQ = 125;
-const SPEC_MAX_FREQ = 5000;
+// Cropped low-rumble (< 130 Hz) + Mel-like perceptual frequency warp
+const SPEC_MIN_FREQ = 130;
+const SPEC_MAX_FREQ = 4800;
+const MINI_SPEC_MAX_FREQ = 2800; // Tighter upper bound on flush stage spectrograms so harmonics hug the video edge
 const SPEC_WARP_HZ = 160;
 const SPEC_WARP_MIN = Math.log(1 + SPEC_MIN_FREQ / SPEC_WARP_HZ);
 const SPEC_WARP_MAX = Math.log(1 + SPEC_MAX_FREQ / SPEC_WARP_HZ);
+const MINI_WARP_MAX = Math.log(1 + MINI_SPEC_MAX_FREQ / SPEC_WARP_HZ);
 
 function specFreqToNormY(freq) {
   const f = Math.max(SPEC_MIN_FREQ, Math.min(SPEC_MAX_FREQ, freq));
@@ -304,6 +306,16 @@ function specFreqToNormY(freq) {
 function specNormYToFreq(normY) {
   const u = Math.max(0, Math.min(1, normY));
   return SPEC_WARP_HZ * (Math.exp(SPEC_WARP_MIN + u * (SPEC_WARP_MAX - SPEC_WARP_MIN)) - 1);
+}
+
+function miniSpecFreqToNormY(freq) {
+  const f = Math.max(SPEC_MIN_FREQ, Math.min(MINI_SPEC_MAX_FREQ, freq));
+  return (Math.log(1 + f / SPEC_WARP_HZ) - SPEC_WARP_MIN) / (MINI_WARP_MAX - SPEC_WARP_MIN);
+}
+
+function miniSpecNormYToFreq(normY) {
+  const u = Math.max(0, Math.min(1, normY));
+  return SPEC_WARP_HZ * (Math.exp(SPEC_WARP_MIN + u * (MINI_WARP_MAX - SPEC_WARP_MIN)) - 1);
 }
 
 let stageSlotSeq = 0;
@@ -376,26 +388,42 @@ function updateStageTileSizes() {
   const grid = document.getElementById('polyVideoGrid');
   if (!stageEl || !grid) return;
 
-  const gap = 24;
-  const padX = Math.max(88, Math.round(stageEl.clientWidth * 0.13));
-  const padY = Math.max(64, Math.round(stageEl.clientHeight * 0.14));
+  const stageW = Math.max(320, stageEl.clientWidth);
+  const stageH = Math.max(260, stageEl.clientHeight);
+  const gap = stageW < 920 ? 14 : 20;
+  const specRatio = 0.155; // ~50% as tall as before, flush directly beneath each video
+  const marginY = Math.max(20, Math.round(stageH * 0.045));
+  const betweenGap = Math.max(18, Math.round(stageH * 0.028));
 
-  const availW = Math.max(240, stageEl.clientWidth - padX - gap * (STAGE_SLOT_COUNT - 1));
-  const availHForSlotUnit = Math.max(140, stageEl.clientHeight - padY);
-  // Each slot unit height = side + 7 + 0.31 * side = 1.31 * side + 7
-  const maxSideByH = Math.floor((availHForSlotUnit - 7) / 1.31);
-  const side = Math.max(96, Math.floor(Math.min(maxSideByH, availW / STAGE_SLOT_COUNT)));
-  const specH = Math.max(62, Math.round(side * 0.31));
+  // Reserve ~58% of vertical stage space for the 3-up videos + flush spectrograms,
+  // leaving ~42% strictly below for the wide non-overlapping 3D grid of tiles/dots
+  const usableH = Math.max(220, stageH - marginY * 2 - betweenGap);
+  const topBudgetH = Math.floor(usableH * 0.58);
+  const maxSideByH = Math.floor(topBudgetH / (1 + specRatio));
+
+  const padX = Math.max(56, Math.round(stageW * 0.11));
+  const availW = Math.max(240, stageW - padX * 2 - gap * (STAGE_SLOT_COUNT - 1));
+  const side = Math.max(96, Math.min(316, Math.floor(Math.min(maxSideByH, availW / STAGE_SLOT_COUNT))));
+  const specH = Math.max(26, Math.round(side * specRatio));
   const stripW = side * STAGE_SLOT_COUNT + gap * (STAGE_SLOT_COUNT - 1);
+  const topStripH = side + specH;
 
   currentStageTileSize = side;
   currentMiniSpecH = specH;
 
   stageEl.style.setProperty('--tile-size', `${side}px`);
   stageEl.style.setProperty('--spec-height', `${specH}px`);
+  stageEl.style.setProperty('--slot-gap', `${gap}px`);
   stageEl.style.setProperty('--strip-width', `${stripW}px`);
 
-  threeStage?.resize();
+  const gridLayout = threeStage?.setStageLayoutSpec({
+    stripW,
+    topStripH,
+    betweenGap,
+    marginY
+  });
+  const stripTop = gridLayout?.stackTopY ?? marginY;
+  stageEl.style.setProperty('--strip-top', `${stripTop}px`);
 }
 
 window.addEventListener('resize', updateStageTileSizes);
@@ -655,7 +683,7 @@ function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, buff
   const imag = new Float32Array(fftSizeSpec);
   const half = fftSizeSpec >> 1;
   const minBin = Math.max(1, Math.floor((SPEC_MIN_FREQ * fftSizeSpec) / effectiveSr));
-  const maxBin = Math.min(half - 1, Math.ceil((SPEC_MAX_FREQ * fftSizeSpec) / effectiveSr));
+  const maxBin = Math.min(half - 1, Math.ceil((MINI_SPEC_MAX_FREQ * fftSizeSpec) / effectiveSr));
   const colMags = new Array(W);
   let globalMaxDb = -90;
 
@@ -670,7 +698,6 @@ function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, buff
     for (let k = 1; k < half; k++) {
       const db = 20 * Math.log10(Math.hypot(real[k], imag[k]) + 1e-7);
       dbArr[k] = db;
-      // Measure peak strictly inside [SPEC_MIN_FREQ, SPEC_MAX_FREQ] so <125Hz rumble never dominates
       if (k >= minBin && k <= maxBin && db > globalMaxDb) {
         globalMaxDb = db;
       }
@@ -683,7 +710,7 @@ function buildMiniSpectrogramBitmap(buffer, playbackRate = 1.0, trimIn = 0, buff
     const dbArr = colMags[x];
     for (let y = 0; y < H; y++) {
       const normY = 1 - y / (H - 1);
-      const freq = specNormYToFreq(normY);
+      const freq = miniSpecNormYToFreq(normY);
       const exactBin = (freq * fftSizeSpec) / effectiveSr;
       const b0 = Math.max(1, Math.min(half - 2, Math.floor(exactBin)));
       const frac = exactBin - b0;
@@ -755,8 +782,8 @@ function drawSlotMiniSpecFrame(slotIdx, now) {
   } else {
     const f0Hz = slot.voice.f0Hz;
     const stripeAlpha = computeVoiceStripeAlpha(slot.voice, now);
-    if (stripeAlpha > 0.005 && f0Hz >= 50 && f0Hz <= SPEC_MAX_FREQ) {
-      const normY = specFreqToNormY(f0Hz);
+    if (stripeAlpha > 0.005 && f0Hz >= 50 && f0Hz <= MINI_SPEC_MAX_FREQ * 1.15) {
+      const normY = miniSpecFreqToNormY(f0Hz);
       const yF0 = Math.max(2, Math.min(cssH - 2, (1 - normY) * (cssH - 1)));
       ctx.save();
       ctx.globalAlpha = stripeAlpha;
@@ -1125,10 +1152,10 @@ function fftInPlaceClient(real, imag) {
 
 function grayInspectorColor(norm) {
   const t = Math.max(0, Math.min(1, norm));
-  if (t <= 0.02) return [5, 7, 11];
+  if (t <= 0.02) return [0, 0, 0];
   const g = Math.pow((t - 0.02) / 0.98, 1.12);
-  const v = Math.round(5 + g * 238);
-  return [v, v, Math.min(255, v + 3)];
+  const v = Math.round(g * 244);
+  return [v, v, v];
 }
 
 const spectrogramBitmapCache = new Map();
@@ -1215,7 +1242,7 @@ function buildSpectrogramOffscreen(
   ctx.drawImage(stftCanvas, 0, 0, W, H);
 
   const gridFreqs = [150, 300, 600, 1200, 2400, 4200];
-  ctx.font = '10px "Space Mono", "SF Mono", Menlo, monospace';
+  ctx.font = '10.5px "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif';
   ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
   ctx.lineWidth = 1;
@@ -1226,7 +1253,7 @@ function buildSpectrogramOffscreen(
     ctx.moveTo(0, y);
     ctx.lineTo(W, y);
     ctx.stroke();
-    ctx.fillText(`${gf}Hz`, 5, Math.max(10, y - 3));
+    ctx.fillText(`${gf}Hz`, 5, Math.max(10, y - 4));
   }
 
   if (showHarmonics && f0Hz >= 50 && f0Hz <= SPEC_MAX_FREQ) {
@@ -1239,7 +1266,7 @@ function buildSpectrogramOffscreen(
     ctx.stroke();
 
     const tagText = `f0: ${f0Label} (${f0Hz}Hz)`;
-    ctx.font = 'bold 10px "Space Mono", "SF Mono", Menlo, monospace';
+    ctx.font = '600 10.5px "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif';
     const tagW = Math.ceil(ctx.measureText(tagText).width) + 12;
     ctx.fillStyle = '#22c55e';
     ctx.fillRect(W - tagW - 5, Math.max(2, yF0 - 16), tagW, 15);
@@ -1430,27 +1457,12 @@ function renderFileExplorer() {
       const rowEl = document.createElement('div');
       rowEl.className = `explorer-video-row${muted ? ' is-muted' : ''}`;
       rowEl.dataset.videoId = v.id;
-      rowEl.title = `${v.slug} (${sliceCount} sample${sliceCount === 1 ? '' : 's'}${gainDb !== 0 ? ` · ${formatSignedDb(gainDb)}` : ''}) — click to ${muted ? 'enable' : 'mute'}`;
+      rowEl.title = `${v.slug} (${sliceCount} sample${sliceCount === 1 ? '' : 's'}${gainDb !== 0 ? ` · ${formatSignedDb(gainDb)}` : ''}) — click to inspect`;
 
       rowEl.innerHTML = `
         <span class="explorer-video-label">${v.slug}</span>
         ${gainTagHtml}
         <span class="explorer-video-meta">${sliceCount}</span>
-        <button
-          type="button"
-          class="explorer-inspect-btn"
-          title="Inspect video file &amp; adjust volume (${v.slug})"
-          aria-label="Inspect video file ${v.slug}"
-        >
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-            <line x1="2.5" y1="4" x2="13.5" y2="4"></line>
-            <circle cx="6" cy="4" r="1.4" fill="currentColor"></circle>
-            <line x1="2.5" y1="8" x2="13.5" y2="8"></line>
-            <circle cx="10.5" cy="8" r="1.4" fill="currentColor"></circle>
-            <line x1="2.5" y1="12" x2="13.5" y2="12"></line>
-            <circle cx="5" cy="12" r="1.4" fill="currentColor"></circle>
-          </svg>
-        </button>
         <button
           type="button"
           class="ui-switch${muted ? '' : ' is-on'}"
@@ -1460,16 +1472,16 @@ function renderFileExplorer() {
         ></button>
       `;
 
-      const inspectBtn = rowEl.querySelector('.explorer-inspect-btn');
-      inspectBtn.addEventListener('click', e => {
+      const switchBtn = rowEl.querySelector('.ui-switch');
+      switchBtn.addEventListener('click', e => {
         e.stopPropagation();
-        openVideoInspectorModal(v.id);
+        setVideosEnabled([v.id], muted);
       });
 
       rowEl.addEventListener('click', e => {
-        if (e.target.closest('.explorer-inspect-btn')) return;
+        if (e.target.closest('.ui-switch')) return;
         e.stopPropagation();
-        setVideosEnabled([v.id], muted);
+        openVideoInspectorModal(v.id);
       });
 
       itemsEl.appendChild(rowEl);
@@ -1624,7 +1636,9 @@ function renderPianoKeyboard() {
   if (octUpBtn) octUpBtn.disabled = startMidi >= MAX_BASE_OCTAVE_MIDI;
 
   const totalNaturals = VISIBLE_OCTAVES * 7; // 21 equal-width units
+  const totalW = Math.round(container.clientWidth || 0);
   const unitWidthPct = 100 / totalNaturals;
+  const xEdgePx = u => Math.round((u / totalNaturals) * totalW);
   const keyMap = state.catalog?.keyboardMap || {};
 
   for (let i = 0; i < VISIBLE_OCTAVES * 12; i++) {
@@ -1632,7 +1646,6 @@ function renderPianoKeyboard() {
     const octIdx = Math.floor(i / 12);
     const pc = i % 12;
     const isAccidental = ACCIDENTAL_SEMITONES.has(pc);
-    const isOctaveStart = pc === 0;
     const inRange = midi >= MIN_MIDI && midi <= MAX_MIDI;
 
     const visCands = inRange ? getVisibleCandidatesForMidi(midi) : [];
@@ -1643,15 +1656,14 @@ function renderPianoKeyboard() {
       ? octIdx * 7 + ACCIDENTAL_OFFSET_BY_PC[pc]
       : octIdx * 7 + NATURAL_INDEX_BY_PC[pc];
 
-    const isLastNatural = !isAccidental && octIdx === VISIBLE_OCTAVES - 1 && pc === 11;
+    const isFirstNatural = !isAccidental && i === 0;
 
     const keyEl = document.createElement('div');
     keyEl.className = [
       'wf-key',
       isAccidental ? 'accidental' : 'natural',
       isAccidental && TOUCH_LEFT_ACCIDENTALS.has(pc) ? 'touch-left' : '',
-      isOctaveStart ? 'octave-start' : '',
-      isLastNatural ? 'last-natural' : '',
+      isFirstNatural ? 'first-natural' : '',
       midi === state.selectedMidi ? 'selected-key' : '',
       isMidiStillHeld(midi) ? 'active-play' : ''
     ]
@@ -1659,8 +1671,15 @@ function renderPianoKeyboard() {
       .join(' ');
 
     keyEl.dataset.midi = String(midi);
-    keyEl.style.left = `${(leftUnits * unitWidthPct).toFixed(4)}%`;
-    keyEl.style.width = `${unitWidthPct.toFixed(4)}%`;
+    if (totalW > 0) {
+      const leftPx = xEdgePx(leftUnits);
+      const rightPx = xEdgePx(leftUnits + 1);
+      keyEl.style.left = `${leftPx}px`;
+      keyEl.style.width = `${Math.max(1, rightPx - leftPx)}px`;
+    } else {
+      keyEl.style.left = `${(leftUnits * unitWidthPct).toFixed(4)}%`;
+      keyEl.style.width = `${unitWidthPct.toFixed(4)}%`;
+    }
     keyEl.style.setProperty('--note-color', getNoteColor(midi));
 
     const fullNoteName = midiToName(midi);
@@ -1725,41 +1744,21 @@ function renderSelectedKeyDeck() {
       .join(' ');
 
     card.innerHTML = `
-      <div class="cand-thumb-wrap" title="Click to audition ${cand.videoSlug} (${noteName})">
+      <div class="cand-thumb-wrap" title="Click to inspect sample (${cand.videoSlug} · ${noteName})">
         <img src="${withBust(cand.thumbUrl)}" alt="${cand.videoSlug}" loading="lazy" />
-        <button
-          class="toggle-on-btn ${isEnabled ? 'is-on' : 'is-off'}"
-          type="button"
-          aria-pressed="${isEnabled ? 'true' : 'false'}"
-          title="${isEnabled ? 'Active — click to bypass' : 'Bypassed — click to enable'}"
-        >
-          <span class="transport-led"></span>
-        </button>
-        <button
-          class="cand-inspect-btn trim-btn"
-          type="button"
-          title="Inspect sample (${cand.videoSlug})"
-          aria-label="Inspect sample ${cand.videoSlug}"
-        >
-          <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-            <line x1="2.5" y1="4" x2="13.5" y2="4"></line>
-            <circle cx="6" cy="4" r="1.4" fill="currentColor"></circle>
-            <line x1="2.5" y1="8" x2="13.5" y2="8"></line>
-            <circle cx="10.5" cy="8" r="1.4" fill="currentColor"></circle>
-            <line x1="2.5" y1="12" x2="13.5" y2="12"></line>
-            <circle cx="5" cy="12" r="1.4" fill="currentColor"></circle>
-          </svg>
-        </button>
       </div>
       <div class="cand-slug-title" title="${cand.videoSlug}">${cand.videoSlug}</div>
+      <button
+        class="ui-switch${isEnabled ? ' is-on' : ''}"
+        type="button"
+        role="switch"
+        aria-checked="${isEnabled ? 'true' : 'false'}"
+        title="${isEnabled ? `Mute sample (${cand.videoSlug})` : `Enable sample (${cand.videoSlug})`}"
+      ></button>
     `;
 
-    card.addEventListener('mousedown', e => {
-      if (e.button !== 0 || e.target.closest('button')) return;
-      triggerDefaultCandidateGate(`ui_cand_${cand.sliceId}`, midi, cand, idx);
-    });
-
-    card.querySelector('.toggle-on-btn').addEventListener('click', async e => {
+    const switchBtn = card.querySelector('.ui-switch');
+    switchBtn.addEventListener('click', async e => {
       e.stopPropagation();
       const nextEnabled = !isEnabled;
       if (nextEnabled) {
@@ -1772,8 +1771,12 @@ function renderSelectedKeyDeck() {
       });
     });
 
-    card.querySelector('.trim-btn').addEventListener('click', e => {
-      e.stopPropagation();
+    card.addEventListener('click', e => {
+      if (e.target.closest('.ui-switch')) return;
+      state.auditionIndex = idx;
+      document.querySelectorAll('.candidate-card').forEach((el, i) => {
+        el.classList.toggle('audition-focus', i === idx);
+      });
       openTrimModal(cand.videoId, cand.sliceId, cand.playbackRate || 1.0);
     });
 
@@ -2486,7 +2489,7 @@ function renderInspectorSpectrogram() {
       ctx.setLineDash([]);
 
       const refTag = `♪ Ref: ${midiToName(refMidi)} (${refFreq}Hz)`;
-      ctx.font = 'bold 10px "Space Mono", "SF Mono", Menlo, monospace';
+      ctx.font = '600 10.5px "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif';
       const tagW = Math.ceil(ctx.measureText(refTag).width) + 10;
       ctx.fillStyle = '#38bdf8';
       ctx.fillRect(52, Math.max(2, yRef - 15), tagW, 14);
@@ -2641,7 +2644,7 @@ function renderTrimWaveformCanvas() {
 
   ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
   ctx.fillRect(0, waveAreaH, cssW, 18);
-  ctx.font = '10px "Space Mono", "SF Mono", Menlo, monospace';
+  ctx.font = '10.5px "Google Sans", -apple-system, BlinkMacSystemFont, sans-serif';
   ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
   const endLabel = `${rawDur.toFixed(2)}s`;
   const endW = ctx.measureText(endLabel).width;
@@ -3022,6 +3025,7 @@ function refreshAllUI() {
   renderPianoKeyboard();
   renderSelectedKeyDeck();
   threeStage?.syncCatalog(state.catalog);
+  updateStageTileSizes();
 }
 
 function stepToAdjacentPopulatedKey(dir) {
@@ -4062,6 +4066,17 @@ async function init() {
   const stageEl = document.getElementById('videoStage');
   if (stageEl && typeof ResizeObserver !== 'undefined') {
     new ResizeObserver(() => updateStageTileSizes()).observe(stageEl);
+  }
+  const kbEl = document.getElementById('pianoKeyboard');
+  if (kbEl && typeof ResizeObserver !== 'undefined') {
+    let lastKbW = 0;
+    new ResizeObserver(() => {
+      const nextW = Math.round(kbEl.clientWidth || 0);
+      if (nextW > 0 && nextW !== lastKbW) {
+        lastKbW = nextW;
+        renderPianoKeyboard();
+      }
+    }).observe(kbEl);
   }
   setupEventListeners();
   initWebMIDI();

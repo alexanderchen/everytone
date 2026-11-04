@@ -138,3 +138,13 @@
 - Built a video file inspector with holistic integer dB volume trim. [img](screenshots/2026-11-04/15_video-file-inspector-holistic-volume.png)
 
 - Linked video and sample inspectors by breadcrumb and capped pitch to ±1st. [img](screenshots/2026-11-04/16_sample-inspector-breadcrumb-and-1st-clamp.png)
+
+
+## Nov 4, 2026 · 5:50 pm
+
+- Switched to Google Sans and removed the sidebar VIDEO FILES title.
+- Stacked 3-up clips above a full-width dot grid with zero overlap.
+- Halved spectrogram height and pushed strips flush under each video.
+- Removed key glow and fixed single-pixel octave border alignment. [img](screenshots/2026-11-04/17_sans-stacked-stage-flush-specs-and-unified-switches.png)
+
+- Replaced tiny gear icons with direct click-to-inspect and pill switches. [img](screenshots/2026-11-04/18_google-sans-sample-inspector-direct-click.png)

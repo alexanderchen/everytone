@@ -50,7 +50,7 @@ export async function buildStaticSite(versionSlug = 'v1') {
   <title>Everytone</title>
   <script>window.location.replace('./${versionSlug}/');</script>
 </head>
-<body style="background:#030406;color:#fff;font-family:sans-serif;"></body>
+<body style="background:#000000;color:#fff;font-family:sans-serif;"></body>
 </html>
 `
   );
