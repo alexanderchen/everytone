@@ -5,7 +5,11 @@ import { fileURLToPath } from 'url';
 import { execFileSync } from 'child_process';
 import {
   SR,
+  MAX_CLIP_DUR,
   freqToMidi,
+  midiToName,
+  getDefaultSliceMidi,
+  getEffectiveSliceMidi,
   extractSquareThumbnail,
   extractSliceAssets,
   analyzeSliceRegion,
@@ -216,7 +220,12 @@ const server = http.createServer(async (req, res) => {
         for (const s of video.slices || []) {
           if (s.deleted) continue;
           const hitNum = String(s.hitIndex).padStart(2, '0');
-          const safeNote = s.percBucket ? s.percBucket.toUpperCase() : s.name.replace('#', 's');
+          const effMidi = getEffectiveSliceMidi(video, s);
+          const safeNote = Number.isFinite(s.manualMidi)
+            ? midiToName(effMidi).replace('#', 's')
+            : s.percBucket
+              ? s.percBucket.toUpperCase()
+              : (s.name || midiToName(effMidi)).replace('#', 's');
           const newBase = `${newSlug}_hit${hitNum}_${safeNote}`;
           const newMp4 = `${newBase}.mp4`;
           const newWav = `${newBase}.wav`;
@@ -253,12 +262,14 @@ const server = http.createServer(async (req, res) => {
       const itemDir = path.join(SAMPLES_DIR, video.folderName);
       if (fs.existsSync(sourceAbs) && fs.existsSync(itemDir)) {
         const thumbPath = path.join(itemDir, video.thumbFile);
-        extractSquareThumbnail(sourceAbs, thumbPath, 0.1, video.extraRotateDeg);
+        extractSquareThumbnail(sourceAbs, thumbPath, 0.1, video.extraRotateDeg, video.cropLeftFrac ?? null);
         for (const s of video.slices || []) {
           if (s.deleted) continue;
           const mp4Path = path.join(itemDir, s.mp4File);
           const wavPath = path.join(itemDir, s.wavFile);
-          extractSliceAssets(sourceAbs, s.startSec, s.durSec, mp4Path, wavPath, video.extraRotateDeg, s.highpassHz || 85);
+          const rawDur = Math.min(MAX_CLIP_DUR, Number(s.rawDurSec ?? s.durSec ?? 2.0));
+          s.rawDurSec = Number(rawDur.toFixed(2));
+          extractSliceAssets(sourceAbs, s.startSec, rawDur, mp4Path, wavPath, video.extraRotateDeg, s.highpassHz || 85, video.cropLeftFrac ?? null);
         }
       }
       return sendJson(res, 200, saveCatalog(catalog));
@@ -424,6 +435,66 @@ const server = http.createServer(async (req, res) => {
       const slice = (video.slices || []).find(s => s.id === body.sliceId);
       if (!slice) return sendJson(res, 404, { error: 'Slice not found' });
 
+      if (!catalog.keyboardConfig) {
+        catalog.keyboardConfig = { selectedByMidi: {}, enabledByMidi: {}, clearedMidis: [] };
+      }
+      // Migrate keyboardConfig before mutating slice slot assignments
+      computeKeyboardMap(catalog.videos, catalog.keyboardConfig);
+      const prevEffectiveMidi = getEffectiveSliceMidi(video, slice);
+
+      function ensureDspOriginalSnapshot() {
+        if (slice.dspOriginal && Number.isFinite(slice.dspOriginal.midi)) return;
+        slice.dspOriginal = {
+          midi: getDefaultSliceMidi(video, slice),
+          rawMidi: slice.midi,
+          name: slice.name,
+          freq: slice.freq,
+          cents: slice.cents ?? 0,
+          exactMidi: slice.exactMidi ?? (slice.midi + (slice.cents || 0) / 100),
+          percBucket: slice.percBucket ?? null
+        };
+      }
+
+      function syncSliceEnablementAndFiles(nextEffectiveMidi) {
+        if (prevEffectiveMidi !== nextEffectiveMidi) {
+          const prevList = catalog.keyboardConfig.enabledByMidi?.[prevEffectiveMidi];
+          if (Array.isArray(prevList)) {
+            catalog.keyboardConfig.enabledByMidi[prevEffectiveMidi] = prevList.filter(id => id !== slice.id);
+          }
+          const destList = Array.isArray(catalog.keyboardConfig.enabledByMidi?.[nextEffectiveMidi])
+            ? catalog.keyboardConfig.enabledByMidi[nextEffectiveMidi]
+            : [];
+          if (!destList.includes(slice.id)) {
+            catalog.keyboardConfig.enabledByMidi[nextEffectiveMidi] = [...destList, slice.id];
+          }
+        }
+
+        const hitNum = String(slice.hitIndex).padStart(2, '0');
+        const safeNote = Number.isFinite(slice.manualMidi)
+          ? midiToName(nextEffectiveMidi).replace('#', 's')
+          : slice.percBucket
+            ? slice.percBucket.toUpperCase()
+            : (slice.name || midiToName(nextEffectiveMidi)).replace('#', 's');
+        const newBase = `${video.slug}_hit${hitNum}_${safeNote}`;
+        const newMp4 = `${newBase}.mp4`;
+        const newWav = `${newBase}.wav`;
+
+        const oldMp4Path = path.join(itemDir, slice.mp4File);
+        const oldWavPath = path.join(itemDir, slice.wavFile);
+        if (fs.existsSync(oldMp4Path) && oldMp4Path !== path.join(itemDir, newMp4)) {
+          fs.renameSync(oldMp4Path, path.join(itemDir, newMp4));
+        }
+        if (fs.existsSync(oldWavPath) && oldWavPath !== path.join(itemDir, newWav)) {
+          fs.renameSync(oldWavPath, path.join(itemDir, newWav));
+        }
+
+        slice.baseName = newBase;
+        slice.mp4File = newMp4;
+        slice.wavFile = newWav;
+        slice.videoUrl = `/samples/${video.folderName}/${newMp4}`;
+        slice.audioUrl = `/samples/${video.folderName}/${newWav}`;
+      }
+
       if (body.starred !== undefined) {
         slice.starred = !!body.starred;
       }
@@ -436,75 +507,88 @@ const server = http.createServer(async (req, res) => {
       }
 
       const itemDir = path.join(SAMPLES_DIR, video.folderName);
-      const sourceAbs = path.join(ROOT_DIR, video.sourcePath);
 
-      // Check if slice start/duration or highpass filter changed -> re-extract MP4 & WAV
-      const timingChanged =
-        (body.startSec !== undefined && Math.abs(Number(body.startSec) - slice.startSec) > 0.01) ||
-        (body.durSec !== undefined && Math.abs(Number(body.durSec) - slice.durSec) > 0.01) ||
-        (body.highpassHz !== undefined && Number(body.highpassHz) !== (slice.highpassHz || 85));
+      // Non-destructive clip sub-trimming within [0, rawDurSec] (<= 2.50s)
+      const rawDur = Number(Math.min(MAX_CLIP_DUR, Number(slice.rawDurSec ?? slice.durSec ?? 2.0)).toFixed(2));
+      slice.rawDurSec = rawDur;
 
-      if (timingChanged && fs.existsSync(sourceAbs)) {
-        slice.startSec = Number(Math.max(0, Number(body.startSec ?? slice.startSec)).toFixed(2));
-        slice.durSec = Number(Math.min(6.0, Math.max(0.5, Number(body.durSec ?? slice.durSec))).toFixed(2));
-        slice.highpassHz = Number(body.highpassHz ?? slice.highpassHz ?? 85);
-
-        const mp4Path = path.join(itemDir, slice.mp4File);
-        const wavPath = path.join(itemDir, slice.wavFile);
-        extractSliceAssets(sourceAbs, slice.startSec, slice.durSec, mp4Path, wavPath, video.extraRotateDeg || 0, slice.highpassHz);
-
-        // Re-analyze pitch of newly cut WAV
-        const buf = execFileSync('ffmpeg', [
-          '-v', 'error', '-i', wavPath, '-ac', '1', '-ar', String(SR), '-f', 'f32le', 'pipe:1'
-        ]);
-        const samples = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
-        const analysis = analyzeSliceRegion(samples, 0, slice.durSec);
-        Object.assign(slice, analysis);
+      if (body.resetTrim === true) {
+        delete slice.trimIn;
+        delete slice.trimOut;
+      } else if (body.trimIn !== undefined || body.trimOut !== undefined) {
+        const minSpan = Math.min(0.25, rawDur);
+        const nextIn = Number(
+          Math.max(0, Math.min(Math.max(0, rawDur - minSpan), Number(body.trimIn ?? slice.trimIn ?? 0))).toFixed(2)
+        );
+        const nextOut = Number(
+          Math.max(
+            Math.min(rawDur, nextIn + minSpan),
+            Math.min(rawDur, Number(body.trimOut ?? slice.trimOut ?? rawDur))
+          ).toFixed(2)
+        );
+        if (nextIn <= 0.005 && nextOut >= rawDur - 0.005) {
+          delete slice.trimIn;
+          delete slice.trimOut;
+        } else {
+          slice.trimIn = nextIn;
+          slice.trimOut = nextOut;
+        }
       }
 
-      // If user clicked a specific spectral peak or manually overrode frequency/MIDI
+      // 1. Revert clip back to DSP-suggested MIDI slot and original tuning
+      if (body.resetToDsp === true) {
+        if (slice.dspOriginal) {
+          const orig = slice.dspOriginal;
+          if (orig.rawMidi !== undefined) slice.midi = orig.rawMidi;
+          if (orig.name !== undefined) slice.name = orig.name;
+          if (orig.freq !== undefined) slice.freq = orig.freq;
+          slice.cents = orig.cents ?? 0;
+          slice.exactMidi = orig.exactMidi ?? slice.midi;
+          slice.percBucket = orig.percBucket ?? null;
+        }
+        delete slice.manualMidi;
+        delete slice.manualTuneCents;
+        delete slice.dspOriginal;
+
+        const restoredMidi = getEffectiveSliceMidi(video, slice);
+        syncSliceEnablementAndFiles(restoredMidi);
+      }
+
+      // 2. Permanently move clip to an arbitrary MIDI key slot (24..103) at original 1.0x pitch
+      if (body.assignMidi !== undefined) {
+        const targetMidi = Math.round(Number(body.assignMidi));
+        if (!Number.isFinite(targetMidi) || targetMidi < 24 || targetMidi > 103) {
+          return sendJson(res, 400, { error: 'Invalid target MIDI note (24..103)' });
+        }
+        ensureDspOriginalSnapshot();
+        slice.manualMidi = targetMidi;
+        slice.manualTuneCents =
+          body.manualTuneCents !== undefined
+            ? Math.max(-2400, Math.min(2400, Math.round(Number(body.manualTuneCents) || 0)))
+            : 0;
+        syncSliceEnablementAndFiles(targetMidi);
+      } else if (body.manualTuneCents !== undefined) {
+        // 3. Re-pitch / fine-tune clip on its current slot
+        ensureDspOriginalSnapshot();
+        slice.manualTuneCents = Math.max(
+          -2400,
+          Math.min(2400, Math.round(Number(body.manualTuneCents) || 0))
+        );
+      }
+
+      // 4. Spectral harmonic peak chip override
       if (body.overrideFreq !== undefined) {
-        const prevMidi = slice.midi;
+        ensureDspOriginalSnapshot();
         const ni = freqToMidi(Number(body.overrideFreq));
         if (ni) {
+          delete slice.manualMidi;
+          delete slice.manualTuneCents;
           slice.freq = ni.freq;
           slice.midi = ni.midi;
           slice.name = ni.name;
           slice.cents = ni.cents;
           slice.exactMidi = ni.exactMidi;
-
-          if (prevMidi !== ni.midi) {
-            if (!catalog.keyboardConfig) {
-              catalog.keyboardConfig = { selectedByMidi: {}, enabledByMidi: {}, clearedMidis: [] };
-            }
-            computeKeyboardMap(catalog.videos, catalog.keyboardConfig);
-            const dest = catalog.keyboardConfig.enabledByMidi?.[ni.midi] || [];
-            if (!dest.includes(slice.id)) {
-              catalog.keyboardConfig.enabledByMidi[ni.midi] = [...dest, slice.id];
-            }
-          }
-
-          // Rename files on disk to reflect new note name
-          const hitNum = String(slice.hitIndex).padStart(2, '0');
-          const safeNote = slice.name.replace('#', 's');
-          const newBase = `${video.slug}_hit${hitNum}_${safeNote}`;
-          const newMp4 = `${newBase}.mp4`;
-          const newWav = `${newBase}.wav`;
-
-          const oldMp4Path = path.join(itemDir, slice.mp4File);
-          const oldWavPath = path.join(itemDir, slice.wavFile);
-          if (fs.existsSync(oldMp4Path) && oldMp4Path !== path.join(itemDir, newMp4)) {
-            fs.renameSync(oldMp4Path, path.join(itemDir, newMp4));
-          }
-          if (fs.existsSync(oldWavPath) && oldWavPath !== path.join(itemDir, newWav)) {
-            fs.renameSync(oldWavPath, path.join(itemDir, newWav));
-          }
-
-          slice.baseName = newBase;
-          slice.mp4File = newMp4;
-          slice.wavFile = newWav;
-          slice.videoUrl = `/samples/${video.folderName}/${newMp4}`;
-          slice.audioUrl = `/samples/${video.folderName}/${newWav}`;
+          syncSliceEnablementAndFiles(ni.midi);
         }
       }
 
@@ -528,7 +612,7 @@ const server = http.createServer(async (req, res) => {
 
       const tempMp4 = path.join(itemDir, `temp_${hitNum}.mp4`);
       const tempWav = path.join(itemDir, `temp_${hitNum}.wav`);
-      extractSliceAssets(sourceAbs, startSec, durSec, tempMp4, tempWav, video.extraRotateDeg || 0, 85);
+      extractSliceAssets(sourceAbs, startSec, durSec, tempMp4, tempWav, video.extraRotateDeg || 0, 85, video.cropLeftFrac ?? null);
 
       const buf = execFileSync('ffmpeg', [
         '-v', 'error', '-i', tempWav, '-ac', '1', '-ar', String(SR), '-f', 'f32le', 'pipe:1'

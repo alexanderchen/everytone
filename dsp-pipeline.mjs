@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 export const SR = 44100;
+export const MAX_CLIP_DUR = 2.5;
 const FFT_SIZE = 4096;
 const HOP_SIZE = 1024; // ~23.2ms per frame
 
@@ -220,9 +221,12 @@ export function getVideoRotationMetadata(filePath) {
  * Automatically ignores accidental -90/+90 portrait gravity tags on 1920x1080 sensor streams,
  * and applies any manual extra rotation (0, 90, 180, 270).
  */
-export function buildSquareVideoFilter(size = 512, extraRotateDeg = 0) {
+export function buildSquareVideoFilter(size = 512, extraRotateDeg = 0, cropLeftFrac = null) {
+  const xExpr = Number.isFinite(cropLeftFrac)
+    ? `min(iw-min(iw\\,ih)\\,max(0\\,iw*${Number(cropLeftFrac).toFixed(4)}))`
+    : '(iw-min(iw\\,ih))/2';
   const filters = [
-    'crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2',
+    `crop=min(iw\\,ih):min(iw\\,ih):${xExpr}:(ih-min(iw\\,ih))/2`,
     `scale=${size}:${size}`
   ];
   const rot = ((extraRotateDeg % 360) + 360) % 360;
@@ -232,26 +236,27 @@ export function buildSquareVideoFilter(size = 512, extraRotateDeg = 0) {
   return filters.join(',');
 }
 
-export function extractSquareThumbnail(sourceMp4, outJpg, timeSec = 0.1, extraRotateDeg = 0) {
+export function extractSquareThumbnail(sourceMp4, outJpg, timeSec = 0.1, extraRotateDeg = 0, cropLeftFrac = null) {
   const rotMeta = getVideoRotationMetadata(sourceMp4);
   const noAutoRotate = (rotMeta === -90 || rotMeta === 90) ? ['-noautorotate'] : [];
-  const vf = buildSquareVideoFilter(512, extraRotateDeg);
+  const vf = buildSquareVideoFilter(512, extraRotateDeg, cropLeftFrac);
   execFileSync('ffmpeg', [
     '-y', ...noAutoRotate, '-ss', String(Math.max(0, timeSec)),
     '-i', sourceMp4, '-frames:v', '1', '-vf', vf, '-q:v', '3', outJpg
   ], { stdio: 'ignore' });
 }
 
-export function extractSliceAssets(sourceMp4, startSec, durSec, outMp4, outWav, extraRotateDeg = 0, highpassHz = 85) {
+export function extractSliceAssets(sourceMp4, startSec, durSec, outMp4, outWav, extraRotateDeg = 0, highpassHz = 85, cropLeftFrac = null) {
+  const clampedDur = Math.max(0.25, Math.min(MAX_CLIP_DUR, Number(durSec) || 2.0));
   const rotMeta = getVideoRotationMetadata(sourceMp4);
   const noAutoRotate = (rotMeta === -90 || rotMeta === 90) ? ['-noautorotate'] : [];
-  const vf = buildSquareVideoFilter(512, extraRotateDeg);
+  const vf = buildSquareVideoFilter(512, extraRotateDeg, cropLeftFrac);
 
-  // 1. Cut short silent 512x512 H.264 MP4 clip with frequent keyframes for instant triggering
+  // 1. Cut short silent 512x512 H.264 MP4 clip (capped <= 2.5s) with frequent keyframes for instant triggering
   execFileSync('ffmpeg', [
     '-y', ...noAutoRotate,
     '-ss', String(startSec.toFixed(3)),
-    '-t', String(durSec.toFixed(3)),
+    '-t', String(clampedDur.toFixed(3)),
     '-i', sourceMp4,
     '-an',
     '-vf', vf,
@@ -261,19 +266,19 @@ export function extractSliceAssets(sourceMp4, startSec, durSec, outMp4, outWav, 
     outMp4
   ], { stdio: 'ignore' });
 
-  // 2. Cut raw/clean mono 44.1kHz 16-bit WAV with gentle low-end roll-off & cosine fade-out
-  const fadeOutDur = Math.min(0.25, durSec * 0.25);
-  const fadeOutStart = Math.max(0.05, durSec - fadeOutDur);
+  // 2. Cut clean mono 44.1kHz 16-bit WAV (Web Audio handles the universal 0.4s release decay)
+  const microFadeOutDur = 0.015;
+  const microFadeOutStart = Math.max(0.02, clampedDur - microFadeOutDur);
   const af = [
     `highpass=f=${highpassHz}`,
-    `afade=t=in:st=0:d=0.008`,
-    `afade=t=out:st=${fadeOutStart.toFixed(3)}:d=${fadeOutDur.toFixed(3)}`
+    `afade=t=in:st=0:d=0.006`,
+    `afade=t=out:st=${microFadeOutStart.toFixed(3)}:d=${microFadeOutDur.toFixed(3)}`
   ].join(',');
 
   execFileSync('ffmpeg', [
     '-y',
     '-ss', String(startSec.toFixed(3)),
-    '-t', String(durSec.toFixed(3)),
+    '-t', String(clampedDur.toFixed(3)),
     '-i', sourceMp4,
     '-vn', '-af', af,
     '-ac', '1', '-ar', String(SR), '-c:a', 'pcm_s16le',
@@ -562,7 +567,7 @@ export function analyzeVideoAudio(filePath, options = {}) {
     const nextF = idx + 1 < eventFrames.length ? eventFrames[idx + 1] : numFrames;
     const startSec = Number(Math.max(0, (startF * HOP_SIZE) / SR - 0.025).toFixed(2));
     const maxEndSec = Math.min(duration, ((nextF * HOP_SIZE) / SR) - 0.02);
-    const durSec = Number(Math.min(3.2, Math.max(1.2, maxEndSec - startSec)).toFixed(2));
+    const durSec = Number(Math.min(MAX_CLIP_DUR, Math.max(0.8, maxEndSec - startSec)).toFixed(2));
 
     const analysis = analyzeSliceRegion(samples, startSec, durSec, minPitchHz);
     allCandidates.push({
@@ -629,7 +634,7 @@ export function analyzeVideoAudio(filePath, options = {}) {
 }
 
 // Curated low-to-high 12-key Percussion Octave (MIDI 24 C1 -> 35 B1)
-const PERC_OCTAVE_ROLES = {
+export const PERC_OCTAVE_ROLES = {
   24: 'Sub Kick',
   25: 'Deep Kick',
   26: 'Soft Thud',
@@ -687,8 +692,8 @@ const DEFAULT_PERC_ON_BY_MIDI = {
 };
 
 function inferPercMidiFallback(video, slice) {
-  if ((video.slug || '').includes('puffball')) return slice.freq < 100 ? 24 : 26;
-  const f = slice.freq || 200;
+  if ((video?.slug || '').includes('puffball')) return slice.freq < 100 ? 24 : 26;
+  const f = slice?.freq || 200;
   if (f < 76) return 24;
   if (f < 86) return 25;
   if (f < 110) return 28;
@@ -702,10 +707,41 @@ function inferPercMidiFallback(video, slice) {
   return 35;
 }
 
+export function isDefaultPercSlice(video, slice) {
+  return (
+    video?.category === 'percussion' ||
+    slice?.percBucket === 'kick' ||
+    slice?.percBucket === 'snare' ||
+    slice?.percBucket === 'hihat'
+  );
+}
+
+export function getDefaultSliceMidi(video, slice) {
+  if (slice?.dspOriginal && Number.isFinite(slice.dspOriginal.midi)) {
+    return Number(slice.dspOriginal.midi);
+  }
+  if (isDefaultPercSlice(video, slice)) {
+    return PERC_SLICE_TO_MIDI[slice.id] ?? inferPercMidiFallback(video, slice);
+  }
+  return Number(slice?.midi ?? 60);
+}
+
+export function getEffectiveSliceMidi(video, slice) {
+  if (Number.isFinite(slice?.manualMidi)) {
+    return Number(slice.manualMidi);
+  }
+  if (isDefaultPercSlice(video, slice)) {
+    return PERC_SLICE_TO_MIDI[slice.id] ?? inferPercMidiFallback(video, slice);
+  }
+  return Number(slice?.midi ?? 60);
+}
+
 /**
  * Unified Keyboard Configurator:
  *  - MIDI 24..35 (C1..B1): 12-key Percussion Octave mapped low kick (puffballs) -> high clicks
  *  - MIDI 36..103 (C2..G7): 68-key Nearest-Note Tonal Range (<= ±50c micro-tuning)
+ *  - Supports manual MIDI slot reassignment (`s.manualMidi`) at original pitch (`1.0x`) + manual re-pitch (`s.manualTuneCents`),
+ *    with non-destructive revert to `s.dspOriginal`.
  *  - Supports multiple `ON` clips per key (`keyboardConfig.enabledByMidi[midi]`) for round-robin / random playback.
  */
 export function computeKeyboardMap(videos, keyboardConfig = {}) {
@@ -736,14 +772,47 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
 
     for (const s of v.slices || []) {
       if (s.deleted) continue;
-      const isPerc =
-        v.category === 'percussion' ||
-        s.percBucket === 'kick' ||
-        s.percBucket === 'snare' ||
-        s.percBucket === 'hihat';
 
-      if (isPerc) {
-        const targetMidi = PERC_SLICE_TO_MIDI[s.id] ?? inferPercMidiFallback(v, s);
+      const dspMidi = getDefaultSliceMidi(v, s);
+      const hasManualMove = Number.isFinite(s.manualMidi);
+      const hasManualTune = Number.isFinite(s.manualTuneCents);
+      const targetMidi = getEffectiveSliceMidi(v, s);
+
+      if (!Number.isFinite(targetMidi) || targetMidi < MIN_MIDI || targetMidi > MAX_MIDI) {
+        continue;
+      }
+
+      const isPercSlot = targetMidi < 36;
+      const dspName =
+        dspMidi < 36
+          ? `${midiToName(dspMidi)} (${PERC_OCTAVE_ROLES[dspMidi] || 'Perc'})`
+          : midiToName(dspMidi);
+
+      let shiftCents = 0;
+      let playbackRate = 1.0;
+      const exactMidi = s.exactMidi ?? (s.midi + (s.cents || 0) / 100);
+
+      if (hasManualMove || hasManualTune) {
+        shiftCents = Math.round(Number(s.manualTuneCents || 0));
+        playbackRate = Number(Math.pow(2, shiftCents / 1200).toFixed(4));
+      } else if (!isPercSlot) {
+        const shiftSemitones = targetMidi - exactMidi;
+        shiftCents = Math.round(shiftSemitones * 100);
+        playbackRate = Number(Math.pow(2, shiftSemitones / 12).toFixed(4));
+      }
+
+      const isOverridden =
+        hasManualMove ||
+        hasManualTune ||
+        Boolean(s.dspOriginal && (targetMidi !== dspMidi || s.freq !== s.dspOriginal.freq));
+
+      const rawDurSec = Number(Math.min(MAX_CLIP_DUR, Number(s.rawDurSec ?? s.durSec ?? 2.0)).toFixed(2));
+      const trimIn = Number(Math.max(0, Math.min(Math.max(0, rawDurSec - 0.15), Number(s.trimIn ?? 0))).toFixed(2));
+      const trimOut = Number(Math.max(Math.min(rawDurSec, trimIn + 0.15), Math.min(rawDurSec, Number(s.trimOut ?? rawDurSec))).toFixed(2));
+      const activeDurSec = Number(Math.max(0.15, trimOut - trimIn).toFixed(2));
+      const isTrimmed = trimIn > 0.005 || trimOut < rawDurSec - 0.005;
+
+      if (isPercSlot) {
         const isDefaultHero = DEFAULT_PERC_ON_BY_MIDI[targetMidi] === s.id;
         const item = {
           videoId: v.id,
@@ -755,20 +824,29 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
           thumbUrl: v.thumbUrl,
           sliceId: s.id,
           midi: targetMidi,
-          name: PERC_OCTAVE_ROLES[targetMidi] || 'Percussion',
+          name: PERC_OCTAVE_ROLES[targetMidi] || midiToName(targetMidi),
+          dspMidi,
+          dspName,
+          manualMidi: hasManualMove ? targetMidi : null,
+          manualTuneCents: hasManualTune ? Math.round(Number(s.manualTuneCents)) : (hasManualMove ? 0 : null),
+          isOverridden,
           freq: s.freq,
           cents: 0,
           exactMidi: targetMidi,
-          shiftCents: 0,
-          playbackRate: 1.0,
+          shiftCents,
+          playbackRate,
           confidence: s.confidence ?? 0.85,
           peakDb: s.peakDb ?? -20,
           starred: !!s.starred,
           videoUrl: s.videoUrl,
           audioUrl: s.audioUrl,
           startSec: s.startSec,
-          durSec: s.durSec,
-          _score: (isDefaultHero ? 1000 : 0) - (s.freq || 0) * 0.01
+          rawDurSec,
+          trimIn,
+          trimOut,
+          durSec: activeDurSec,
+          isTrimmed,
+          _score: (isDefaultHero ? 1000 : 0) + (hasManualMove ? 500 : 0) - (s.freq || 0) * 0.01
         };
         const list = bucketsByMidi.get(targetMidi) || [];
         list.push(item);
@@ -776,14 +854,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
         continue;
       }
 
-      const targetMidi = s.midi;
-      if (targetMidi < 36 || targetMidi > MAX_MIDI) continue;
-
-      const exactMidi = s.exactMidi ?? (s.midi + (s.cents || 0) / 100);
-      const shiftSemitones = targetMidi - exactMidi;
-      const shiftCents = Math.round(shiftSemitones * 100);
-      const playbackRate = Number(Math.pow(2, shiftSemitones / 12).toFixed(4));
-      const score = candidateQualityScore(v, s, shiftCents);
+      const score = candidateQualityScore(v, s, shiftCents) + (hasManualMove ? 35 : 0);
 
       const item = {
         videoId: v.id,
@@ -794,8 +865,13 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
         isPerc: false,
         thumbUrl: v.thumbUrl,
         sliceId: s.id,
-        midi: s.midi,
-        name: s.name,
+        midi: targetMidi,
+        name: midiToName(targetMidi),
+        dspMidi,
+        dspName,
+        manualMidi: hasManualMove ? targetMidi : null,
+        manualTuneCents: hasManualTune ? Math.round(Number(s.manualTuneCents)) : (hasManualMove ? 0 : null),
+        isOverridden,
         freq: s.freq,
         cents: s.cents || 0,
         exactMidi,
@@ -807,7 +883,11 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
         videoUrl: s.videoUrl,
         audioUrl: s.audioUrl,
         startSec: s.startSec,
-        durSec: s.durSec,
+        rawDurSec,
+        trimIn,
+        trimOut,
+        durSec: activeDurSec,
+        isTrimmed,
         _score: score
       };
 

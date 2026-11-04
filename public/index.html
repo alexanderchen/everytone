@@ -7,106 +7,73 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <!-- 1. Quiet Minimal Top Controls Bar -->
-  <header class="topbar">
-    <div class="topbar-spacer"></div>
+  <!-- 1. Immersive Top Performance Canvas (Pushed up smoothly when Bottom UX Panel expands) -->
+  <main class="performance-canvas" id="videoStage">
+    <canvas id="webglStageBg" class="webgl-stage-bg"></canvas>
 
-    <div class="topbar-actions">
-      <button id="inspectLatestBtn" class="drawer-btn" title="Inspect spectrogram, pitch, and In/Out trim of the active clip">
-        <span>Inspect Clip</span>
-      </button>
-
-      <div class="divider-v"></div>
-
-      <button id="wurliToggleBtn" class="ctrl-btn" title="Toggle built-in Wurlitzer electric piano layer">
-        <span class="led"></span>
-        <span>Wurli: <b id="wurliStatusText">OFF</b></span>
-      </button>
-
-      <div class="slider-ctrl" title="Release decay time after lifting your finger from a key">
-        <label for="releaseSlider">Release</label>
-        <input type="range" id="releaseSlider" min="0.20" max="1.40" value="0.65" step="0.05" />
-        <span id="releaseVal">0.65s</span>
+    <div class="poly-video-strip" id="polyVideoGrid">
+      <div class="stage-slot-unit" data-slot="0">
+        <div class="stage-slot-video"></div>
+        <canvas class="slot-mini-spec" width="320" height="96"></canvas>
       </div>
-
-      <div class="slider-ctrl" title="Master low-cut filter for sample playback">
-        <label for="hpSlider">HPF</label>
-        <input type="range" id="hpSlider" min="35" max="260" value="85" step="5" />
-        <span id="hpVal">85Hz</span>
+      <div class="stage-slot-unit" data-slot="1">
+        <div class="stage-slot-video"></div>
+        <canvas class="slot-mini-spec" width="320" height="96"></canvas>
       </div>
-
-      <div class="midi-badge" id="midiBadge" title="Hardware Web MIDI + Computer QWERTY Keyboard">
-        <span class="midi-dot" id="midiDot"></span>
-        <span id="midiText">QWERTY C4 (Z/X)</span>
-      </div>
-    </div>
-  </header>
-
-  <!-- 2. Full-Width Centered Immersive 3-Slot Stage + Left-to-Right Unveiling Spectrograms -->
-  <section class="hero-stage-row">
-    <div class="video-stage" id="videoStage">
-      <div class="poly-video-strip" id="polyVideoGrid">
-        <div class="stage-slot-unit" data-slot="0">
-          <div class="stage-slot-video"></div>
-          <canvas class="slot-mini-spec" width="240" height="54"></canvas>
-        </div>
-        <div class="stage-slot-unit" data-slot="1">
-          <div class="stage-slot-video"></div>
-          <canvas class="slot-mini-spec" width="240" height="54"></canvas>
-        </div>
-        <div class="stage-slot-unit" data-slot="2">
-          <div class="stage-slot-video"></div>
-          <canvas class="slot-mini-spec" width="240" height="54"></canvas>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 3. Streamlined Horizontal Candidate Strip for the Selected Key -->
-  <section class="candidate-strip-section">
-    <div class="candidate-strip-sidebar">
-      <div class="key-nav-row">
-        <button id="prevKeyBtn" class="nav-arrow-btn" title="Previous half-step (Left Arrow)">←</button>
-        <div class="selected-note-hero">
-          <span class="hero-note-name" id="selectedKeyName">C4</span>
-        </div>
-        <button id="nextKeyBtn" class="nav-arrow-btn" title="Next half-step (Right Arrow)">→</button>
-        <button id="nextPopulatedKeyBtn" class="nav-arrow-btn wide" title="Next populated key (Shift + Right Arrow)">⇥</button>
-      </div>
-
-      <div class="candidate-sidebar-meta">
-        <span class="hero-note-meta" id="selectedKeyMeta">261.6 Hz</span>
-        <span class="candidate-summary-label" id="candidateSummaryLabel">0 / 0 ON</span>
+      <div class="stage-slot-unit" data-slot="2">
+        <div class="stage-slot-video"></div>
+        <canvas class="slot-mini-spec" width="320" height="96"></canvas>
       </div>
     </div>
 
-    <!-- Horizontal Strip of Compact Candidate Cards (ON/OFF Multi-Select) -->
-    <div class="candidates-strip" id="candidatesGrid"></div>
-  </section>
+    <section class="keyboard-dock">
+      <div class="keyline-scroll-wrap" id="keylineScrollWrap">
+        <div class="keyline-keyboard fit-mode" id="pianoKeyboard"></div>
+      </div>
+    </section>
+  </main>
 
-  <!-- 4. Slim Minimal Note-Name Keyboard Bars (C1–B1 Percussion + C2–G7 Tonal) -->
-  <section class="keyboard-dock">
-    <div class="keyboard-bar">
-      <div class="kb-right-tools">
-        <div class="octave-stepper">
-          <button id="octDownBtn" class="mini-key-btn" title="Shift QWERTY octave down (Z)">◀ Z</button>
-          <span id="octaveLabel" class="octave-readout">QWERTY: C4 – F5</span>
-          <button id="octUpBtn" class="mini-key-btn" title="Shift QWERTY octave up (X)">X ▶</button>
-        </div>
+  <!-- 2. Full-Width Expanding Bottom UX Panel + Lower-Right Material Settings Gear -->
+  <div class="bottom-ux-shell" id="sampleDrawerWrap">
+    <button
+      id="sampleDrawerToggleBtn"
+      type="button"
+      class="sample-drawer-gear-btn"
+      aria-expanded="false"
+      title="Expand / collapse settings &amp; samples"
+    >
+      <!-- Official Google Material Icons 'settings' 24dp vector -->
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+      </svg>
+    </button>
 
-        <div class="zoom-toggle">
-          <button id="fitKeysBtn" class="mini-key-btn active" title="Fit all 80 equal-width keys across screen">Fit All</button>
-          <button id="wideKeysBtn" class="mini-key-btn" title="Wider equal-width keys with horizontal scroll">Wide</button>
+    <section class="bottom-ux-panel collapsed" id="sampleDrawer">
+      <div class="settings-samples-row">
+        <div class="selected-note-pill" id="selectedNoteTag">C4</div>
+        <div class="candidates-strip" id="candidatesGrid"></div>
+      </div>
+
+      <div class="midi-transport-bar">
+        <input id="midiFileInput" type="file" accept=".mid,.midi" class="hidden" />
+        <button id="midiUploadBtn" type="button" class="midi-pill-btn" title="Upload a Standard MIDI File (.mid)">
+          Load MIDI
+        </button>
+        <span id="midiFileLabel" class="midi-file-label">No MIDI loaded</span>
+
+        <div class="midi-transport-controls">
+          <button id="midiPlayPauseBtn" type="button" class="midi-icon-btn" disabled title="Play / Pause MIDI">
+            <span id="midiPlayPauseIcon">▶</span>
+          </button>
+          <button id="midiRestartBtn" type="button" class="midi-icon-btn" disabled title="Restart MIDI from beginning">
+            ↺
+          </button>
         </div>
       </div>
-    </div>
+    </section>
+  </div>
 
-    <div class="keyline-scroll-wrap" id="keylineScrollWrap">
-      <div class="keyline-keyboard fit-mode" id="pianoKeyboard"></div>
-    </div>
-  </section>
-
-  <!-- Universal Clip Inspector Overlay (Rename + Rotate + Deeper Spectrogram + Pitch Override + Trim + Trash) -->
+  <!-- Universal Clip Inspector Overlay (Rename + Inline Reference Tone / Slot + Tall Spectrogram + Trim + Confirm Trash) -->
   <div class="drawer-backdrop hidden" id="trimModal">
     <div class="trim-modal-card">
       <div class="trim-modal-header">
@@ -117,10 +84,54 @@
             class="inspector-slug-input"
             value=""
             spellcheck="false"
-            title="Edit object shorthand name (Enter or click away to save)"
+            title="Edit object name (renames sample folder &amp; files on Enter or click-away)"
           />
-          <span class="inspector-note-label" id="inspectorNoteLabel">--</span>
-          <span class="spec-f0-badge" id="inspectorF0Badge">f0: -- Hz</span>
+
+          <div class="inspector-slot-wrap" title="Audition reference tones across notes and assign this clip's MIDI slot">
+            <span class="inspector-slot-tag">Note</span>
+            <button
+              id="inspectorSlotPrevBtn"
+              type="button"
+              class="slot-step-btn"
+              title="Step down 1 semitone &amp; play reference tone"
+            >
+              ◀
+            </button>
+            <select id="inspectorSlotSelect" class="inspector-slot-select"></select>
+            <button
+              id="inspectorSlotNextBtn"
+              type="button"
+              class="slot-step-btn"
+              title="Step up 1 semitone &amp; play reference tone"
+            >
+              ▶
+            </button>
+            <button
+              id="inspectorTestToneBtn"
+              type="button"
+              class="test-tone-btn"
+              title="Play pure reference test tone at this note's frequency"
+            >
+              ♪ Tone
+            </button>
+            <button
+              id="inspectorAssignSlotBtn"
+              type="button"
+              class="assign-slot-btn hidden"
+              title="Move clip permanently to this MIDI slot at original 1.0x pitch"
+            >
+              Move → C4
+            </button>
+          </div>
+
+          <button
+            id="inspectorResetDspBtn"
+            type="button"
+            class="inspector-reset-dsp-btn hidden"
+            title="Revert clip back to its DSP-suggested MIDI note slot and tuning"
+          >
+            ↺ Reset to DSP
+          </button>
         </div>
         <button class="close-drawer-btn" data-close="trimModal">✕ Close</button>
       </div>
@@ -140,36 +151,61 @@
           </button>
         </div>
 
-        <!-- Right: Deeper Spectrogram + Optional Pitch Override + Draggable [ IN ... OUT ] Trim -->
+        <!-- Right: Tall Immersive Spectrogram + Clean Re-Pitch + Draggable [ IN ... OUT ] Trim -->
         <div class="trim-timeline-col">
-          <!-- 1. Deeper Log-Frequency Spectrogram + f0 & Harmonics -->
+          <!-- 1. Tall Log-Frequency Spectrogram -->
           <div class="inspector-spec-block">
             <div class="inspector-subbar">
-              <span class="inspector-section-label">SPECTROGRAM &amp; HARMONICS</span>
+              <span class="inspector-section-label">SPECTROGRAM</span>
               <span class="inspector-spec-meta" id="inspectorSpecMeta">--</span>
             </div>
             <div class="inspector-spec-stage">
-              <canvas id="inspectorSpectrogramCanvas" width="520" height="148"></canvas>
+              <canvas id="inspectorSpectrogramCanvas" width="600" height="248"></canvas>
               <div class="inspector-spec-playhead" id="inspectorSpecPlayhead"></div>
             </div>
-            <div class="inspector-peaks-row hidden" id="inspectorPeaksRow">
-              <span class="peaks-mini-label">Pitch Override:</span>
-              <div class="peaks-list" id="inspectorPeaksList"></div>
+            <div class="inspector-tune-row" id="inspectorTuneRow">
+              <span class="peaks-mini-label">Re-Pitch</span>
+              <input
+                id="inspectorTuneSlider"
+                type="range"
+                min="-1200"
+                max="1200"
+                step="5"
+                value="0"
+                class="inspector-tune-slider"
+                title="Fine-tune or re-pitch clip (−12 to +12 semitones)"
+              />
+              <span class="inspector-tune-readout" id="inspectorTuneReadout">0c · 1.00x</span>
+              <button
+                id="inspectorZeroTuneBtn"
+                type="button"
+                class="nudge-btn hidden"
+                title="Reset to un-shifted original pitch (0c · 1.00x)"
+              >
+                0c
+              </button>
             </div>
           </div>
 
-          <!-- 2. Interactive Waveform + Draggable [ IN ... OUT ] Trim Handles -->
+          <!-- 2. Single-Clip Waveform + Non-Destructive [ IN ... OUT ] Sub-Trim -->
           <div class="inspector-trim-block">
             <div class="trim-view-bar">
-              <span class="inspector-section-label">TRIM IN / OUT</span>
-              <div class="trim-zoom-pills">
-                <button id="trimZoomClipBtn" class="kb-pill active" type="button">Around Clip</button>
-                <button id="trimZoomFullBtn" class="kb-pill" type="button">Full Video</button>
+              <span class="inspector-section-label">TRIM</span>
+              <div class="trim-bar-right">
+                <span class="trim-span-meta" id="trimSpanMeta">0.00s – 2.00s · 2.00s</span>
+                <button
+                  id="trimResetBtn"
+                  class="inspector-reset-dsp-btn hidden"
+                  type="button"
+                  title="Restore full DSP-cropped sample length"
+                >
+                  ↺ Reset Full Sample
+                </button>
               </div>
             </div>
 
             <div class="trim-timeline-stage" id="trimTimelineStage">
-              <canvas id="trimWaveformCanvas" width="520" height="108"></canvas>
+              <canvas id="trimWaveformCanvas" width="600" height="96"></canvas>
               <div class="trim-curtain left" id="trimCurtainLeft"></div>
               <div class="trim-curtain right" id="trimCurtainRight"></div>
               <div class="trim-window-box" id="trimWindowBox" title="Drag middle to slide In &amp; Out together">
@@ -184,27 +220,6 @@
                 </div>
               </div>
             </div>
-
-            <!-- Fine Nudge & Numeric Readouts -->
-            <div class="trim-readouts-row">
-              <div class="trim-nudge-group">
-                <span class="nudge-label in-color">IN</span>
-                <button type="button" class="nudge-btn" data-nudge="in" data-delta="-0.05">−0.05s</button>
-                <strong class="nudge-val" id="trimInVal">0.00s</strong>
-                <button type="button" class="nudge-btn" data-nudge="in" data-delta="0.05">+0.05s</button>
-              </div>
-
-              <div class="trim-nudge-group">
-                <span class="nudge-label out-color">OUT</span>
-                <button type="button" class="nudge-btn" data-nudge="out" data-delta="-0.05">−0.05s</button>
-                <strong class="nudge-val" id="trimOutVal">2.00s</strong>
-                <button type="button" class="nudge-btn" data-nudge="out" data-delta="0.05">+0.05s</button>
-              </div>
-
-              <div class="trim-len-pill">
-                Length: <strong id="trimLenVal">2.00s</strong>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -215,9 +230,6 @@
         </button>
 
         <div class="trim-footer-right">
-          <button id="trimSaveNewBtn" type="button" class="ghost-btn small" title="Keep existing clip untouched and save this In/Out as an extra clip">
-            + Save as New Clip
-          </button>
           <button id="trimSaveBtn" type="button" class="trim-btn-primary">
             ✓ Save Trim
           </button>
