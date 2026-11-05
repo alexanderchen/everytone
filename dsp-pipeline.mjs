@@ -26,6 +26,64 @@ export function midiToFreq(midi) {
   return Number((440 * Math.pow(2, (midi - 69) / 12)).toFixed(2));
 }
 
+const EXPLICIT_VIDEO_GROUP_NAMES = {
+  'ukulele-frets-high': 'ukulele',
+  'ukulele-frets-low': 'ukulele',
+  'ukulele-frets-mid1': 'ukulele',
+  'ukulele-frets-mid2': 'ukulele',
+  'ukulele-open-strings': 'ukulele',
+  'rubberband-bowl-bass': 'rubberband bowl',
+  'bucket-rubberband-1': 'bucket bass',
+  'bucket-rubberband-2': 'bucket bass',
+  'bucket-rubberband-3': 'bucket bass',
+  'bucket-rubberband-4': 'bucket bass',
+  'bucket-rubberband-5': 'bucket bass',
+  'bucket-rubberband-6': 'bucket bass',
+  'clock-chime-gears': 'clock chime',
+  'clock-chime-bell': 'clock chime',
+  'clock-pendulum-gong': 'clock pendulum',
+  'glass-lamp-shade': 'glass lamp',
+  'wine-glass-rim': 'wine glass',
+  'wine-glass-pour': 'wine glass',
+  'wine-glass-water-1': 'wine glass',
+  'wine-glass-water-2': 'wine glass',
+  'brass-turn-doorbell': 'brass doorbell',
+  'antique-bell-dome': 'antique doorbell',
+  'porcelain-crank-bell': 'porcelain doorbell',
+  'white-mailbox': 'white mailbox',
+  'swingtop-glass-bottle': 'swingtop bottle',
+  'painted-tumbler-glass': 'painted tumbler',
+  'crystal-goblet-glass': 'crystal goblet',
+  'small-jar-glass-1': 'small glass jar',
+  'ribbed-tumbler-glass': 'ribbed tumbler',
+  'hex-jar-glass-1': 'hex glass jar',
+  'hex-jar-glass-2': 'hex glass jar',
+  'wooden-automaton-box': 'violin music box',
+  'cat-toy-piano': 'cat toy piano',
+  'hand-drum-head': 'hand drum',
+  'chord-organ-low': 'chord organ',
+  'chord-organ-mid': 'chord organ'
+};
+
+export function inferVideoGroupName(videoOrSlug) {
+  if (videoOrSlug && typeof videoOrSlug === 'object') {
+    const explicit = String(videoOrSlug.groupName || '').trim();
+    if (explicit) return explicit;
+  }
+  const slug = String(
+    typeof videoOrSlug === 'object' ? videoOrSlug?.slug || '' : videoOrSlug || ''
+  ).toLowerCase();
+  if (!slug) return 'sample';
+  if (EXPLICIT_VIDEO_GROUP_NAMES[slug]) return EXPLICIT_VIDEO_GROUP_NAMES[slug];
+
+  const stripped = slug
+    .replace(/-?\d+$/, '')
+    .replace(/-(blow|mallet|tube|frets|head|gong|shade|strike)$/, '');
+  if (stripped.startsWith('wine-glass-tuned')) return 'tuned wine glass';
+  if (stripped.startsWith('silver-bike-bell')) return 'silver bike bell';
+  return stripped.replace(/-/g, ' ').trim() || slug.replace(/-/g, ' ');
+}
+
 // Initial object identifications from inspecting the 27 opening frames
 export const INITIAL_VIDEO_META = {
   'PXL_20261101_162521928.mp4': { idx: 1, slug: 'ukulele-frets-high', category: 'strings', label: 'Ukulele Frets (High)' },
@@ -819,6 +877,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
           videoIndex: v.index,
           videoSlug: v.slug,
           videoLabel: v.label,
+          groupName: inferVideoGroupName(v),
           category: 'percussion',
           isPerc: true,
           thumbUrl: v.thumbUrl,
@@ -861,6 +920,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
         videoIndex: v.index,
         videoSlug: v.slug,
         videoLabel: v.label,
+        groupName: inferVideoGroupName(v),
         category: v.category,
         isPerc: false,
         thumbUrl: v.thumbUrl,

@@ -447,30 +447,123 @@ body.static-mode .local-only-btn {
 }
 
 /* ============================================================================
-   2. Collapsible Bottom Bar: [ MIDI Transport ] | [ Sample Controls ] | [ Keyboard ]
+   2. Collapsible Bottom Bar: Optional Note Sample Shelf + Frugal Wide Keyboard Row
    ============================================================================ */
 .bottom-transport-dock {
-  height: 126px;
   flex-shrink: 0;
   width: 100%;
-  background: var(--bg-1);
+  background: #000000;
   border-top: 1px solid var(--line-dim);
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: stretch;
   overflow: hidden;
   z-index: 30;
   transition:
-    height 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    max-height 0.22s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.16s ease,
     border-color 0.16s ease;
+  max-height: 240px;
 }
 
 .bottom-transport-dock.collapsed {
-  height: 0;
+  max-height: 0;
   opacity: 0;
   border-top-color: transparent;
   pointer-events: none;
+}
+
+/* --- Collapsible Upper Shelf: Single-Note Sample Controls (Collapsed by Default) --- */
+.note-samples-drawer {
+  height: 114px;
+  width: 100%;
+  background: #000000;
+  border-bottom: 1px solid var(--line-dim);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  overflow: hidden;
+  transition:
+    height 0.20s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.14s ease,
+    border-color 0.14s ease;
+}
+
+.note-samples-drawer.collapsed {
+  height: 0;
+  opacity: 0;
+  border-bottom-color: transparent;
+  pointer-events: none;
+}
+
+.samples-drawer-meta {
+  flex-shrink: 0;
+  min-width: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding-right: 12px;
+  border-right: 1px solid var(--line-subtle);
+}
+
+.samples-drawer-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.samples-drawer-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #e33059;
+  flex-shrink: 0;
+}
+
+.samples-drawer-note {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.samples-drawer-sub {
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.drawer-collapse-btn {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line-key);
+  background: #000000;
+  color: var(--text-1);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.drawer-collapse-btn:hover {
+  color: #ffffff;
+  border-color: #ffffff;
+  background: #141414;
+}
+
+/* --- Main Frugal Bottom Row --- */
+.dock-main-row {
+  height: 84px;
+  width: 100%;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  background: #000000;
 }
 
 .dock-zone {
@@ -478,34 +571,34 @@ body.static-mode .local-only-btn {
   min-width: 0;
 }
 
-/* --- Zone 1 (Left): MIDI Player & Scrubbable Play Bar --- */
+/* --- Zone 1 (Far Left): Compact MIDI Player & Scrubbable Play Bar --- */
 .transport-zone {
-  width: clamp(260px, 22.5vw, 326px);
+  width: clamp(188px, 15.5vw, 228px);
   flex-shrink: 0;
   border-right: 1px solid var(--line-dim);
-  padding: 14px 16px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  gap: 10px;
+  gap: 6px;
 }
 
 .transport-top-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
 .midi-load-btn {
-  height: 28px;
-  padding: 0 11px;
-  border-radius: 4px;
+  height: 25px;
+  padding: 0 9px;
+  border-radius: 3px;
   border: 1px solid var(--line-key);
   background: #000000;
   color: var(--text-0);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
@@ -519,7 +612,7 @@ body.static-mode .local-only-btn {
 }
 
 .midi-file-label {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--text-2);
   min-width: 0;
   flex: 1 1 auto;
@@ -531,18 +624,18 @@ body.static-mode .local-only-btn {
 .transport-scrub-row {
   display: flex;
   align-items: center;
-  gap: 11px;
-  height: 38px;
+  gap: 8px;
+  height: 30px;
 }
 
 .midi-play-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 5px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.32);
   background: transparent;
   color: #ffffff;
-  font-size: 12px;
+  font-size: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -571,8 +664,8 @@ body.static-mode .local-only-btn {
 .midi-scrub-track {
   position: relative;
   flex: 1 1 auto;
-  min-width: 64px;
-  height: 26px;
+  min-width: 52px;
+  height: 24px;
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -586,8 +679,8 @@ body.static-mode .local-only-btn {
 }
 
 .scrub-endpoint {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.65);
   flex-shrink: 0;
@@ -614,19 +707,18 @@ body.static-mode .local-only-btn {
   position: absolute;
   top: 50%;
   left: 0%;
-  width: 2.5px;
-  height: 16px;
+  width: 2px;
+  height: 14px;
   background: #ffffff;
   border-radius: 1px;
   transform: translate(-50%, -50%);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.55);
   pointer-events: none;
   transition: height 0.1s ease;
 }
 
 .midi-scrub-track:hover .scrub-playhead,
 .midi-scrub-track.is-scrubbing .scrub-playhead {
-  height: 20px;
+  height: 18px;
 }
 
 .midi-time-readout {
@@ -637,18 +729,89 @@ body.static-mode .local-only-btn {
   flex-shrink: 0;
 }
 
-/* --- Zone 2 (Center): Single-Note Sample Controls (Decluttered) --- */
-.note-samples-zone {
-  flex: 1 1 0;
-  min-width: 0;
+/* --- Zone 2 (Left of Keyboard): Selected Note + Pencil Edit Toggle --- */
+.selected-note-zone {
+  width: 78px;
+  flex-shrink: 0;
   border-right: 1px solid var(--line-dim);
+  padding: 8px;
   display: flex;
-  flex-direction: row;
   align-items: center;
-  padding: 0 14px;
-  overflow: hidden;
+  justify-content: center;
+  background: #000000;
 }
 
+.selected-note-btn {
+  width: 100%;
+  height: 100%;
+  border-radius: 4px;
+  border: 1px solid var(--line-key);
+  background: #000000;
+  color: var(--text-0);
+  padding: 6px 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.selected-note-btn:hover {
+  border-color: #ffffff;
+  background: #121212;
+}
+
+.selected-note-btn.is-open {
+  border-color: #ffffff;
+  box-shadow: inset 0 0 0 1px #ffffff;
+  background: #161616;
+}
+
+.sel-note-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sel-note-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e33059;
+  flex-shrink: 0;
+}
+
+.sel-note-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.sel-note-edit-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+}
+
+.selected-note-btn:hover .sel-note-edit-row,
+.selected-note-btn.is-open .sel-note-edit-row {
+  color: #ffffff;
+}
+
+.sel-note-count {
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+.sel-note-pencil {
+  flex-shrink: 0;
+}
+
+/* --- Sample Candidates Strip inside Collapsible Drawer --- */
 .candidates-strip {
   flex: 1 1 auto;
   min-width: 0;
@@ -659,7 +822,7 @@ body.static-mode .local-only-btn {
   align-items: center;
   justify-content: flex-start;
   gap: 12px;
-  padding: 8px 4px;
+  padding: 6px 4px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
@@ -674,8 +837,8 @@ body.static-mode .local-only-btn {
 }
 
 .candidate-card {
-  width: 70px;
-  flex: 0 0 70px;
+  width: 72px;
+  flex: 0 0 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -685,9 +848,9 @@ body.static-mode .local-only-btn {
 
 .cand-thumb-wrap {
   position: relative;
-  width: 62px;
-  height: 62px;
-  border-radius: 5px;
+  width: 58px;
+  height: 58px;
+  border-radius: 4px;
   background: #000000;
   border: 1px solid #333333;
   overflow: hidden;
@@ -705,7 +868,7 @@ body.static-mode .local-only-btn {
 }
 
 .candidate-card.is-enabled .cand-thumb-wrap {
-  border-color: rgba(255, 255, 255, 0.36);
+  border-color: rgba(255, 255, 255, 0.38);
 }
 
 .candidate-card.is-enabled .cand-thumb-wrap img {
@@ -736,7 +899,7 @@ body.static-mode .local-only-btn {
   font-size: 11px;
   line-height: 1.2;
   font-weight: 400;
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.40);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -744,7 +907,7 @@ body.static-mode .local-only-btn {
 }
 
 .candidate-card.is-enabled .cand-slug-title {
-  color: rgba(255, 255, 255, 0.84);
+  color: rgba(255, 255, 255, 0.86);
 }
 
 .candidate-card:hover .cand-slug-title {
@@ -759,69 +922,20 @@ body.static-mode .local-only-btn {
   font-size: 11.5px;
 }
 
-/* --- Zone 3 (Right): Connected Equal-Width Wireframe Keyline Keyboard --- */
+/* --- Zone 3 (Center-Wide): Full-Height Responsive 3–6 Octave Wireframe Keyboard --- */
 .keyboard-zone {
-  width: clamp(390px, 40vw, 600px);
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-width: 280px;
   display: flex;
   flex-direction: column;
-  background: var(--bg-1);
-}
-
-.keyboard-octave-bar {
-  height: 30px;
-  padding: 0 8px 0 10px;
-  border-bottom: 1px solid var(--line-dim);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-shrink: 0;
   background: #000000;
-}
-
-.keyboard-bar-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.oct-step-btn {
-  width: 26px;
-  height: 22px;
-  border-radius: 3px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-1);
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
-}
-
-.oct-step-btn:hover:not(:disabled) {
-  color: #ffffff;
-  border-color: var(--line-dim);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.oct-step-btn:disabled {
-  opacity: 0.24;
-  cursor: default;
-}
-
-.oct-range-label {
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--text-1);
 }
 
 .wireframe-keyboard-wrap {
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
+  height: 100%;
   position: relative;
   overflow: hidden;
 }
@@ -830,7 +944,62 @@ body.static-mode .local-only-btn {
   position: relative;
   width: 100%;
   height: 100%;
-  background: var(--bg-1);
+  background: #000000;
+}
+
+/* --- Zone 4 (Right of Keyboard): Frugal Octave Range + Left/Right Square Buttons --- */
+.octave-rail-zone {
+  width: 86px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--line-dim);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #000000;
+}
+
+.oct-range-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-1);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.oct-square-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.oct-square-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
+  border: 1px solid var(--line-key);
+  background: #000000;
+  color: var(--text-1);
+  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+
+.oct-square-btn:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: #ffffff;
+  background: #141414;
+}
+
+.oct-square-btn:disabled {
+  opacity: 0.24;
+  cursor: default;
 }
 
 /* Pure Decluttered Wireframe Keylines — Single 1px Neutral Grey Keylines, Zero Glow */
@@ -875,10 +1044,10 @@ body.static-mode .local-only-btn {
   background: #161616;
 }
 
-/* Selected Note Outline (Crisp 1px keyline, zero glow) */
+/* Selected Note Outline: Thicker 2px Crisp White Keyline (Zero Glow) */
 .wf-key.natural.selected-key {
   z-index: 2;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 0 0 2px #ffffff;
 }
 
 /* Active Hit: Pure Solid Chromatic Color Fill Only (Zero Glow) */
@@ -888,9 +1057,13 @@ body.static-mode .local-only-btn {
   box-shadow: none;
 }
 
+.wf-key.natural.selected-key.active-play {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
 .wf-key.accidental.selected-key {
   z-index: 5;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 0 0 2px #ffffff;
 }
 
 .wf-key.accidental.active-play {
@@ -899,8 +1072,12 @@ body.static-mode .local-only-btn {
   box-shadow: none;
 }
 
+.wf-key.accidental.selected-key.active-play {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
 /* ============================================================================
-   3. Video File Inspector & Individual Sample Inspector Overlays
+   3. Grouped Video Inspector & Individual Sample Inspector Overlays
    ============================================================================ */
 .ghost-btn {
   background: transparent;
@@ -971,6 +1148,7 @@ body.static-mode .local-only-btn {
 
 .trim-modal-card {
   width: min(940px, 95vw);
+  max-height: 92vh;
   background: #000000;
   border: 1px solid var(--line-key);
   border-radius: 6px;
@@ -981,7 +1159,7 @@ body.static-mode .local-only-btn {
 }
 
 .video-inspector-card {
-  width: min(860px, 95vw);
+  width: min(920px, 95vw);
 }
 
 .trim-modal-header {
@@ -992,6 +1170,7 @@ body.static-mode .local-only-btn {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-shrink: 0;
 }
 
 .inspector-title-row {
@@ -1001,7 +1180,7 @@ body.static-mode .local-only-btn {
   flex-wrap: wrap;
 }
 
-/* Cookie-Crumb Trail Hierarchy (VIDEO FILE › SAMPLE) */
+/* Cookie-Crumb Trail Hierarchy (GROUP › SAMPLE) */
 .crumb-type-badge {
   font-size: 10.5px;
   font-weight: 700;
@@ -1054,16 +1233,137 @@ body.static-mode .local-only-btn {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.inspector-slug-input {
-  width: 224px;
-  height: 30px;
-  background: var(--bg-0);
+/* Editable Readable Group Name Input in Group Inspector Header */
+.group-name-edit-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.inspector-group-input {
+  width: 210px;
+  height: 31px;
+  background: #000000;
   border: 1px solid var(--line-key);
-  border-radius: 3px;
+  border-radius: 4px;
   color: #ffffff;
-  font-size: 12.5px;
+  font-family: var(--sans);
+  font-size: 13.5px;
   font-weight: 700;
-  padding: 0 9px;
+  padding: 0 28px 0 10px;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.inspector-group-input:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.inspector-group-input:focus {
+  outline: none;
+  border-color: #ffffff;
+  background: #0c0c0c;
+}
+
+.group-edit-pencil {
+  position: absolute;
+  right: 9px;
+  color: var(--text-2);
+  pointer-events: none;
+}
+
+.group-name-edit-wrap:hover .group-edit-pencil,
+.inspector-group-input:focus + .group-edit-pencil {
+  color: #ffffff;
+}
+
+/* Scrolling Multi-Video Group Inspector Body */
+.group-inspector-body {
+  align-items: flex-start;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.group-videos-scroll-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: min(64vh, 560px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.group-videos-scroll-col::-webkit-scrollbar {
+  width: 5px;
+}
+
+.group-videos-scroll-col::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 3px;
+}
+
+.group-video-card {
+  background: #000000;
+  border: 1px solid var(--line-dim);
+  border-radius: 5px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: border-color 0.14s ease;
+}
+
+.group-video-card.is-focused {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.group-video-card.is-muted {
+  opacity: 0.58;
+}
+
+.group-video-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.group-video-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.group-video-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid var(--line-dim);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.inspector-slug-input {
+  width: min(230px, 100%);
+  height: 28px;
+  background: #000000;
+  border: 1px solid var(--line-dim);
+  border-radius: 3px;
+  color: var(--text-0);
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 8px;
+}
+
+.inspector-slug-input:hover {
+  border-color: var(--line-key);
 }
 
 .inspector-slug-input:focus {
@@ -1071,31 +1371,42 @@ body.static-mode .local-only-btn {
   border-color: #ffffff;
 }
 
-/* Holistic Per-Video Volume Controls */
-.video-gain-panel {
-  padding: 14px 16px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid var(--line-dim);
-  border-radius: 5px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.group-video-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
+/* Holistic Per-Video Volume Controls inside Each Video Card */
 .video-gain-controls-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 7px 10px;
+  background: #080808;
+  border: 1px solid var(--line-subtle);
+  border-radius: 4px;
+}
+
+.video-gain-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-2);
+  margin-right: 2px;
+  flex-shrink: 0;
 }
 
 .gain-step-btn {
-  width: 34px;
-  height: 34px;
-  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 3px;
   border: 1px solid var(--line-key);
-  background: var(--bg-2);
+  background: #000000;
   color: #ffffff;
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -1105,46 +1416,37 @@ body.static-mode .local-only-btn {
 }
 
 .gain-step-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: #181818;
   border-color: #ffffff;
 }
 
 .video-gain-readout {
-  min-width: 72px;
+  min-width: 58px;
   text-align: center;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 700;
   color: #ffffff;
 }
 
 .video-gain-slider {
-  flex: 1 1 180px;
+  flex: 1 1 140px;
   accent-color: var(--switch-green);
   cursor: pointer;
 }
 
-/* Extracted Samples List inside Video File Inspector */
-.video-slices-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
+/* Extracted Samples List inside Each Video Card */
 .video-slices-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 210px;
-  overflow-y: auto;
-  padding-right: 4px;
+  gap: 5px;
 }
 
 .video-slice-row {
-  height: 38px;
-  padding: 0 12px;
+  height: 34px;
+  padding: 0 10px;
   border-radius: 4px;
-  border: 1px solid var(--line-dim);
-  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line-subtle);
+  background: #060606;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1154,31 +1456,31 @@ body.static-mode .local-only-btn {
 }
 
 .video-slice-row:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.35);
+  background: #121212;
+  border-color: var(--line-key);
 }
 
 .video-slice-row.is-selected {
-  border-color: rgba(255, 255, 255, 0.65);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.68);
+  background: #151515;
 }
 
 .video-slice-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
 }
 
 .video-slice-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .video-slice-title {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   color: #ffffff;
 }
 
@@ -1188,11 +1490,11 @@ body.static-mode .local-only-btn {
 }
 
 .video-slice-open-btn {
-  height: 26px;
-  padding: 0 10px;
+  height: 24px;
+  padding: 0 9px;
   border-radius: 3px;
   border: 1px solid var(--line-dim);
-  background: rgba(255, 255, 255, 0.05);
+  background: #000000;
   color: var(--text-1);
   font-size: 10.5px;
   cursor: pointer;
@@ -1202,7 +1504,12 @@ body.static-mode .local-only-btn {
 .video-slice-open-btn:hover {
   color: #ffffff;
   border-color: #ffffff;
-  background: rgba(255, 255, 255, 0.14);
+  background: #181818;
+}
+
+.group-footer-hint {
+  font-size: 11px;
+  color: var(--text-2);
 }
 
 /* Sample Inspector Controls */

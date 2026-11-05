@@ -25,14 +25,15 @@ const ACCIDENTAL_OFFSET_BY_PC = { 1: 0.5, 3: 1.5, 6: 3.5, 8: 4.5, 10: 5.5 };
 
 const MIN_MIDI = 24; // C1 (Percussion Octave C1–B1; Tonal C2–G7 starts at 36)
 const MAX_MIDI = 103; // G7
-const MIN_BASE_OCTAVE_MIDI = 24; // C1–B3
-const MAX_BASE_OCTAVE_MIDI = 72; // C5–B7
-const VISIBLE_OCTAVES = 3; // 36 chromatic keys (21 natural keys wide)
+const MIN_BASE_OCTAVE_MIDI = 24; // C1
+const TOP_KEYBOARD_MIDI_LIMIT = 108; // B7 is 107; maxStartMidi = 108 - visibleOctaves * 12
+const MIN_VISIBLE_OCTAVES = 3;
+const MAX_VISIBLE_OCTAVES = 6;
 
 const PREFS_STORAGE_KEY = 'everytone_prefs_v2';
 const CATEGORY_ORDER = ['strings', 'winds', 'keys', 'metal', 'glass', 'wood', 'toms', 'percussion'];
 
-// Standard chromatic QWERTY layout (18 keys starting at baseOctaveMidi)
+// Standard chromatic QWERTY layout (18 keys starting at qwertyOctaveMidi)
 const QWERTY_MAP = [
   { code: 'KeyA', offset: 0 },
   { code: 'KeyW', offset: 1 },
@@ -62,13 +63,18 @@ const state = {
   selectedMidi: 60, // Defaults to C4
   auditionIndex: 0,
   chromeCollapsed: false,
+  noteSamplesExpanded: false, // Collapsed by default on load so playing is uncluttered
+  visibleOctaves: 6, // Responsively adjusts between 3 and 6 octaves based on keyboard width
+  hasCustomKeyboardOctave: false,
+  baseOctaveMidi: 36, // Leftmost visible octave of the bottom keyboard (e.g. C2 for C2–B7)
+  qwertyOctaveMidi: 60, // Laptop QWERTY A..; octave root (defaults to middle C4)
   disabledVideoIds: new Set(),
   collapsedCategories: new Set(),
   videoGainOverrides: {}, // Per-video holistic gainDb persistence
+  videoGroupOverrides: {}, // Per-video readable groupName persistence
   sliceToggleOverrides: {}, // Static-mode per-slice toggle persistence
   releaseSec: 0.40, // Permanent 0.40s universal audio release decay
   highpassHz: 80, // Permanent 80Hz master low-cut filter
-  baseOctaveMidi: 60, // C4 (Z/X shifts visible 3-octave keyboard & QWERTY octave)
   sustainPedalDown: false,
   lastPlayedVideoId: null,
   lastPlayedSliceId: null,
@@ -80,19 +86,84 @@ const state = {
 const lastPlayedSliceByMidi = new Map();
 
 // ============================================================================
-// Persistent Preferences (Cross-Reload Video Switch, Gain & Panel State)
+// Persistent Preferences & Readable Group Name Helpers
 // ============================================================================
-function normalizeBaseOctaveMidi(raw) {
+function getDefaultStartMidiForOctaves(octaves) {
+  if (octaves >= 5) return 36; // C2–B7 (6 oct) or C2–B6 (5 oct)
+  if (octaves === 4) return 48; // C3–B6 (4 oct)
+  return 60; // C4–B6 (3 oct)
+}
+
+function clampKeyboardStartMidi(raw, octaves = state.visibleOctaves) {
+  const vis = Math.max(MIN_VISIBLE_OCTAVES, Math.min(MAX_VISIBLE_OCTAVES, Math.round(Number(octaves) || 5)));
+  const maxStart = Math.max(MIN_BASE_OCTAVE_MIDI, TOP_KEYBOARD_MIDI_LIMIT - vis * 12);
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return Math.min(maxStart, getDefaultStartMidiForOctaves(vis));
+  const snapped = Math.round(n / 12) * 12;
+  return Math.max(MIN_BASE_OCTAVE_MIDI, Math.min(maxStart, snapped));
+}
+
+function normalizeQwertyOctaveMidi(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n)) return 60;
   const snapped = Math.round(n / 12) * 12;
-  return Math.max(MIN_BASE_OCTAVE_MIDI, Math.min(MAX_BASE_OCTAVE_MIDI, snapped));
+  return Math.max(24, Math.min(96, snapped));
 }
 
 function clampVideoGainDb(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n)) return 0;
   return Math.max(-12, Math.min(12, Math.round(n)));
+}
+
+function inferClientGroupName(videoOrSlug) {
+  if (videoOrSlug && typeof videoOrSlug === 'object') {
+    const explicit = String(videoOrSlug.groupName || '').trim();
+    if (explicit) return explicit;
+  }
+  const slug = String(
+    typeof videoOrSlug === 'object' ? videoOrSlug?.slug || '' : videoOrSlug || ''
+  ).toLowerCase();
+  if (!slug) return 'sample';
+  const stripped = slug
+    .replace(/-?\d+$/, '')
+    .replace(/-(blow|mallet|tube|frets|head|gong|shade|strike)$/, '');
+  if (stripped.startsWith('wine-glass-tuned')) return 'tuned wine glass';
+  if (stripped.startsWith('silver-bike-bell')) return 'silver bike bell';
+  return stripped.replace(/-/g, ' ').trim() || slug.replace(/-/g, ' ');
+}
+
+function getVideoGroupName(videoOrId) {
+  const video =
+    typeof videoOrId === 'object'
+      ? videoOrId
+      : state.catalog?.videos?.find(v => v.id === videoOrId);
+  if (!video) return 'sample';
+  if (Object.prototype.hasOwnProperty.call(state.videoGroupOverrides, video.id)) {
+    const ov = String(state.videoGroupOverrides[video.id] || '').trim();
+    if (ov) return ov;
+  }
+  return inferClientGroupName(video);
+}
+
+function getVideoGroupKey(video) {
+  const cat = String(video?.category || 'other').toLowerCase();
+  const gName = getVideoGroupName(video).trim().toLowerCase();
+  return `${cat}::${gName}`;
+}
+
+function getVideosInSameGroup(video) {
+  if (!video) return [];
+  const targetKey = getVideoGroupKey(video);
+  return (state.catalog?.videos || [])
+    .filter(v => !v.deleted && getVideoGroupKey(v) === targetKey)
+    .slice()
+    .sort((a, b) =>
+      String(a.slug || '').localeCompare(String(b.slug || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base'
+      })
+    );
 }
 
 function loadPrefsFromStorage() {
@@ -103,9 +174,12 @@ function loadPrefsFromStorage() {
         hasSavedDisabledVideos: false,
         disabledVideoIds: [],
         videoGains: {},
+        videoGroups: {},
         sliceToggles: {},
         chromeCollapsed: false,
-        baseOctaveMidi: 60
+        hasCustomKeyboardOctave: false,
+        baseOctaveMidi: 36,
+        qwertyOctaveMidi: 60
       };
     }
     const parsed = JSON.parse(raw);
@@ -116,19 +190,26 @@ function loadPrefsFromStorage() {
         : [],
       videoGains:
         parsed?.videoGains && typeof parsed.videoGains === 'object' ? parsed.videoGains : {},
+      videoGroups:
+        parsed?.videoGroups && typeof parsed.videoGroups === 'object' ? parsed.videoGroups : {},
       sliceToggles:
         parsed?.sliceToggles && typeof parsed.sliceToggles === 'object' ? parsed.sliceToggles : {},
       chromeCollapsed: Boolean(parsed?.chromeCollapsed ?? parsed?.explorerCollapsed),
-      baseOctaveMidi: normalizeBaseOctaveMidi(parsed?.baseOctaveMidi ?? 60)
+      hasCustomKeyboardOctave: Boolean(parsed?.hasCustomKeyboardOctave),
+      baseOctaveMidi: Number(parsed?.baseOctaveMidi ?? 36),
+      qwertyOctaveMidi: normalizeQwertyOctaveMidi(parsed?.qwertyOctaveMidi ?? 60)
     };
   } catch {
     return {
       hasSavedDisabledVideos: false,
       disabledVideoIds: [],
       videoGains: {},
+      videoGroups: {},
       sliceToggles: {},
       chromeCollapsed: false,
-      baseOctaveMidi: 60
+      hasCustomKeyboardOctave: false,
+      baseOctaveMidi: 36,
+      qwertyOctaveMidi: 60
     };
   }
 }
@@ -138,9 +219,12 @@ function savePrefsToStorage() {
     const payload = {
       disabledVideoIds: Array.from(state.disabledVideoIds),
       videoGains: state.videoGainOverrides,
+      videoGroups: state.videoGroupOverrides,
       sliceToggles: state.sliceToggleOverrides,
       chromeCollapsed: state.chromeCollapsed,
-      baseOctaveMidi: state.baseOctaveMidi
+      hasCustomKeyboardOctave: state.hasCustomKeyboardOctave,
+      baseOctaveMidi: state.baseOctaveMidi,
+      qwertyOctaveMidi: state.qwertyOctaveMidi
     };
     window.localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(payload));
   } catch {}
@@ -389,22 +473,26 @@ function updateStageTileSizes() {
   if (!stageEl || !grid) return;
 
   const stageW = Math.max(320, stageEl.clientWidth);
-  const stageH = Math.max(260, stageEl.clientHeight);
+  const stageH = Math.max(240, stageEl.clientHeight);
   const gap = stageW < 920 ? 14 : 20;
-  const specRatio = 0.155; // ~50% as tall as before, flush directly beneath each video
-  const marginY = Math.max(20, Math.round(stageH * 0.045));
-  const betweenGap = Math.max(18, Math.round(stageH * 0.028));
+  const specRatio = 0.145; // Flush half-height spectrogram directly beneath each video
 
-  // Reserve ~58% of vertical stage space for the 3-up videos + flush spectrograms,
-  // leaving ~42% strictly below for the wide non-overlapping 3D grid of tiles/dots
-  const usableH = Math.max(220, stageH - marginY * 2 - betweenGap);
-  const topBudgetH = Math.floor(usableH * 0.58);
-  const maxSideByH = Math.floor(topBudgetH / (1 + specRatio));
+  const activeTiles = threeStage?.getItemCount?.() ?? 439;
+  const estCols = Math.max(24, Math.floor((stageW * 0.78) / 13));
+  const estRows = activeTiles > 0 ? Math.max(1, Math.ceil(activeTiles / estCols)) : 0;
+  const estGridH = estRows > 0 ? estRows * 12 + (estRows - 1) : 0;
 
-  const padX = Math.max(56, Math.round(stageW * 0.11));
+  const marginY = Math.max(16, Math.round(stageH * 0.038));
+  const betweenGap = activeTiles > 0 ? Math.max(16, Math.round(stageH * 0.022)) : 0;
+
+  // Maximize the 3 foreground videos while keeping room for the compact 1px-gap tile rows below
+  const availTopH = Math.max(160, stageH - marginY * 2 - betweenGap - estGridH);
+  const maxSideByH = Math.floor(availTopH / (1 + specRatio));
+
+  const padX = Math.max(40, Math.round(stageW * 0.072));
   const availW = Math.max(240, stageW - padX * 2 - gap * (STAGE_SLOT_COUNT - 1));
-  const side = Math.max(96, Math.min(316, Math.floor(Math.min(maxSideByH, availW / STAGE_SLOT_COUNT))));
-  const specH = Math.max(26, Math.round(side * specRatio));
+  const side = Math.max(96, Math.min(388, Math.floor(Math.min(maxSideByH, availW / STAGE_SLOT_COUNT))));
+  const specH = Math.max(24, Math.round(side * specRatio));
   const stripW = side * STAGE_SLOT_COUNT + gap * (STAGE_SLOT_COUNT - 1);
   const topStripH = side + specH;
 
@@ -1363,21 +1451,38 @@ function renderFileExplorer() {
   if (!listEl) return;
 
   const prevScrollTop = listEl.scrollTop;
-  const activeVideos = (state.catalog?.videos || [])
-    .filter(v => !v.deleted)
-    .slice()
-    .sort((a, b) => String(a.slug || '').localeCompare(String(b.slug || '')));
-
-  const enabledTotal = activeVideos.filter(v => !isVideoDisabled(v.id)).length;
-  if (countEl) {
-    countEl.textContent = `${enabledTotal}/${activeVideos.length}`;
-  }
+  const activeVideos = (state.catalog?.videos || []).filter(v => !v.deleted);
 
   const byCat = new Map();
   for (const v of activeVideos) {
     const cat = String(v.category || 'other').toLowerCase();
-    if (!byCat.has(cat)) byCat.set(cat, []);
-    byCat.get(cat).push(v);
+    if (!byCat.has(cat)) byCat.set(cat, new Map());
+    const catMap = byCat.get(cat);
+    const gName = getVideoGroupName(v);
+    const gKey = gName.trim().toLowerCase();
+    if (!catMap.has(gKey)) {
+      catMap.set(gKey, {
+        key: `${cat}::${gKey}`,
+        name: gName,
+        videos: []
+      });
+    }
+    catMap.get(gKey).videos.push(v);
+  }
+
+  let totalGroups = 0;
+  let enabledGroups = 0;
+  for (const catMap of byCat.values()) {
+    for (const grp of catMap.values()) {
+      totalGroups++;
+      if (grp.videos.some(v => !isVideoDisabled(v.id))) {
+        enabledGroups++;
+      }
+    }
+  }
+
+  if (countEl) {
+    countEl.textContent = `${enabledGroups}/${totalGroups}`;
   }
 
   const orderedCats = [
@@ -1390,10 +1495,24 @@ function renderFileExplorer() {
   listEl.innerHTML = '';
 
   for (const cat of orderedCats) {
-    const catVideos = byCat.get(cat) || [];
-    if (catVideos.length === 0) continue;
+    const catMap = byCat.get(cat);
+    if (!catMap || catMap.size === 0) continue;
 
-    const enabledInCat = catVideos.filter(v => !isVideoDisabled(v.id)).length;
+    const groups = Array.from(catMap.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+    );
+    for (const grp of groups) {
+      grp.videos.sort((a, b) =>
+        String(a.slug || '').localeCompare(String(b.slug || ''), undefined, {
+          numeric: true,
+          sensitivity: 'base'
+        })
+      );
+    }
+
+    const catVideos = groups.flatMap(g => g.videos);
+    const enabledVidsInCat = catVideos.filter(v => !isVideoDisabled(v.id)).length;
+    const enabledGrpsInCat = groups.filter(g => g.videos.some(v => !isVideoDisabled(v.id))).length;
     const isCollapsed = state.collapsedCategories.has(cat);
 
     const groupEl = document.createElement('div');
@@ -1404,9 +1523,9 @@ function renderFileExplorer() {
     headerEl.className = 'explorer-cat-header';
 
     let catSwitchClass = 'ui-switch';
-    if (enabledInCat === catVideos.length) {
+    if (enabledVidsInCat === catVideos.length) {
       catSwitchClass = 'ui-switch is-on';
-    } else if (enabledInCat > 0) {
+    } else if (enabledVidsInCat > 0) {
       catSwitchClass = 'ui-switch is-partial';
     }
 
@@ -1414,14 +1533,14 @@ function renderFileExplorer() {
       <div class="explorer-cat-left">
         <span class="explorer-cat-caret">▾</span>
         <span class="explorer-cat-name">${cat}</span>
-        <span class="explorer-cat-count">${enabledInCat}/${catVideos.length}</span>
+        <span class="explorer-cat-count">${enabledGrpsInCat}/${groups.length}</span>
       </div>
       <button
         type="button"
         class="${catSwitchClass}"
         role="switch"
-        aria-checked="${enabledInCat > 0 ? 'true' : 'false'}"
-        title="${enabledInCat > 0 ? `Mute all ${cat} videos` : `Enable all ${cat} videos`}"
+        aria-checked="${enabledVidsInCat > 0 ? 'true' : 'false'}"
+        title="${enabledVidsInCat > 0 ? `Mute all ${cat} groups` : `Enable all ${cat} groups`}"
       ></button>
     `;
 
@@ -1435,7 +1554,7 @@ function renderFileExplorer() {
     const catSwitchBtn = headerEl.querySelector('.ui-switch');
     catSwitchBtn.addEventListener('click', e => {
       e.stopPropagation();
-      const nextEnabled = enabledInCat === 0;
+      const nextEnabled = enabledVidsInCat === 0;
       setVideosEnabled(
         catVideos.map(v => v.id),
         nextEnabled
@@ -1445,43 +1564,68 @@ function renderFileExplorer() {
     const itemsEl = document.createElement('div');
     itemsEl.className = 'explorer-cat-items';
 
-    for (const v of catVideos) {
-      const muted = isVideoDisabled(v.id);
-      const sliceCount = (v.slices || []).filter(s => !s.deleted).length;
-      const gainDb = getVideoGainDb(v.id);
-      const gainTagHtml =
-        gainDb !== 0
-          ? `<span class="explorer-gain-tag" title="Holistic video volume: ${formatSignedDb(gainDb)}">${gainDb > 0 ? `+${gainDb}` : gainDb}dB</span>`
-          : '';
+    for (const grp of groups) {
+      const grpVideos = grp.videos;
+      const enabledCount = grpVideos.filter(v => !isVideoDisabled(v.id)).length;
+      const allMuted = enabledCount === 0;
+      const sliceCount = grpVideos.reduce(
+        (sum, v) => sum + (v.slices || []).filter(s => !s.deleted).length,
+        0
+      );
+
+      const nonZeroGains = grpVideos.map(v => getVideoGainDb(v.id)).filter(g => g !== 0);
+      let gainTagHtml = '';
+      if (nonZeroGains.length > 0) {
+        const allSameGain =
+          nonZeroGains.length === grpVideos.length &&
+          nonZeroGains.every(g => g === nonZeroGains[0]);
+        const badgeTxt = allSameGain
+          ? `${nonZeroGains[0] > 0 ? `+${nonZeroGains[0]}` : nonZeroGains[0]}dB`
+          : '±dB';
+        gainTagHtml = `<span class="explorer-gain-tag" title="Custom volume trim active">${badgeTxt}</span>`;
+      }
+
+      let grpSwitchClass = 'ui-switch';
+      if (enabledCount === grpVideos.length) {
+        grpSwitchClass = 'ui-switch is-on';
+      } else if (enabledCount > 0) {
+        grpSwitchClass = 'ui-switch is-partial';
+      }
 
       const rowEl = document.createElement('div');
-      rowEl.className = `explorer-video-row${muted ? ' is-muted' : ''}`;
-      rowEl.dataset.videoId = v.id;
-      rowEl.title = `${v.slug} (${sliceCount} sample${sliceCount === 1 ? '' : 's'}${gainDb !== 0 ? ` · ${formatSignedDb(gainDb)}` : ''}) — click to inspect`;
+      rowEl.className = `explorer-video-row${allMuted ? ' is-muted' : ''}`;
+      rowEl.dataset.groupKey = grp.key;
+      rowEl.dataset.videoId = grpVideos[0].id;
+      const vidCountMeta =
+        grpVideos.length > 1 ? `${grpVideos.length} videos · ` : '';
+      rowEl.title = `${grp.name} (${vidCountMeta}${sliceCount} sample${sliceCount === 1 ? '' : 's'}) — click to inspect`;
 
       rowEl.innerHTML = `
-        <span class="explorer-video-label">${v.slug}</span>
+        <span class="explorer-video-label">${grp.name}</span>
         ${gainTagHtml}
         <span class="explorer-video-meta">${sliceCount}</span>
         <button
           type="button"
-          class="ui-switch${muted ? '' : ' is-on'}"
+          class="${grpSwitchClass}"
           role="switch"
-          aria-checked="${muted ? 'false' : 'true'}"
-          title="${muted ? `Enable ${v.slug}` : `Mute ${v.slug}`}"
+          aria-checked="${enabledCount > 0 ? 'true' : 'false'}"
+          title="${enabledCount > 0 ? `Mute ${grp.name}` : `Enable ${grp.name}`}"
         ></button>
       `;
 
       const switchBtn = rowEl.querySelector('.ui-switch');
       switchBtn.addEventListener('click', e => {
         e.stopPropagation();
-        setVideosEnabled([v.id], muted);
+        setVideosEnabled(
+          grpVideos.map(v => v.id),
+          enabledCount === 0
+        );
       });
 
       rowEl.addEventListener('click', e => {
         if (e.target.closest('.ui-switch')) return;
         e.stopPropagation();
-        openVideoInspectorModal(v.id);
+        openVideoInspectorModal(grpVideos[0].id);
       });
 
       itemsEl.appendChild(rowEl);
@@ -1579,6 +1723,58 @@ function triggerDefaultCandidateGate(triggerId, midi, cand, idx = 0) {
   scheduleDefaultVoiceGate(triggerId, DEFAULT_UI_HOLD_SEC);
 }
 
+function setNoteSamplesExpanded(nextExpanded) {
+  state.noteSamplesExpanded = Boolean(nextExpanded);
+  const drawerEl = document.getElementById('noteSamplesDrawer');
+  const toggleBtn = document.getElementById('noteSamplesToggleBtn');
+  if (drawerEl) {
+    drawerEl.classList.toggle('collapsed', !state.noteSamplesExpanded);
+  }
+  if (toggleBtn) {
+    toggleBtn.classList.toggle('is-open', state.noteSamplesExpanded);
+    toggleBtn.setAttribute('aria-expanded', state.noteSamplesExpanded ? 'true' : 'false');
+  }
+  requestAnimationFrame(() => updateStageTileSizes());
+  setTimeout(() => updateStageTileSizes(), 220);
+}
+
+function updateSelectedNoteChipUI() {
+  const midi = state.selectedMidi;
+  const isPercKey = midi < 36;
+  const noteName = midiToName(midi);
+  const noteColor = getNoteColor(midi);
+  const freqStr = midiToFreq(midi);
+  const entry = state.catalog?.keyboardMap?.[midi];
+  const cands = getVisibleCandidatesForMidi(midi);
+  const enabledCount = cands.filter(c => c.enabled).length;
+
+  const selDot = document.getElementById('selectedNoteDot');
+  const selLabel = document.getElementById('selectedNoteLabel');
+  const selCount = document.getElementById('selectedNoteCount');
+  const selBtn = document.getElementById('noteSamplesToggleBtn');
+
+  if (selDot) selDot.style.background = noteColor;
+  if (selLabel) selLabel.textContent = noteName;
+  if (selCount) {
+    selCount.textContent = cands.length > 0 ? `${enabledCount}/${cands.length}` : '0';
+  }
+  if (selBtn) {
+    selBtn.title = state.noteSamplesExpanded
+      ? `Collapse samples for ${noteName}`
+      : `Edit samples for ${noteName} (${enabledCount}/${cands.length} active)`;
+  }
+
+  const drawerDot = document.getElementById('drawerNoteDot');
+  const drawerName = document.getElementById('drawerNoteName');
+  const drawerSub = document.getElementById('drawerNoteSub');
+  if (drawerDot) drawerDot.style.background = noteColor;
+  if (drawerName) drawerName.textContent = noteName;
+  if (drawerSub) {
+    const roleMeta = isPercKey ? entry?.percRole || 'Percussion' : `${freqStr} Hz`;
+    drawerSub.textContent = `${roleMeta} · ${enabledCount}/${cands.length} active`;
+  }
+}
+
 function selectKeyForConfig(midi, shouldTapPreview = false) {
   const clamped = Math.max(MIN_MIDI, Math.min(MAX_MIDI, midi));
   state.selectedMidi = clamped;
@@ -1591,10 +1787,23 @@ function selectKeyForConfig(midi, shouldTapPreview = false) {
     state.auditionIndex = 0;
   }
 
-  document.querySelectorAll('.wf-key').forEach(el => {
-    const m = Number(el.dataset.midi);
-    el.classList.toggle('selected-key', m === clamped);
-  });
+  // If stepping with arrows moves outside visible keyboard range, scroll octave window to follow
+  const visSpan = state.visibleOctaves * 12;
+  if (clamped < state.baseOctaveMidi) {
+    state.baseOctaveMidi = clampKeyboardStartMidi(Math.floor(clamped / 12) * 12, state.visibleOctaves);
+    renderPianoKeyboard();
+  } else if (clamped >= state.baseOctaveMidi + visSpan) {
+    state.baseOctaveMidi = clampKeyboardStartMidi(
+      Math.floor(clamped / 12) * 12 - (state.visibleOctaves - 1) * 12,
+      state.visibleOctaves
+    );
+    renderPianoKeyboard();
+  } else {
+    document.querySelectorAll('.wf-key').forEach(el => {
+      const m = Number(el.dataset.midi);
+      el.classList.toggle('selected-key', m === clamped);
+    });
+  }
 
   renderSelectedKeyDeck();
 
@@ -1604,16 +1813,33 @@ function selectKeyForConfig(midi, shouldTapPreview = false) {
 }
 
 // ============================================================================
-// Wireframe Keyline Chromatic Keyboard (Decluttered: No Dots, No Note Labels)
+// Responsive 3–6 Octave Wireframe Keyline Chromatic Keyboard
 // ============================================================================
 let wfKeyboardDragActive = false;
 let wfKeyboardDragMidi = null;
 let wfKeyboardDragStartMs = 0;
 
+function computeResponsiveOctaveCount(widthPx) {
+  if (!Number.isFinite(widthPx) || widthPx <= 0) return state.visibleOctaves || 5;
+  // ~158px per octave (~22.5px per natural key) cleanly scales between 3 and 6 octaves
+  const fit = Math.floor(widthPx / 158);
+  return Math.max(MIN_VISIBLE_OCTAVES, Math.min(MAX_VISIBLE_OCTAVES, fit));
+}
+
 function shiftKeyboardOctave(deltaOctaves) {
-  const nextBase = normalizeBaseOctaveMidi(state.baseOctaveMidi + deltaOctaves * 12);
-  if (nextBase === state.baseOctaveMidi) return;
+  const nextBase = clampKeyboardStartMidi(
+    state.baseOctaveMidi + deltaOctaves * 12,
+    state.visibleOctaves
+  );
+  const nextQwerty = normalizeQwertyOctaveMidi(state.qwertyOctaveMidi + deltaOctaves * 12);
+  if (nextBase === state.baseOctaveMidi && nextQwerty === state.qwertyOctaveMidi) return;
+
+  state.hasCustomKeyboardOctave = true;
   state.baseOctaveMidi = nextBase;
+  state.qwertyOctaveMidi = Math.max(
+    nextBase,
+    Math.min(nextBase + (state.visibleOctaves - 1) * 12, nextQwerty)
+  );
   savePrefsToStorage();
   renderPianoKeyboard();
 }
@@ -1621,10 +1847,27 @@ function shiftKeyboardOctave(deltaOctaves) {
 function renderPianoKeyboard() {
   const container = document.getElementById('pianoKeyboard');
   if (!container) return;
+
+  const totalW = Math.round(container.clientWidth || 0);
+  if (totalW > 0) {
+    const nextOctaves = computeResponsiveOctaveCount(totalW);
+    if (nextOctaves !== state.visibleOctaves) {
+      state.visibleOctaves = nextOctaves;
+      if (!state.hasCustomKeyboardOctave) {
+        state.baseOctaveMidi = getDefaultStartMidiForOctaves(nextOctaves);
+      } else {
+        state.baseOctaveMidi = clampKeyboardStartMidi(state.baseOctaveMidi, nextOctaves);
+      }
+    }
+  }
+
   container.innerHTML = '';
 
-  const startMidi = normalizeBaseOctaveMidi(state.baseOctaveMidi);
-  const endMidi = startMidi + VISIBLE_OCTAVES * 12 - 1;
+  const visOctaves = state.visibleOctaves;
+  const maxStartMidi = Math.max(MIN_BASE_OCTAVE_MIDI, TOP_KEYBOARD_MIDI_LIMIT - visOctaves * 12);
+  const startMidi = clampKeyboardStartMidi(state.baseOctaveMidi, visOctaves);
+  state.baseOctaveMidi = startMidi;
+  const endMidi = startMidi + visOctaves * 12 - 1;
 
   const rangeLabel = document.getElementById('octaveRangeLabel');
   if (rangeLabel) {
@@ -1633,15 +1876,14 @@ function renderPianoKeyboard() {
   const octDownBtn = document.getElementById('octDownBtn');
   if (octDownBtn) octDownBtn.disabled = startMidi <= MIN_BASE_OCTAVE_MIDI;
   const octUpBtn = document.getElementById('octUpBtn');
-  if (octUpBtn) octUpBtn.disabled = startMidi >= MAX_BASE_OCTAVE_MIDI;
+  if (octUpBtn) octUpBtn.disabled = startMidi >= maxStartMidi;
 
-  const totalNaturals = VISIBLE_OCTAVES * 7; // 21 equal-width units
-  const totalW = Math.round(container.clientWidth || 0);
+  const totalNaturals = visOctaves * 7;
   const unitWidthPct = 100 / totalNaturals;
   const xEdgePx = u => Math.round((u / totalNaturals) * totalW);
   const keyMap = state.catalog?.keyboardMap || {};
 
-  for (let i = 0; i < VISIBLE_OCTAVES * 12; i++) {
+  for (let i = 0; i < visOctaves * 12; i++) {
     const midi = startMidi + i;
     const octIdx = Math.floor(i / 12);
     const pc = i % 12;
@@ -1701,13 +1943,15 @@ function renderPianoKeyboard() {
 }
 
 // ============================================================================
-// Center Bottom Zone: Single-Note Sample Controls (Decluttered Strip)
+// Collapsible Single-Note Sample Controls
 // ============================================================================
 function getCandidatesForSelectedKey() {
   return getVisibleCandidatesForMidi(state.selectedMidi);
 }
 
 function renderSelectedKeyDeck() {
+  updateSelectedNoteChipUI();
+
   const midi = state.selectedMidi;
   const isPercKey = midi < 36;
   const noteName = midiToName(midi);
@@ -1734,6 +1978,7 @@ function renderSelectedKeyDeck() {
 
   candidates.forEach((cand, idx) => {
     const isEnabled = !!cand.enabled;
+    const readableGroup = getVideoGroupName(cand.videoId) || cand.groupName || cand.videoSlug;
     const card = document.createElement('div');
     card.className = [
       'candidate-card',
@@ -1744,16 +1989,16 @@ function renderSelectedKeyDeck() {
       .join(' ');
 
     card.innerHTML = `
-      <div class="cand-thumb-wrap" title="Click to inspect sample (${cand.videoSlug} · ${noteName})">
-        <img src="${withBust(cand.thumbUrl)}" alt="${cand.videoSlug}" loading="lazy" />
+      <div class="cand-thumb-wrap" title="Click to inspect sample (${readableGroup} · ${cand.videoSlug} · ${noteName})">
+        <img src="${withBust(cand.thumbUrl)}" alt="${readableGroup}" loading="lazy" />
       </div>
-      <div class="cand-slug-title" title="${cand.videoSlug}">${cand.videoSlug}</div>
+      <div class="cand-slug-title" title="${readableGroup} (${cand.videoSlug})">${readableGroup}</div>
       <button
         class="ui-switch${isEnabled ? ' is-on' : ''}"
         type="button"
         role="switch"
         aria-checked="${isEnabled ? 'true' : 'false'}"
-        title="${isEnabled ? `Mute sample (${cand.videoSlug})` : `Enable sample (${cand.videoSlug})`}"
+        title="${isEnabled ? `Mute sample (${readableGroup})` : `Enable sample (${readableGroup})`}"
       ></button>
     `;
 
@@ -1785,32 +2030,33 @@ function renderSelectedKeyDeck() {
 }
 
 // ============================================================================
-// Video File Inspector Overlay (Holistic Per-Video Integer dB Volume + Rename + Slices)
+// Grouped Multi-Video Scrolling Inspector Overlay
+// (Editable Group Name + Per-Video Volume/Mute/Rename/Trash + Sample Audition)
 // ============================================================================
 const videoInspState = {
   open: false,
-  video: null,
+  groupVideos: [],
+  video: null, // Currently focused/previewed video inside the group
   selectedSliceId: null,
   previewRaf: null,
   previewAudioSrc: null,
   previewGainNode: null,
   previewStartCtxTime: 0,
   previewPlayDur: 0,
-  trashConfirmArmed: false,
+  trashArmedVideoId: null,
   trashConfirmTimer: null
 };
 
 function resetVideoTrashConfirmUI() {
-  videoInspState.trashConfirmArmed = false;
+  videoInspState.trashArmedVideoId = null;
   if (videoInspState.trashConfirmTimer) {
     clearTimeout(videoInspState.trashConfirmTimer);
     videoInspState.trashConfirmTimer = null;
   }
-  const trashBtn = document.getElementById('videoInspTrashBtn');
-  if (trashBtn) {
-    trashBtn.classList.remove('confirm-armed');
-    trashBtn.textContent = 'Move Video to Trash';
-  }
+  document.querySelectorAll('#videoInspVideosScroll .video-card-trash-btn').forEach(btn => {
+    btn.classList.remove('confirm-armed');
+    btn.textContent = 'Trash';
+  });
 }
 
 function stopVideoInspPreview() {
@@ -1847,46 +2093,55 @@ function getActiveVideoSlices(video) {
   return (video?.slices || []).filter(s => !s.deleted);
 }
 
-function selectVideoInspSlice(slice, shouldPlay = false) {
-  if (!videoInspState.video || !slice) return;
+function selectVideoInspSlice(video, slice, shouldPlay = false) {
+  if (!video) return;
   stopVideoInspPreview();
-  videoInspState.selectedSliceId = slice.id;
+  videoInspState.video = video;
+  videoInspState.selectedSliceId = slice ? slice.id : null;
 
-  const slices = getActiveVideoSlices(videoInspState.video);
-  const idx = Math.max(0, slices.findIndex(s => s.id === slice.id));
-  const cand = findKeyboardCandidate(slice.id);
-  const midi = cand?.midi ?? slice.manualMidi ?? slice.midi ?? 60;
-  const noteName = cand?.isPerc || isPercussionSlice(videoInspState.video, slice) ? 'PERC' : midiToName(midi);
-
+  const slices = getActiveVideoSlices(video);
   const readoutEl = document.getElementById('videoInspTimeReadout');
-  if (readoutEl) {
-    readoutEl.textContent = `Sample #${idx + 1} · ${noteName}`;
-  }
 
-  const vidEl = document.getElementById('videoInspPreviewVideo');
-  if (vidEl && slice.videoUrl) {
-    const nextSrc = withBust(slice.videoUrl);
-    if (vidEl.getAttribute('data-slice-id') !== slice.id) {
-      vidEl.setAttribute('data-slice-id', slice.id);
-      vidEl.src = nextSrc;
-      vidEl.muted = true;
-      vidEl.onloadedmetadata = () => {
+  if (slice) {
+    const idx = Math.max(0, slices.findIndex(s => s.id === slice.id));
+    const cand = findKeyboardCandidate(slice.id);
+    const midi = cand?.midi ?? slice.manualMidi ?? slice.midi ?? 60;
+    const noteName = cand?.isPerc || isPercussionSlice(video, slice) ? 'PERC' : midiToName(midi);
+    if (readoutEl) {
+      const prefix = videoInspState.groupVideos.length > 1 ? `${video.slug} · ` : '';
+      readoutEl.textContent = `${prefix}Sample #${idx + 1} · ${noteName}`;
+    }
+
+    const vidEl = document.getElementById('videoInspPreviewVideo');
+    if (vidEl && slice.videoUrl) {
+      const nextSrc = withBust(slice.videoUrl);
+      if (vidEl.getAttribute('data-slice-id') !== slice.id) {
+        vidEl.setAttribute('data-slice-id', slice.id);
+        vidEl.src = nextSrc;
+        vidEl.muted = true;
+        vidEl.onloadedmetadata = () => {
+          try {
+            vidEl.currentTime = Number(cand?.trimIn ?? slice.trimIn ?? 0);
+          } catch {}
+        };
+      } else {
         try {
           vidEl.currentTime = Number(cand?.trimIn ?? slice.trimIn ?? 0);
         } catch {}
-      };
-    } else {
-      try {
-        vidEl.currentTime = Number(cand?.trimIn ?? slice.trimIn ?? 0);
-      } catch {}
+      }
     }
+  } else if (readoutEl) {
+    readoutEl.textContent = `${video.slug} · 0 samples`;
   }
 
-  document.querySelectorAll('#videoInspSlicesList .video-slice-row').forEach(row => {
-    row.classList.toggle('is-selected', row.dataset.sliceId === slice.id);
+  document.querySelectorAll('#videoInspVideosScroll .group-video-card').forEach(card => {
+    card.classList.toggle('is-focused', card.dataset.videoId === video.id);
+  });
+  document.querySelectorAll('#videoInspVideosScroll .video-slice-row').forEach(row => {
+    row.classList.toggle('is-selected', slice ? row.dataset.sliceId === slice.id : false);
   });
 
-  if (shouldPlay) {
+  if (shouldPlay && slice) {
     startVideoInspPreview(true);
   }
 }
@@ -1985,12 +2240,15 @@ async function startVideoInspPreview(forceRestart = false) {
   videoInspState.previewRaf = requestAnimationFrame(tick);
 }
 
-function updateVideoGainUiOnly(videoId) {
+function updateVideoCardGainUi(videoId) {
   const gainDb = getVideoGainDb(videoId);
-  const readoutEl = document.getElementById('videoGainReadout');
-  const sliderEl = document.getElementById('videoGainSlider');
-  const zeroBtn = document.getElementById('videoGainZeroBtn');
-
+  const card = document.querySelector(
+    `#videoInspVideosScroll .group-video-card[data-video-id="${videoId}"]`
+  );
+  if (!card) return;
+  const readoutEl = card.querySelector('.video-gain-readout');
+  const sliderEl = card.querySelector('.video-gain-slider');
+  const zeroBtn = card.querySelector('.video-gain-zero-btn');
   if (readoutEl) readoutEl.textContent = formatSignedDb(gainDb);
   if (sliderEl) sliderEl.value = String(gainDb);
   if (zeroBtn) zeroBtn.classList.toggle('hidden', gainDb === 0);
@@ -2009,8 +2267,8 @@ function setVideoGainDb(videoId, nextGainDb, persistServer = true) {
   savePrefsToStorage();
   renderFileExplorer();
 
-  if (videoInspState.open && videoInspState.video?.id === videoId) {
-    updateVideoGainUiOnly(videoId);
+  if (videoInspState.open) {
+    updateVideoCardGainUi(videoId);
   }
   if (trimState.open && trimState.video?.id === videoId) {
     populateInspectorHeaderAndPeaks();
@@ -2025,79 +2283,335 @@ function setVideoGainDb(videoId, nextGainDb, persistServer = true) {
   }
 }
 
-function renderVideoInspectorModal() {
-  const video = videoInspState.video;
-  if (!video) return;
+async function renameVideoGroup(videoIds, nextGroupName) {
+  const cleaned = String(nextGroupName || '').trim();
+  if (!cleaned || !Array.isArray(videoIds) || videoIds.length === 0) return;
+  const idSet = new Set(videoIds.map(String));
 
-  const slugInput = document.getElementById('videoInspSlugInput');
-  if (slugInput) {
-    slugInput.value = video.slug || '';
-    slugInput.readOnly = Boolean(state.isStaticMode);
+  for (const id of idSet) {
+    state.videoGroupOverrides[id] = cleaned;
+  }
+  for (const v of state.catalog?.videos || []) {
+    if (idSet.has(v.id)) {
+      v.groupName = cleaned;
+    }
+  }
+  for (const entry of Object.values(state.catalog?.keyboardMap || {})) {
+    for (const c of entry.candidates || []) {
+      if (idSet.has(c.videoId)) {
+        c.groupName = cleaned;
+      }
+    }
   }
 
-  const slices = getActiveVideoSlices(video);
+  savePrefsToStorage();
+
+  if (!state.isStaticMode) {
+    try {
+      const res = await fetch('./api/video/group-rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoIds: Array.from(idSet), groupName: cleaned })
+      });
+      if (res.ok) {
+        state.catalog = await res.json();
+      }
+    } catch {}
+  }
+
+  refreshAllUI();
+
+  if (videoInspState.open && videoInspState.video) {
+    const freshFocused =
+      state.catalog?.videos?.find(v => v.id === videoInspState.video.id && !v.deleted) ||
+      videoInspState.video;
+    videoInspState.video = freshFocused;
+    videoInspState.groupVideos = getVideosInSameGroup(freshFocused);
+    renderVideoInspectorModal();
+  }
+}
+
+function updateGroupInspHeaderSwitchUi() {
+  const grpSwitch = document.getElementById('videoInspGroupSwitch');
+  if (!grpSwitch) return;
+  const vids = videoInspState.groupVideos || [];
+  const enabledCount = vids.filter(v => !isVideoDisabled(v.id)).length;
+  grpSwitch.className =
+    enabledCount === vids.length
+      ? 'ui-switch is-on'
+      : enabledCount > 0
+        ? 'ui-switch is-partial'
+        : 'ui-switch';
+  grpSwitch.setAttribute('aria-checked', enabledCount > 0 ? 'true' : 'false');
+}
+
+function renderVideoInspectorModal() {
+  const focusedVideo = videoInspState.video;
+  if (!focusedVideo) return;
+
+  const groupVideos = getVideosInSameGroup(focusedVideo);
+  videoInspState.groupVideos = groupVideos.length > 0 ? groupVideos : [focusedVideo];
+  const vids = videoInspState.groupVideos;
+
+  const groupName = getVideoGroupName(focusedVideo);
+  const groupInput = document.getElementById('videoInspGroupInput');
+  if (groupInput && document.activeElement !== groupInput) {
+    groupInput.value = groupName;
+  }
+
+  const badgeEl = document.getElementById('videoInspBadge');
+  if (badgeEl) {
+    badgeEl.textContent = vids.length > 1 ? 'GROUP' : 'VIDEO FILE';
+  }
+
+  const totalSlices = vids.reduce((sum, v) => sum + getActiveVideoSlices(v).length, 0);
   const metaPill = document.getElementById('videoInspMetaPill');
   if (metaPill) {
-    const cat = String(video.category || 'other').toUpperCase();
-    metaPill.textContent = `${cat} · ${slices.length} SAMPLE${slices.length === 1 ? '' : 'S'}`;
+    const cat = String(focusedVideo.category || 'other').toUpperCase();
+    const vidPart = `${vids.length} VIDEO${vids.length === 1 ? '' : 'S'}`;
+    const sampPart = `${totalSlices} SAMPLE${totalSlices === 1 ? '' : 'S'}`;
+    metaPill.textContent = `${cat} · ${vidPart} · ${sampPart}`;
   }
 
-  updateVideoGainUiOnly(video.id);
+  updateGroupInspHeaderSwitchUi();
 
-  const listEl = document.getElementById('videoInspSlicesList');
-  if (listEl) {
-    listEl.innerHTML = '';
-    slices.forEach((slice, idx) => {
-      const cand = findKeyboardCandidate(slice.id);
-      const midi = cand?.midi ?? slice.manualMidi ?? slice.midi ?? 60;
-      const isPerc = cand ? cand.isPerc : isPercussionSlice(video, slice);
-      const noteColor = isPerc ? PERC_NOTE_COLOR : getNoteColor(midi);
-      const noteLabel = isPerc ? `PERC (${midiToName(midi)})` : midiToName(midi);
-      const dur = Number(cand?.durSec ?? slice.durSec ?? slice.rawDurSec ?? 1.0).toFixed(2);
-      const shiftCents = cand?.shiftCents ?? 0;
-      const shiftLabel = shiftCents === 0 ? '0c' : shiftCents > 0 ? `+${shiftCents}c` : `${shiftCents}c`;
+  const scrollCol = document.getElementById('videoInspVideosScroll');
+  if (!scrollCol) return;
+  const prevScroll = scrollCol.scrollTop;
+  scrollCol.innerHTML = '';
 
-      const row = document.createElement('div');
-      row.className = `video-slice-row${slice.id === videoInspState.selectedSliceId ? ' is-selected' : ''}`;
-      row.dataset.sliceId = slice.id;
+  vids.forEach(v => {
+    const slices = getActiveVideoSlices(v);
+    const muted = isVideoDisabled(v.id);
+    const gainDb = getVideoGainDb(v.id);
 
-      row.innerHTML = `
-        <div class="video-slice-left">
-          <span class="video-slice-dot" style="background:${noteColor}"></span>
-          <span class="video-slice-title">Sample #${idx + 1} · ${noteLabel}</span>
-          <span class="video-slice-meta">${dur}s · ${shiftLabel}</span>
+    const card = document.createElement('div');
+    card.className = [
+      'group-video-card',
+      v.id === focusedVideo.id ? 'is-focused' : '',
+      muted ? 'is-muted' : ''
+    ]
+      .filter(Boolean)
+      .join(' ');
+    card.dataset.videoId = v.id;
+
+    card.innerHTML = `
+      <div class="group-video-card-head">
+        <div class="group-video-head-left">
+          <img
+            class="group-video-thumb"
+            src="${withBust(v.thumbUrl)}"
+            alt="${v.slug}"
+            loading="lazy"
+            title="Preview ${v.slug}"
+          />
+          <input
+            type="text"
+            class="inspector-slug-input"
+            value="${v.slug || ''}"
+            ${state.isStaticMode ? 'readonly' : ''}
+            spellcheck="false"
+            title="Video file slug (renames sample folder &amp; files on Enter)"
+          />
         </div>
-        ${
-          state.isStaticMode
-            ? ''
-            : `<button type="button" class="video-slice-open-btn" title="Open Individual Sample Inspector">Sample ›</button>`
-        }
-      `;
+        <div class="group-video-head-right">
+          <button
+            type="button"
+            class="ghost-btn tiny danger-text local-only-btn video-card-trash-btn"
+            title="Move ${v.slug} to _trash/"
+          >Trash</button>
+          <button
+            type="button"
+            class="ui-switch${muted ? '' : ' is-on'} video-card-switch"
+            role="switch"
+            aria-checked="${muted ? 'false' : 'true'}"
+            title="${muted ? `Enable ${v.slug}` : `Mute ${v.slug}`}"
+          ></button>
+        </div>
+      </div>
 
-      const openBtn = row.querySelector('.video-slice-open-btn');
-      if (openBtn) {
-        openBtn.addEventListener('click', e => {
-          e.stopPropagation();
-          const vidId = video.id;
-          const slId = slice.id;
-          const rate = cand?.playbackRate || 1.0;
-          closeVideoInspectorModal();
-          openTrimModal(vidId, slId, rate);
-        });
-      }
+      <div class="video-gain-controls-row">
+        <span class="video-gain-tag">Volume</span>
+        <button type="button" class="gain-step-btn gain-minus-btn" title="Decrease volume by 1 dB">−</button>
+        <span class="video-gain-readout">${formatSignedDb(gainDb)}</span>
+        <button type="button" class="gain-step-btn gain-plus-btn" title="Increase volume by 1 dB">+</button>
+        <input
+          type="range"
+          min="-12"
+          max="12"
+          step="1"
+          value="${gainDb}"
+          class="video-gain-slider"
+          title="Holistic volume for ${v.slug} (−12 dB to +12 dB)"
+        />
+        <button type="button" class="nudge-btn video-gain-zero-btn${gainDb === 0 ? ' hidden' : ''}" title="Reset volume to 0 dB">
+          0 dB
+        </button>
+      </div>
 
-      row.addEventListener('click', () => {
-        selectVideoInspSlice(slice, true);
-      });
+      <div class="video-slices-list"></div>
+    `;
 
-      listEl.appendChild(row);
+    const thumbEl = card.querySelector('.group-video-thumb');
+    thumbEl.addEventListener('click', () => {
+      selectVideoInspSlice(v, slices[0] || null, true);
     });
-  }
 
-  const chosen = slices.find(s => s.id === videoInspState.selectedSliceId) || slices[0];
-  if (chosen) {
-    selectVideoInspSlice(chosen, false);
-  }
+    const slugInput = card.querySelector('.inspector-slug-input');
+    slugInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') e.target.blur();
+    });
+    slugInput.addEventListener('blur', async () => {
+      if (state.isStaticMode) return;
+      const nextSlug = slugInput.value.trim();
+      if (nextSlug && nextSlug !== v.slug) {
+        stopVideoInspPreview();
+        await apiPost('/api/video/rename', {
+          videoId: v.id,
+          slug: nextSlug
+        });
+        const freshVideo = state.catalog?.videos?.find(item => item.id === v.id && !item.deleted);
+        if (freshVideo) {
+          if (videoInspState.video?.id === v.id) {
+            videoInspState.video = freshVideo;
+          }
+          const vidEl = document.getElementById('videoInspPreviewVideo');
+          if (vidEl) vidEl.removeAttribute('data-slice-id');
+          renderVideoInspectorModal();
+        }
+      }
+    });
+
+    const cardSwitch = card.querySelector('.video-card-switch');
+    cardSwitch.addEventListener('click', e => {
+      e.stopPropagation();
+      const currentlyMuted = isVideoDisabled(v.id);
+      setVideosEnabled([v.id], currentlyMuted);
+      card.classList.toggle('is-muted', !currentlyMuted);
+      cardSwitch.classList.toggle('is-on', currentlyMuted);
+      cardSwitch.setAttribute('aria-checked', currentlyMuted ? 'true' : 'false');
+      updateGroupInspHeaderSwitchUi();
+    });
+
+    const trashBtn = card.querySelector('.video-card-trash-btn');
+    if (trashBtn) {
+      trashBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (state.isStaticMode) return;
+        if (videoInspState.trashArmedVideoId !== v.id) {
+          resetVideoTrashConfirmUI();
+          videoInspState.trashArmedVideoId = v.id;
+          trashBtn.classList.add('confirm-armed');
+          trashBtn.textContent = 'Confirm?';
+          videoInspState.trashConfirmTimer = setTimeout(() => {
+            resetVideoTrashConfirmUI();
+          }, 3500);
+          return;
+        }
+        resetVideoTrashConfirmUI();
+        stopVideoInspPreview();
+        const remainingOther = vids.find(other => other.id !== v.id);
+        await apiPost('/api/video/trash', { videoId: v.id });
+        if (remainingOther) {
+          const freshOther = state.catalog?.videos?.find(
+            item => item.id === remainingOther.id && !item.deleted
+          );
+          if (freshOther) {
+            openVideoInspectorModal(freshOther.id);
+            return;
+          }
+        }
+        closeVideoInspectorModal();
+      });
+    }
+
+    const minusBtn = card.querySelector('.gain-minus-btn');
+    const plusBtn = card.querySelector('.gain-plus-btn');
+    const gainSlider = card.querySelector('.video-gain-slider');
+    const zeroBtn = card.querySelector('.video-gain-zero-btn');
+
+    minusBtn.addEventListener('click', () => {
+      setVideoGainDb(v.id, getVideoGainDb(v.id) - 1, true);
+    });
+    plusBtn.addEventListener('click', () => {
+      setVideoGainDb(v.id, getVideoGainDb(v.id) + 1, true);
+    });
+    gainSlider.addEventListener('input', () => {
+      setVideoGainDb(v.id, Number(gainSlider.value) || 0, false);
+    });
+    gainSlider.addEventListener('change', () => {
+      setVideoGainDb(v.id, Number(gainSlider.value) || 0, true);
+    });
+    zeroBtn.addEventListener('click', () => {
+      setVideoGainDb(v.id, 0, true);
+    });
+
+    const slicesListEl = card.querySelector('.video-slices-list');
+    if (slices.length === 0) {
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'video-slice-meta';
+      emptyEl.textContent = 'No extracted samples in this video';
+      slicesListEl.appendChild(emptyEl);
+    } else {
+      slices.forEach((slice, idx) => {
+        const cand = findKeyboardCandidate(slice.id);
+        const midi = cand?.midi ?? slice.manualMidi ?? slice.midi ?? 60;
+        const isPerc = cand ? cand.isPerc : isPercussionSlice(v, slice);
+        const noteColor = isPerc ? PERC_NOTE_COLOR : getNoteColor(midi);
+        const noteLabel = isPerc ? `PERC (${midiToName(midi)})` : midiToName(midi);
+        const dur = Number(cand?.durSec ?? slice.durSec ?? slice.rawDurSec ?? 1.0).toFixed(2);
+        const shiftCents = cand?.shiftCents ?? 0;
+        const shiftLabel =
+          shiftCents === 0 ? '0c' : shiftCents > 0 ? `+${shiftCents}c` : `${shiftCents}c`;
+
+        const row = document.createElement('div');
+        row.className = `video-slice-row${slice.id === videoInspState.selectedSliceId ? ' is-selected' : ''}`;
+        row.dataset.sliceId = slice.id;
+
+        row.innerHTML = `
+          <div class="video-slice-left">
+            <span class="video-slice-dot" style="background:${noteColor}"></span>
+            <span class="video-slice-title">Sample #${idx + 1} · ${noteLabel}</span>
+            <span class="video-slice-meta">${dur}s · ${shiftLabel}</span>
+          </div>
+          ${
+            state.isStaticMode
+              ? ''
+              : `<button type="button" class="video-slice-open-btn" title="Open Individual Sample Inspector">Sample ›</button>`
+          }
+        `;
+
+        const openBtn = row.querySelector('.video-slice-open-btn');
+        if (openBtn) {
+          openBtn.addEventListener('click', e => {
+            e.stopPropagation();
+            const vidId = v.id;
+            const slId = slice.id;
+            const rate = cand?.playbackRate || 1.0;
+            closeVideoInspectorModal();
+            openTrimModal(vidId, slId, rate);
+          });
+        }
+
+        row.addEventListener('click', () => {
+          selectVideoInspSlice(v, slice, true);
+        });
+
+        slicesListEl.appendChild(row);
+      });
+    }
+
+    scrollCol.appendChild(card);
+  });
+
+  scrollCol.scrollTop = prevScroll;
+
+  const focusedSlices = getActiveVideoSlices(focusedVideo);
+  const chosenSlice =
+    focusedSlices.find(s => s.id === videoInspState.selectedSliceId) ||
+    focusedSlices[0] ||
+    null;
+  selectVideoInspSlice(focusedVideo, chosenSlice, false);
 }
 
 function openVideoInspectorModal(videoId, preferredSliceId = null) {
@@ -2110,12 +2624,36 @@ function openVideoInspectorModal(videoId, preferredSliceId = null) {
   stopVideoInspPreview();
   resetVideoTrashConfirmUI();
 
-  const slices = getActiveVideoSlices(video);
-  const initialSlice =
-    (preferredSliceId && slices.find(s => s.id === preferredSliceId)) || slices[0] || null;
+  const groupVideos = getVideosInSameGroup(video);
+  let targetVideo = video;
+  let initialSlice = null;
+
+  if (preferredSliceId) {
+    for (const gv of groupVideos) {
+      const found = getActiveVideoSlices(gv).find(s => s.id === preferredSliceId);
+      if (found) {
+        targetVideo = gv;
+        initialSlice = found;
+        break;
+      }
+    }
+  }
+  if (!initialSlice) {
+    const ownSlices = getActiveVideoSlices(targetVideo);
+    if (ownSlices.length > 0) {
+      initialSlice = ownSlices[0];
+    } else {
+      const withSlices = groupVideos.find(gv => getActiveVideoSlices(gv).length > 0);
+      if (withSlices) {
+        targetVideo = withSlices;
+        initialSlice = getActiveVideoSlices(withSlices)[0];
+      }
+    }
+  }
 
   videoInspState.open = true;
-  videoInspState.video = video;
+  videoInspState.groupVideos = groupVideos;
+  videoInspState.video = targetVideo;
   videoInspState.selectedSliceId = initialSlice ? initialSlice.id : null;
 
   const vidEl = document.getElementById('videoInspPreviewVideo');
@@ -2124,8 +2662,20 @@ function openVideoInspectorModal(videoId, preferredSliceId = null) {
     vidEl.style.transform = '';
   }
 
+  const scrollCol = document.getElementById('videoInspVideosScroll');
+  if (scrollCol) scrollCol.scrollTop = 0;
+
   renderVideoInspectorModal();
   document.getElementById('videoInspectorModal')?.classList.remove('hidden');
+
+  if (preferredSliceId) {
+    requestAnimationFrame(() => {
+      const targetCard = document.querySelector(
+        `#videoInspVideosScroll .group-video-card[data-video-id="${targetVideo.id}"]`
+      );
+      targetCard?.scrollIntoView({ block: 'nearest' });
+    });
+  }
 }
 
 function closeVideoInspectorModal() {
@@ -2795,7 +3345,12 @@ function populateInspectorHeaderAndPeaks() {
   const parentBtn = document.getElementById('sampleInspParentBtn');
   if (parentBtn) {
     const gainDb = getVideoGainDb(video.id);
-    parentBtn.textContent = gainDb ? `${video.slug} (${formatSignedDb(gainDb)})` : video.slug;
+    const groupName = getVideoGroupName(video);
+    const baseLabel =
+      groupName && groupName.toLowerCase() !== String(video.slug || '').toLowerCase()
+        ? `${groupName} · ${video.slug}`
+        : video.slug;
+    parentBtn.textContent = gainDb ? `${baseLabel} (${formatSignedDb(gainDb)})` : baseLabel;
   }
   const sliceLabelEl = document.getElementById('sampleInspSliceLabel');
   if (sliceLabelEl) {
@@ -3093,7 +3648,7 @@ function updateMidiTransportUi() {
   if (scrubThumb) scrubThumb.style.left = `${pct.toFixed(2)}%`;
 
   if (labelEl) {
-    labelEl.textContent = hasMidi ? midiPlayer.fileName : 'No MIDI loaded';
+    labelEl.textContent = hasMidi ? midiPlayer.fileName : 'No MIDI';
     labelEl.title = hasMidi ? midiPlayer.fileName : '';
   }
   if (timeReadout) {
@@ -3262,6 +3817,20 @@ function setupEventListeners() {
     });
   }
 
+  // Collapsible Per-Note Sample Drawer Toggle (Left of Keyboard + Drawer Hide Button)
+  const noteSamplesToggleBtn = document.getElementById('noteSamplesToggleBtn');
+  if (noteSamplesToggleBtn) {
+    noteSamplesToggleBtn.addEventListener('click', () => {
+      setNoteSamplesExpanded(!state.noteSamplesExpanded);
+    });
+  }
+  const collapseNoteSamplesBtn = document.getElementById('collapseNoteSamplesBtn');
+  if (collapseNoteSamplesBtn) {
+    collapseNoteSamplesBtn.addEventListener('click', () => {
+      setNoteSamplesExpanded(false);
+    });
+  }
+
   // Wireframe Keyboard Octave Step Buttons + Click/Drag Glissando
   const octDownBtn = document.getElementById('octDownBtn');
   if (octDownBtn) {
@@ -3397,30 +3966,51 @@ function setupEventListeners() {
     });
   });
 
-  // Video File Inspector Controls (Rename, Rotate, Preview, Holistic Volume dB, Trash)
-  const videoInspSlugInput = document.getElementById('videoInspSlugInput');
-  if (videoInspSlugInput) {
-    videoInspSlugInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') e.target.blur();
-    });
-    videoInspSlugInput.addEventListener('blur', async () => {
-      if (!videoInspState.open || !videoInspState.video || state.isStaticMode) return;
-      const nextSlug = videoInspSlugInput.value.trim();
-      if (nextSlug && nextSlug !== videoInspState.video.slug) {
-        stopVideoInspPreview();
-        const vidId = videoInspState.video.id;
-        await apiPost('/api/video/rename', {
-          videoId: vidId,
-          slug: nextSlug
-        });
-        const freshVideo = state.catalog?.videos.find(v => v.id === vidId && !v.deleted);
-        if (freshVideo) {
-          videoInspState.video = freshVideo;
-          const vidEl = document.getElementById('videoInspPreviewVideo');
-          if (vidEl) vidEl.removeAttribute('data-slice-id');
-          renderVideoInspectorModal();
+  // Grouped Multi-Video Inspector Controls (Readable Group Name, Group Switch, Preview, Rotate)
+  const videoInspGroupInput = document.getElementById('videoInspGroupInput');
+  if (videoInspGroupInput) {
+    const groupEditWrap = videoInspGroupInput.closest('.group-name-edit-wrap');
+    if (groupEditWrap) {
+      groupEditWrap.addEventListener('click', e => {
+        if (e.target !== videoInspGroupInput) {
+          videoInspGroupInput.focus();
+          videoInspGroupInput.select();
         }
+      });
+    }
+    videoInspGroupInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        videoInspGroupInput.blur();
       }
+    });
+    videoInspGroupInput.addEventListener('blur', async () => {
+      if (!videoInspState.open || !videoInspState.video) return;
+      const nextGroupName = videoInspGroupInput.value.trim();
+      const curGroupName = getVideoGroupName(videoInspState.video);
+      if (!nextGroupName) {
+        videoInspGroupInput.value = curGroupName;
+        return;
+      }
+      if (nextGroupName !== curGroupName) {
+        const ids = (videoInspState.groupVideos || [videoInspState.video]).map(v => v.id);
+        await renameVideoGroup(ids, nextGroupName);
+      }
+    });
+  }
+
+  const videoInspGroupSwitch = document.getElementById('videoInspGroupSwitch');
+  if (videoInspGroupSwitch) {
+    videoInspGroupSwitch.addEventListener('click', () => {
+      if (!videoInspState.open) return;
+      const vids = videoInspState.groupVideos || [];
+      if (vids.length === 0) return;
+      const allEnabled = vids.every(v => !isVideoDisabled(v.id));
+      toggleVideosEnabled(
+        vids.map(v => v.id),
+        !allEnabled
+      );
+      renderVideoInspectorModal();
     });
   }
 
@@ -3455,66 +4045,6 @@ function setupEventListeners() {
   if (videoInspPreviewBtn) {
     videoInspPreviewBtn.addEventListener('click', () => {
       startVideoInspPreview(false);
-    });
-  }
-
-  const videoGainMinusBtn = document.getElementById('videoGainMinusBtn');
-  if (videoGainMinusBtn) {
-    videoGainMinusBtn.addEventListener('click', () => {
-      if (!videoInspState.open || !videoInspState.video) return;
-      const vidId = videoInspState.video.id;
-      setVideoGainDb(vidId, getVideoGainDb(vidId) - 1, true);
-    });
-  }
-
-  const videoGainPlusBtn = document.getElementById('videoGainPlusBtn');
-  if (videoGainPlusBtn) {
-    videoGainPlusBtn.addEventListener('click', () => {
-      if (!videoInspState.open || !videoInspState.video) return;
-      const vidId = videoInspState.video.id;
-      setVideoGainDb(vidId, getVideoGainDb(vidId) + 1, true);
-    });
-  }
-
-  const videoGainSlider = document.getElementById('videoGainSlider');
-  if (videoGainSlider) {
-    videoGainSlider.addEventListener('input', () => {
-      if (!videoInspState.open || !videoInspState.video) return;
-      setVideoGainDb(videoInspState.video.id, Number(videoGainSlider.value) || 0, false);
-    });
-    videoGainSlider.addEventListener('change', () => {
-      if (!videoInspState.open || !videoInspState.video) return;
-      setVideoGainDb(videoInspState.video.id, Number(videoGainSlider.value) || 0, true);
-    });
-  }
-
-  const videoGainZeroBtn = document.getElementById('videoGainZeroBtn');
-  if (videoGainZeroBtn) {
-    videoGainZeroBtn.addEventListener('click', () => {
-      if (!videoInspState.open || !videoInspState.video) return;
-      setVideoGainDb(videoInspState.video.id, 0, true);
-    });
-  }
-
-  const videoInspTrashBtn = document.getElementById('videoInspTrashBtn');
-  if (videoInspTrashBtn) {
-    videoInspTrashBtn.addEventListener('click', async () => {
-      if (!videoInspState.open || !videoInspState.video || state.isStaticMode) return;
-      if (!videoInspState.trashConfirmArmed) {
-        videoInspState.trashConfirmArmed = true;
-        videoInspTrashBtn.classList.add('confirm-armed');
-        videoInspTrashBtn.textContent = 'Confirm Move Video to _trash?';
-        if (videoInspState.trashConfirmTimer) clearTimeout(videoInspState.trashConfirmTimer);
-        videoInspState.trashConfirmTimer = setTimeout(() => {
-          resetVideoTrashConfirmUI();
-        }, 3500);
-        return;
-      }
-      resetVideoTrashConfirmUI();
-      stopVideoInspPreview();
-      const vidId = videoInspState.video.id;
-      closeVideoInspectorModal();
-      await apiPost('/api/video/trash', { videoId: vidId });
     });
   }
 
@@ -3962,7 +4492,7 @@ function setupEventListeners() {
     const mapped = QWERTY_MAP.find(q => q.code === e.code);
     if (mapped) {
       e.preventDefault();
-      const midi = state.baseOctaveMidi + mapped.offset;
+      const midi = state.qwertyOctaveMidi + mapped.offset;
       startPianoKeyHold(`qwerty_${e.code}`, midi, 0.92, true);
     }
   });
@@ -4018,12 +4548,19 @@ function initWebMIDI() {
 async function init() {
   const prefs = loadPrefsFromStorage();
   state.chromeCollapsed = Boolean(prefs.chromeCollapsed);
+  state.noteSamplesExpanded = false;
   state.collapsedCategories = new Set(CATEGORY_ORDER);
   state.videoGainOverrides = prefs.videoGains || {};
+  state.videoGroupOverrides = prefs.videoGroups || {};
   state.sliceToggleOverrides = prefs.sliceToggles || {};
-  state.baseOctaveMidi = normalizeBaseOctaveMidi(prefs.baseOctaveMidi ?? 60);
+  state.hasCustomKeyboardOctave = Boolean(prefs.hasCustomKeyboardOctave);
+  state.qwertyOctaveMidi = normalizeQwertyOctaveMidi(prefs.qwertyOctaveMidi ?? 60);
+  state.baseOctaveMidi = state.hasCustomKeyboardOctave
+    ? clampKeyboardStartMidi(prefs.baseOctaveMidi, state.visibleOctaves)
+    : getDefaultStartMidiForOctaves(state.visibleOctaves);
 
   setChromeCollapsed(state.chromeCollapsed);
+  setNoteSamplesExpanded(false);
   updateMidiTransportUi();
 
   const threeCanvas = document.getElementById('threeStageCanvas');
@@ -4033,7 +4570,8 @@ async function init() {
       canvas: threeCanvas,
       getActiveSliceIds: getActiveStageSliceIds,
       isVideoDisabled: id => isVideoDisabled(id),
-      formatTooltip: item => `${item.videoSlug} · ${midiToName(item.midi ?? 60)}`,
+      formatTooltip: item =>
+        `${getVideoGroupName(item.videoId) || item.videoSlug} · ${midiToName(item.midi ?? 60)}`,
       onSliceEnter: item => {
         const cand = resolvePlayableSliceById(item.sliceId);
         if (!cand) return;
@@ -4115,7 +4653,7 @@ async function init() {
   }
   state.collapsedCategories = allCats;
 
-  // Sync holistic per-video gainDb between catalog and saved overrides
+  // Sync holistic per-video gainDb & groupName between catalog and saved overrides
   for (const v of validVideos) {
     const catGain = clampVideoGainDb(v.gainDb ?? 0);
     if (state.isStaticMode && Object.prototype.hasOwnProperty.call(state.videoGainOverrides, v.id)) {
@@ -4123,6 +4661,14 @@ async function init() {
     } else {
       v.gainDb = catGain;
       state.videoGainOverrides[v.id] = catGain;
+    }
+
+    const catGroup = String(v.groupName || '').trim() || inferClientGroupName(v.slug);
+    if (state.isStaticMode && state.videoGroupOverrides[v.id]) {
+      v.groupName = String(state.videoGroupOverrides[v.id]).trim();
+    } else {
+      v.groupName = catGroup;
+      state.videoGroupOverrides[v.id] = catGroup;
     }
   }
 

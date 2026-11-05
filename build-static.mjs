@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { computeKeyboardMap, computePercussionMap } from './dsp-pipeline.mjs';
+import { computeKeyboardMap, computePercussionMap, inferVideoGroupName } from './dsp-pipeline.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -134,6 +134,7 @@ export async function buildStaticSite(versionSlug = 'v1') {
       index: v.index,
       slug: v.slug,
       label: v.label,
+      groupName: String(v.groupName || '').trim() || inferVideoGroupName(v),
       category: v.category,
       enabled: v.enabled !== false,
       gainDb: Number.isFinite(v.gainDb) ? Math.round(v.gainDb) : 0,

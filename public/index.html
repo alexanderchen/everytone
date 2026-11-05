@@ -52,130 +52,151 @@
     </main>
   </div>
 
-  <!-- 2. Collapsible Bottom Bar: [ MIDI Transport ] | [ Single-Note Sample Controls ] | [ Keyline Keyboard ] -->
+  <!-- 2. Collapsible Bottom Bar: Optional Note Sample Drawer + Frugal Wide Keyboard Row -->
   <footer class="bottom-transport-dock" id="transportDock">
-    <!-- Left: MIDI Player & Scrubbable Play Bar -->
-    <section class="dock-zone transport-zone" id="midiTransportZone">
-      <div class="transport-top-row">
-        <input id="midiFileInput" type="file" accept=".mid,.midi" class="hidden" />
-        <button id="midiUploadBtn" type="button" class="midi-load-btn" title="Load a Standard MIDI File (.mid)">
-          Load MIDI
-        </button>
-        <span id="midiFileLabel" class="midi-file-label">No MIDI loaded</span>
+    <!-- Collapsible Single-Note Sample Shelf (Collapsed by Default on Load) -->
+    <section class="note-samples-drawer collapsed" id="noteSamplesDrawer">
+      <div class="samples-drawer-meta">
+        <div class="samples-drawer-heading">
+          <span class="samples-drawer-dot" id="drawerNoteDot"></span>
+          <span class="samples-drawer-note" id="drawerNoteName">C4</span>
+        </div>
+        <span class="samples-drawer-sub" id="drawerNoteSub">261.6 Hz</span>
       </div>
 
-      <div class="transport-scrub-row">
-        <button id="midiPlayPauseBtn" type="button" class="midi-play-btn" disabled title="Play / Pause MIDI">
-          <span id="midiPlayPauseIcon">▶</span>
-        </button>
+      <div class="candidates-strip" id="candidatesGrid"></div>
 
-        <div class="midi-scrub-track is-disabled" id="midiScrubTrack" title="Drag to scrub through MIDI file">
-          <span class="scrub-endpoint left"></span>
-          <div class="scrub-rail">
-            <div class="scrub-fill" id="midiScrubFill"></div>
-            <div class="scrub-playhead" id="midiScrubThumb"></div>
-          </div>
-          <span class="scrub-endpoint right"></span>
+      <button
+        id="collapseNoteSamplesBtn"
+        type="button"
+        class="drawer-collapse-btn"
+        title="Collapse sample view for active note"
+      >
+        ▾ Hide
+      </button>
+    </section>
+
+    <!-- Main Frugal Row: [ MIDI Transport ] | [ Selected Note + Pencil ] | [ Wide 3–6 Oct Keyboard ] | [ Octave Switcher ] -->
+    <div class="dock-main-row">
+      <!-- Far Left: Compact MIDI Player & Scrubbable Play Bar -->
+      <section class="dock-zone transport-zone" id="midiTransportZone">
+        <div class="transport-top-row">
+          <input id="midiFileInput" type="file" accept=".mid,.midi" class="hidden" />
+          <button id="midiUploadBtn" type="button" class="midi-load-btn" title="Load a Standard MIDI File (.mid)">
+            Load MIDI
+          </button>
+          <span id="midiFileLabel" class="midi-file-label">No MIDI</span>
         </div>
 
-        <span id="midiTimeReadout" class="midi-time-readout">0:00</span>
-      </div>
-    </section>
+        <div class="transport-scrub-row">
+          <button id="midiPlayPauseBtn" type="button" class="midi-play-btn" disabled title="Play / Pause MIDI">
+            <span id="midiPlayPauseIcon">▶</span>
+          </button>
 
-    <!-- Center: Single-Note Sample Controls (Clean Thumbnail Strip) -->
-    <section class="dock-zone note-samples-zone" id="noteSamplesZone">
-      <div class="candidates-strip" id="candidatesGrid"></div>
-    </section>
+          <div class="midi-scrub-track is-disabled" id="midiScrubTrack" title="Drag to scrub through MIDI file">
+            <span class="scrub-endpoint left"></span>
+            <div class="scrub-rail">
+              <div class="scrub-fill" id="midiScrubFill"></div>
+              <div class="scrub-playhead" id="midiScrubThumb"></div>
+            </div>
+            <span class="scrub-endpoint right"></span>
+          </div>
 
-    <!-- Right: Connected Equal-Width Wireframe Keyline Chromatic Keyboard -->
-    <section class="dock-zone keyboard-zone" id="keyboardZone">
-      <div class="keyboard-octave-bar">
-        <button id="octDownBtn" type="button" class="oct-step-btn" title="Shift keyboard down 1 octave (Z)">◀</button>
-        <span id="octaveRangeLabel" class="oct-range-label">C4–B6</span>
-        <button id="octUpBtn" type="button" class="oct-step-btn" title="Shift keyboard up 1 octave (X)">▶</button>
-      </div>
-      <div class="wireframe-keyboard-wrap">
-        <div class="wireframe-keyboard" id="pianoKeyboard"></div>
-      </div>
-    </section>
+          <span id="midiTimeReadout" class="midi-time-readout">0:00</span>
+        </div>
+      </section>
+
+      <!-- Left of Keyboard: Selected Note Indicator + Pencil Edit Toggle -->
+      <section class="dock-zone selected-note-zone" id="selectedNoteZone">
+        <button
+          id="noteSamplesToggleBtn"
+          type="button"
+          class="selected-note-btn"
+          aria-expanded="false"
+          title="Edit samples for selected note"
+        >
+          <span class="sel-note-main">
+            <span class="sel-note-dot" id="selectedNoteDot"></span>
+            <span class="sel-note-name" id="selectedNoteLabel">C4</span>
+          </span>
+          <span class="sel-note-edit-row">
+            <span class="sel-note-count" id="selectedNoteCount">0</span>
+            <svg class="sel-note-pencil" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11.4 2.4a1.5 1.5 0 0 1 2.1 2.1L5.4 12.6 2 13.6l1-3.4 8.4-7.8z"></path>
+            </svg>
+          </span>
+        </button>
+      </section>
+
+      <!-- Wide Center: Full-Height Responsive Connected Wireframe Keyline Keyboard (3 to 6 Octaves) -->
+      <section class="dock-zone keyboard-zone" id="keyboardZone">
+        <div class="wireframe-keyboard-wrap">
+          <div class="wireframe-keyboard" id="pianoKeyboard"></div>
+        </div>
+      </section>
+
+      <!-- Right of Keyboard: Frugal Octave Range + Square Left/Right Buttons -->
+      <section class="dock-zone octave-rail-zone" id="octaveRailZone">
+        <span id="octaveRangeLabel" class="oct-range-label">C2–B7</span>
+        <div class="oct-square-pair">
+          <button id="octDownBtn" type="button" class="oct-square-btn" title="Shift keyboard down 1 octave (Z)">◀</button>
+          <button id="octUpBtn" type="button" class="oct-square-btn" title="Shift keyboard up 1 octave (X)">▶</button>
+        </div>
+      </section>
+    </div>
   </footer>
 
-  <!-- 3A. Video File Inspector Overlay (Holistic Per-Video Volume dB + Rename + Slice Audition) -->
+  <!-- 3A. Grouped Video Inspector Overlay (Editable Group Name + Scrolling Multi-Video Editor) -->
   <div class="drawer-backdrop hidden" id="videoInspectorModal">
     <div class="trim-modal-card video-inspector-card">
       <div class="trim-modal-header">
         <div class="inspector-title-row">
-          <span class="crumb-type-badge">VIDEO FILE</span>
-          <input
-            id="videoInspSlugInput"
-            type="text"
-            class="inspector-slug-input"
-            value=""
-            spellcheck="false"
-            title="Edit video file name (renames sample folder &amp; files on Enter or click-away)"
-          />
-          <span class="video-insp-meta-pill" id="videoInspMetaPill">KEYS · 4 SAMPLES</span>
+          <span class="crumb-type-badge" id="videoInspBadge">GROUP</span>
+          <div class="group-name-edit-wrap" title="Edit readable instrument group name">
+            <input
+              id="videoInspGroupInput"
+              type="text"
+              class="inspector-group-input"
+              value=""
+              spellcheck="false"
+              placeholder="group name"
+            />
+            <svg class="group-edit-pencil" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11.4 2.4a1.5 1.5 0 0 1 2.1 2.1L5.4 12.6 2 13.6l1-3.4 8.4-7.8z"></path>
+            </svg>
+          </div>
+          <span class="video-insp-meta-pill" id="videoInspMetaPill">WINDS · 4 VIDEOS · 8 SAMPLES</span>
+          <button
+            id="videoInspGroupSwitch"
+            type="button"
+            class="ui-switch is-on"
+            role="switch"
+            aria-checked="true"
+            title="Enable or mute all videos in this group"
+          ></button>
         </div>
         <button class="close-drawer-btn" data-close="videoInspectorModal">✕ Close</button>
       </div>
 
-      <div class="trim-modal-body">
+      <div class="trim-modal-body group-inspector-body">
         <div class="trim-video-col">
           <div class="trim-video-square">
             <video id="videoInspPreviewVideo" playsinline preload="auto"></video>
           </div>
           <div class="trim-video-meta-row">
             <span class="trim-scrub-time" id="videoInspTimeReadout">Sample #1</span>
-            <button id="videoInspRotateBtn" type="button" class="ghost-btn tiny local-only-btn" title="Rotate video 90°">↻ 90°</button>
+            <button id="videoInspRotateBtn" type="button" class="ghost-btn tiny local-only-btn" title="Rotate selected video 90°">↻ 90°</button>
           </div>
           <button id="videoInspPreviewBtn" type="button" class="trim-btn-secondary full-w">
             ▶ Preview (Space)
           </button>
         </div>
 
-        <div class="trim-timeline-col">
-          <!-- Holistic Per-Video Volume (Integer dB) -->
-          <div class="video-gain-panel">
-            <div class="inspector-subbar">
-              <span class="inspector-section-label">VIDEO VOLUME (HOLISTIC)</span>
-              <span class="inspector-spec-meta">Applies to all samples from this video file</span>
-            </div>
-
-            <div class="video-gain-controls-row">
-              <button id="videoGainMinusBtn" type="button" class="gain-step-btn" title="Decrease volume by 1 dB">−</button>
-              <span id="videoGainReadout" class="video-gain-readout">0 dB</span>
-              <button id="videoGainPlusBtn" type="button" class="gain-step-btn" title="Increase volume by 1 dB">+</button>
-              <input
-                id="videoGainSlider"
-                type="range"
-                min="-12"
-                max="12"
-                step="1"
-                value="0"
-                class="video-gain-slider"
-                title="Adjust holistic volume for this video file (−12 dB to +12 dB)"
-              />
-              <button id="videoGainZeroBtn" type="button" class="nudge-btn hidden" title="Reset volume to 0 dB">
-                0 dB
-              </button>
-            </div>
-          </div>
-
-          <!-- Extracted Samples from This Video File -->
-          <div class="video-slices-panel">
-            <div class="inspector-subbar">
-              <span class="inspector-section-label">EXTRACTED SAMPLES</span>
-              <span class="inspector-spec-meta">Click a sample to audition · Inspect to edit pitch or trim</span>
-            </div>
-            <div class="video-slices-list" id="videoInspSlicesList"></div>
-          </div>
-        </div>
+        <div class="group-videos-scroll-col" id="videoInspVideosScroll"></div>
       </div>
 
-      <div class="trim-modal-footer">
-        <button id="videoInspTrashBtn" class="ghost-btn small danger-text local-only-btn" type="button" title="Move entire video file and its samples to _trash/">
-          Move Video to Trash
-        </button>
+      <div class="trim-modal-footer group-inspector-footer">
+        <span class="group-footer-hint">Click any sample row to audition · Edit group name above to rename or merge</span>
         <div class="trim-footer-right">
           <button type="button" class="trim-btn-primary" data-close="videoInspectorModal">
             Done
@@ -185,20 +206,20 @@
     </div>
   </div>
 
-  <!-- 3B. Individual Sample Inspector Overlay (Video Crumb › Sample + Pitch Slot + Spectrogram + Trim) -->
+  <!-- 3B. Individual Sample Inspector Overlay (Group/Video Crumb › Sample + Pitch Slot + Spectrogram + Trim) -->
   <div class="drawer-backdrop hidden" id="trimModal">
     <div class="trim-modal-card">
       <div class="trim-modal-header">
         <div class="inspector-title-row">
           <div class="inspector-breadcrumb">
-            <span class="crumb-type-badge">VIDEO FILE:</span>
+            <span class="crumb-type-badge">GROUP:</span>
             <button
               id="sampleInspParentBtn"
               type="button"
               class="crumb-video-link"
-              title="Open parent Video File Inspector (volume &amp; file settings)"
+              title="Open parent Group Inspector (edit all videos &amp; holistic volumes in this group)"
             >
-              video-slug
+              purple bottle
             </button>
             <span class="crumb-sep">›</span>
             <span class="crumb-sample-name" id="sampleInspSliceLabel">Sample #1</span>

@@ -3,9 +3,9 @@ import * as THREE from './vendor/three.module.min.js';
 // ============================================================================
 // Three.js 3D Stage Canvas
 // - Powered by THREE.Scene + THREE.PerspectiveCamera + THREE.InstancedBufferGeometry
-// - Renders a chromatic note-color dot on every video tile in the 3D grid
-// - Dynamically hides tiles from muted/disabled videos in the Video File Explorer
-// - Click, click-and-hold, or click-and-drag across tiles to trigger samples
+// - Compact 1px-gap B&W micro-thumbnail mosaic below the 3 large foreground videos
+// - Zero colored dots in idle; crisp outer note-colored stroke border when playing
+// - Dynamically hides tiles from muted/disabled videos & re-centers the stage cluster
 // ============================================================================
 
 const CHROMATIC_HEX = [
@@ -43,11 +43,8 @@ attribute vec2 iState;       // x: activeAmount, y: hoverAmount
 attribute vec3 iNoteColor;   // r, g, b normalized note color
 
 varying vec2 vUv;
-varying vec2 vTileUv;
-varying float vCellPx;
 varying float vActive;
 varying float vHover;
-varying vec3 vNoteColor;
 
 void main() {
   vec3 worldPos = vec3(
@@ -60,11 +57,8 @@ void main() {
     mix(iUvRect.x, iUvRect.z, uv.x),
     mix(iUvRect.w, iUvRect.y, uv.y)
   );
-  vTileUv = uv;
-  vCellPx = iOffsetScale.z;
   vActive = iState.x;
   vHover = iState.y;
-  vNoteColor = iNoteColor;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPos, 1.0);
 }
 `;
@@ -76,37 +70,82 @@ uniform sampler2D uAtlas;
 uniform vec3 uBgColor;
 
 varying vec2 vUv;
-varying vec2 vTileUv;
-varying float vCellPx;
 varying float vActive;
 varying float vHover;
-varying vec3 vNoteColor;
 
 void main() {
   vec3 texRgb = texture2D(uAtlas, vUv).rgb;
   float luma = dot(texRgb, vec3(0.299, 0.587, 0.114));
-  vec3 bwRgb = vec3(luma);
+  float crispLuma = clamp(pow(max(luma, 0.0), 0.88) * 1.08, 0.0, 1.0);
+  vec3 bwRgb = vec3(crispLuma);
 
-  // Idle state: moody monochrome B&W (~20% opacity, subtle lift on hover)
+  // Idle state: crisp monochrome B&W with higher visibility, zero colored dots
   float hoverAmt = clamp(vHover, 0.0, 1.0);
-  float idleAlpha = mix(0.20, 0.42, hoverAmt);
+  float idleAlpha = mix(0.42, 0.74, hoverAmt);
   vec3 idleColor = mix(uBgColor, bwRgb, idleAlpha);
 
-  // Active / playing state: full vivid color + brightness lift at 100% opacity
+  // Active / playing state: vivid full-color thumbnail at 100% opacity
   vec3 activeColor = clamp(texRgb * 1.18 + 0.02, 0.0, 1.0);
 
   float t = smoothstep(0.0, 1.0, clamp(vActive, 0.0, 1.0));
-  vec3 baseRgb = mix(idleColor, activeColor, t);
-
-  // Crisp centered chromatic note-color dot on every tile
-  vec2 deltaPx = (vTileUv - 0.5) * vCellPx;
-  float distPx = length(deltaPx);
-  float dotRadiusPx = clamp(vCellPx * 0.135, 2.1, 3.4);
-  float dotMask = 1.0 - smoothstep(dotRadiusPx - 0.7, dotRadiusPx + 0.55, distPx);
-  float dotAlpha = mix(0.84, 1.0, max(t, hoverAmt));
-  vec3 finalRgb = mix(baseRgb, vNoteColor, dotMask * dotAlpha);
+  vec3 finalRgb = mix(idleColor, activeColor, t);
 
   gl_FragColor = vec4(finalRgb, 1.0);
+}
+`;
+
+const BORDER_VERT_SHADER = `
+attribute vec3 iOffsetScale; // x: worldX, y: worldY, z: cellSize
+attribute vec2 iState;       // x: activeAmount, y: hoverAmount
+attribute vec3 iNoteColor;   // r, g, b normalized note color
+
+varying vec2 vLocalPx;
+varying float vCellPx;
+varying float vActive;
+varying vec3 vNoteColor;
+
+void main() {
+  if (iState.x <= 0.005) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    vLocalPx = vec2(0.0);
+    vCellPx = 1.0;
+    vActive = 0.0;
+    vNoteColor = vec3(0.0);
+    return;
+  }
+
+  float outStrokePx = 2.0;
+  float quadSize = iOffsetScale.z + outStrokePx * 2.0;
+  vec3 worldPos = vec3(
+    position.x * quadSize + iOffsetScale.x,
+    position.y * quadSize + iOffsetScale.y,
+    position.z
+  );
+  vLocalPx = position.xy * quadSize;
+  vCellPx = iOffsetScale.z;
+  vActive = iState.x;
+  vNoteColor = iNoteColor;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPos, 1.0);
+}
+`;
+
+const BORDER_FRAG_SHADER = `
+precision highp float;
+
+varying vec2 vLocalPx;
+varying float vCellPx;
+varying float vActive;
+varying vec3 vNoteColor;
+
+void main() {
+  float halfCell = vCellPx * 0.5;
+  float maxCoord = max(abs(vLocalPx.x), abs(vLocalPx.y));
+  // Strictly outside the inner cell square (2px outer stroke ring)
+  if (maxCoord < halfCell - 0.15) {
+    discard;
+  }
+  float alpha = smoothstep(0.0, 0.35, clamp(vActive, 0.0, 1.0));
+  gl_FragColor = vec4(vNoteColor, alpha);
 }
 `;
 
@@ -180,9 +219,23 @@ export function createThreeStage({
     depthWrite: false
   });
 
+  const borderMaterial = new THREE.ShaderMaterial({
+    vertexShader: BORDER_VERT_SHADER,
+    fragmentShader: BORDER_FRAG_SHADER,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false
+  });
+
   const tileMesh = new THREE.Mesh(instGeo, material);
   tileMesh.frustumCulled = false;
+  tileMesh.renderOrder = 0;
   scene.add(tileMesh);
+
+  const borderMesh = new THREE.Mesh(instGeo, borderMaterial);
+  borderMesh.frustumCulled = false;
+  borderMesh.renderOrder = 1;
+  scene.add(borderMesh);
 
   let atlasManifest = null;
   let atlasBySliceId = new Map();
@@ -198,19 +251,19 @@ export function createThreeStage({
   let layoutSpec = {
     stripW: 0,
     topStripH: 0,
-    betweenGap: 24,
-    marginY: 28
+    betweenGap: 20,
+    marginY: 24
   };
   let layout = {
     cols: 1,
-    rows: 1,
-    cell: 20,
-    gap: 3,
-    gridW: 20,
-    gridH: 20,
+    rows: 0,
+    cell: 12,
+    gap: 1,
+    gridW: 0,
+    gridH: 0,
     originX: 0,
     originY: 0,
-    stackTopY: 28
+    stackTopY: 24
   };
 
   let hoveredIdx = -1;
@@ -290,21 +343,22 @@ export function createThreeStage({
 
     const N = Math.min(items.length, MAX_INSTANCES);
     const topStripH = Math.max(0, Number(layoutSpec.topStripH) || 0);
-    const betweenGap = topStripH > 0 ? Math.max(14, Number(layoutSpec.betweenGap) || 24) : 0;
-    const marginY = Math.max(14, Number(layoutSpec.marginY) || 24);
+    const betweenGap = topStripH > 0 ? Math.max(14, Number(layoutSpec.betweenGap) || 20) : 0;
+    const marginY = Math.max(12, Number(layoutSpec.marginY) || 20);
+    const gap = 1; // 1px margin between micro-thumbnails for ultra-compact cluster
 
     if (N === 0) {
       instGeo.instanceCount = 0;
       const stackTopY = Math.max(marginY, Math.round((cssH - topStripH) * 0.5));
       layout = {
         cols: 1,
-        rows: 1,
-        cell: 20,
-        gap: 3,
+        rows: 0,
+        cell: 12,
+        gap,
         gridW: 0,
         gridH: 0,
         originX: 0,
-        originY: stackTopY + topStripH + betweenGap,
+        originY: stackTopY + topStripH,
         stackTopY
       };
       return layout;
@@ -312,34 +366,44 @@ export function createThreeStage({
 
     const targetW = Math.max(
       180,
-      Math.min(cssW - 32, Number(layoutSpec.stripW) > 0 ? Number(layoutSpec.stripW) : Math.round(cssW * 0.78))
+      Math.min(cssW - 32, Number(layoutSpec.stripW) > 0 ? Number(layoutSpec.stripW) : Math.round(cssW * 0.80))
     );
-    const availH = Math.max(76, cssH - topStripH - betweenGap - marginY * 2);
-    const gap = cssW < 900 ? 2 : 3;
-    const maxCellPx = N < 80 ? 38 : 34;
+    const availH = Math.max(44, cssH - topStripH - betweenGap - marginY * 2);
+    const maxCellPx = 13.5;
+    const idealCellPx = 12.0;
 
-    let bestCols = Math.max(1, Math.ceil(Math.sqrt(N * (targetW / Math.max(1, availH)))));
-    let bestCell = 12;
-    let bestScore = -1e9;
+    let bestCols = N;
+    let bestCell = idealCellPx;
 
-    for (let cols = 1; cols <= N; cols++) {
-      const rows = Math.ceil(N / cols);
-      const cellByW = (targetW - (cols - 1) * gap) / cols;
-      const cellByH = (availH - (rows - 1) * gap) / rows;
-      const cell = Math.min(maxCellPx, cellByW, cellByH);
-      if (cell < 5) continue;
+    // If all active tiles fit on a single compact row at ~12.5px, center that single row cleanly
+    if (N * idealCellPx + (N - 1) * gap <= targetW) {
+      bestCols = N;
+      bestCell = Math.min(maxCellPx, availH);
+    } else {
+      let bestScore = -1e9;
+      const minCols = Math.max(12, Math.floor(targetW / (maxCellPx + gap)));
+      const maxCols = Math.min(N, Math.max(minCols + 1, Math.floor(targetW / (6 + gap))));
 
-      const usedW = cols * cell + (cols - 1) * gap;
-      const widthFill = usedW / Math.max(1, targetW);
-      const lastRowCount = N - (rows - 1) * cols;
-      const lastRowFill = lastRowCount / cols;
+      for (let cols = minCols; cols <= maxCols; cols++) {
+        const rows = Math.ceil(N / cols);
+        const cellByW = (targetW - (cols - 1) * gap) / cols;
+        const cellByH = (availH - (rows - 1) * gap) / rows;
+        const cell = Math.min(maxCellPx, cellByW, cellByH);
+        if (cell < 5) continue;
 
-      // Strongly reward spanning the full 3-video strip width with crisp ~16..24px tiles & filled final row
-      const score = widthFill * 46 + cell * 2.4 + lastRowFill * 5.2;
-      if (score > bestScore) {
-        bestScore = score;
-        bestCols = cols;
-        bestCell = cell;
+        const usedW = cols * cell + (cols - 1) * gap;
+        const widthFill = usedW / Math.max(1, targetW);
+        const lastRowCount = N - (rows - 1) * cols;
+        const lastRowFill = lastRowCount / cols;
+        const sizeCloseness = 1.0 - Math.min(1.0, Math.abs(cell - idealCellPx) / 8.0);
+
+        // Favor spanning the full 3-video width in just a few compact rows (~5–6 rows at 439 tiles)
+        const score = widthFill * 52 + sizeCloseness * 18 + lastRowFill * 6 - rows * 1.4;
+        if (score > bestScore) {
+          bestScore = score;
+          bestCols = cols;
+          bestCell = cell;
+        }
       }
     }
 
@@ -408,6 +472,7 @@ export function createThreeStage({
             videoId: v.id,
             videoIndex: v.index,
             videoSlug: v.slug,
+            groupName: v.groupName || v.slug,
             midi,
             colorHex: getMidiColorHex(midi)
           });
@@ -438,8 +503,8 @@ export function createThreeStage({
     const stride = cell + gap;
     const aw = atlasManifest.atlasWidth;
     const ah = atlasManifest.atlasHeight;
-    const dotR = Math.max(2.1, Math.min(3.4, cell * 0.135));
 
+    // Pass 1: all square thumbnails (idle B&W, active vivid color)
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const col = i % cols;
@@ -454,19 +519,26 @@ export function createThreeStage({
         ctx2d.filter = 'brightness(1.18)';
         ctx2d.globalAlpha = 1.0;
       } else {
-        ctx2d.filter = 'grayscale(1)';
-        ctx2d.globalAlpha = i === hoveredIdx ? 0.42 : 0.20;
+        ctx2d.filter = 'grayscale(1) contrast(1.08)';
+        ctx2d.globalAlpha = i === hoveredIdx ? 0.74 : 0.42;
       }
       ctx2d.drawImage(atlasImage, sx, sy, sw, sh, x, y, cell, cell);
-
-      ctx2d.filter = 'none';
-      ctx2d.globalAlpha = activeValues[i] > 0.02 || i === hoveredIdx ? 1.0 : 0.84;
-      ctx2d.fillStyle = it.colorHex || PERC_HEX;
-      ctx2d.beginPath();
-      ctx2d.arc(x + cell * 0.5, y + cell * 0.5, dotR, 0, Math.PI * 2);
-      ctx2d.fill();
     }
+
+    // Pass 2: outer 2px note-colored stroke border on active tiles
     ctx2d.filter = 'none';
+    ctx2d.lineWidth = 2;
+    for (let i = 0; i < items.length; i++) {
+      if (activeValues[i] <= 0.01) continue;
+      const it = items[i];
+      const col = i % cols;
+      const row = (i / cols) | 0;
+      const x = originX + col * stride;
+      const y = originY + row * stride;
+      ctx2d.globalAlpha = Math.min(1, activeValues[i] / 0.35);
+      ctx2d.strokeStyle = it.colorHex || PERC_HEX;
+      ctx2d.strokeRect(x - 1, y - 1, cell + 2, cell + 2);
+    }
     ctx2d.globalAlpha = 1.0;
   }
 
@@ -668,6 +740,9 @@ export function createThreeStage({
     camera,
     renderer,
     loadAtlas,
+    getItemCount() {
+      return Math.min(items.length, MAX_INSTANCES);
+    },
     syncCatalog(catalog) {
       rebuildItemsFromCatalog(catalog);
       return layout;

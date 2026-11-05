@@ -8,6 +8,7 @@ import {
   MAX_CLIP_DUR,
   freqToMidi,
   midiToName,
+  inferVideoGroupName,
   getDefaultSliceMidi,
   getEffectiveSliceMidi,
   extractSquareThumbnail,
@@ -49,6 +50,13 @@ function loadCatalog() {
 function saveCatalog(catalog) {
   if (!catalog.keyboardConfig) {
     catalog.keyboardConfig = { selectedByMidi: {}, clearedMidis: [] };
+  }
+  for (const v of catalog.videos || []) {
+    if (!v.groupName || !String(v.groupName).trim()) {
+      v.groupName = inferVideoGroupName(v);
+    } else {
+      v.groupName = String(v.groupName).trim();
+    }
   }
   catalog.keyboardMap = computeKeyboardMap(catalog.videos, catalog.keyboardConfig);
   catalog.percussionMap = computePercussionMap(catalog.videos, catalog.percussionMap);
@@ -182,6 +190,9 @@ const server = http.createServer(async (req, res) => {
 
       const newSlug = sanitizeSlug(body.slug || video.slug);
       if (body.label !== undefined) video.label = String(body.label).trim() || newSlug;
+      if (body.groupName !== undefined) {
+        video.groupName = String(body.groupName).trim() || inferVideoGroupName({ ...video, groupName: '' });
+      }
       if (body.category !== undefined) video.category = String(body.category).trim().toLowerCase() || video.category;
 
       if (newSlug !== video.slug) {
@@ -247,6 +258,26 @@ const server = http.createServer(async (req, res) => {
         video.folderName = newFolderName;
       }
 
+      return sendJson(res, 200, saveCatalog(catalog));
+    }
+
+    if (pathname === '/api/video/group-rename' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const catalog = loadCatalog();
+      const targetIds = new Set(
+        Array.isArray(body.videoIds)
+          ? body.videoIds.map(String)
+          : body.videoId
+            ? [String(body.videoId)]
+            : []
+      );
+      if (targetIds.size === 0) return sendJson(res, 400, { error: 'No videoIds provided' });
+      const cleanedName = String(body.groupName || '').trim();
+      for (const v of catalog.videos || []) {
+        if (targetIds.has(v.id)) {
+          v.groupName = cleanedName || inferVideoGroupName({ ...v, groupName: '' });
+        }
+      }
       return sendJson(res, 200, saveCatalog(catalog));
     }
 

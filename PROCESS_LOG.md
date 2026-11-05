@@ -148,3 +148,16 @@
 - Removed key glow and fixed single-pixel octave border alignment. [img](screenshots/2026-11-04/17_sans-stacked-stage-flush-specs-and-unified-switches.png)
 
 - Replaced tiny gear icons with direct click-to-inspect and pill switches. [img](screenshots/2026-11-04/18_google-sans-sample-inspector-direct-click.png)
+
+
+## Nov 4, 2026 · 10:49 pm
+
+- Grouped related sidebar files under editable readable object names.
+- Centered larger 3-up clips above a compact 1px-gap monochrome tile strip.
+- Replaced idle tile dots with outer chromatic borders on active hits.
+- Collapsed per-note samples by default to fit up to 6 octaves (`C2–B7`).
+- Moved octave range readout and square step buttons to the right rail. [img](screenshots/2026-11-04/19_grouped-sidebar-centered-stage-and-6octave-dock.png)
+
+- Added a left selected-note pencil button (`C4 ✎`) to toggle sample cards. [img](screenshots/2026-11-04/20_expanded-note-sample-drawer-above-6octave-keyboard.png)
+
+- Built a single scrolling multi-video group inspector with live renaming. [img](screenshots/2026-11-04/21_purple-bottle-multi-video-scrolling-group-inspector.png)
