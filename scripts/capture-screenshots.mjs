@@ -9,7 +9,7 @@ const SCREENSHOTS_DIR = path.join(ROOT, 'screenshots', TODAY_FOLDER);
 fs.mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
 const CHROME_BIN = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const PORT = 9296;
+const PORT = 9297;
 const PROFILE_DIR = path.join(
   os.homedir(),
   '.gemini',
@@ -154,164 +154,165 @@ async function main() {
     await cdp.send('Page.reload', { ignoreCache: true });
     await waitForAppReady(cdp);
 
-    // Check default boot state BEFORE interacting
-    const bootAudit = await cdp.evalJs(`(() => {
-      const drawer = document.getElementById('noteSamplesDrawer');
-      const keys = document.querySelectorAll('#pianoKeyboard .wf-key');
-      const octLabel = document.getElementById('octaveRangeLabel')?.textContent?.trim();
-      const selNote = document.getElementById('selectedNoteLabel')?.textContent?.trim();
-      const c4Key = document.querySelector('#pianoKeyboard .wf-key[data-midi="60"]');
-      return {
-        drawerCollapsedByDefault: drawer?.classList.contains('collapsed'),
-        totalKeysVisible: keys.length,
-        visibleOctaves: keys.length / 12,
-        octLabel,
-        selNote,
-        c4IsSelected: c4Key?.classList.contains('selected-key'),
-        explorerGroupRows: document.querySelectorAll('#explorerList .explorer-video-row').length
-      };
-    })()`);
-    console.log('Default Boot Audit:', bootAudit);
-
-    if (!bootAudit.drawerCollapsedByDefault) {
-      throw new Error('Expected note sample drawer to be collapsed by default on page load');
-    }
-    if (bootAudit.visibleOctaves < 5) {
-      throw new Error(`Expected responsive 5-6 octaves on 1600px desktop, got ${bootAudit.visibleOctaves}`);
+    // 1. Audit all 4 grid modes (3x1, 2x2, 3x2, 3x3) for flush width & zero overlap
+    for (const mode of ['3x1', '2x2', '3x2', '3x3']) {
+      const modeAudit = await cdp.evalJs(`(() => {
+        document.querySelector('.stage-grid-pill[data-grid-mode="${mode}"]')?.click();
+        const stripRect = document.getElementById('polyVideoGrid').getBoundingClientRect();
+        const visibleSlots = Array.from(document.querySelectorAll('#polyVideoGrid .stage-slot-unit:not(.hidden)')).length;
+        const tileSize = parseFloat(getComputedStyle(document.getElementById('videoStage')).getPropertyValue('--tile-size'));
+        const stripWidthVar = parseFloat(getComputedStyle(document.getElementById('videoStage')).getPropertyValue('--strip-width'));
+        return {
+          mode: '${mode}',
+          visibleSlots,
+          tileSize,
+          stripWidthPx: Math.round(stripRect.width),
+          stripWidthVar: Math.round(stripWidthVar),
+          stripHeightPx: Math.round(stripRect.height)
+        };
+      })()`);
+      console.log('Grid Mode Audit:', modeAudit);
     }
 
-    // Expand 'winds' to reveal grouped readable names ("purple bottle", "blue bottle", etc.)
+    // 2. Test MIDI Octave Transpose (+1 oct) & Fade Slider (0.6s) & 3x2 Grid + Percussion Grayish Trigger
     await cdp.evalJs(`(() => {
-      const windsHeader = document.querySelector('#explorerList .explorer-cat-group[data-category="winds"] .explorer-cat-header');
-      windsHeader?.click();
+      document.querySelector('.stage-grid-pill[data-grid-mode="3x2"]')?.click();
+      const fadeSlider = document.getElementById('stageFadeSlider');
+      fadeSlider.value = '0.6';
+      fadeSlider.dispatchEvent(new Event('input', { bubbles: true }));
+      fadeSlider.dispatchEvent(new Event('change', { bubbles: true }));
+      document.getElementById('midiOctUpBtn')?.click();
+      // Shift keyboard down 1 octave to C1–B6 so we can trigger C1 (percussion!) + 5 tonal notes!
+      document.getElementById('octDownBtn')?.click();
     })()`);
-    await sleep(220);
+    await sleep(200);
 
-    // Play G4, E4, then C4 last so C4 is the active selected note ("C4" on left button + 2px white keyline)
-    // and 3 tiles in the compact B&W grid show crisp 2px chromatic outer stroke borders!
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyG', key: 'g', bubbles: true }))`);
-    await sleep(130);
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', key: 'd', bubbles: true }))`);
-    await sleep(130);
-    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyA', key: 'a', bubbles: true }))`);
+    // Trigger 6 notes simultaneously: C1 (MIDI 24 percussion!) + C4, E4, G4, A4, C5
+    for (const midi of [24, 60, 64, 67, 69, 72]) {
+      await cdp.evalJs(`(() => {
+        const keyEl = document.querySelector('#pianoKeyboard .wf-key[data-midi="${midi}"]');
+        const r = keyEl.getBoundingClientRect();
+        keyEl.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: r.left + 4, clientY: r.bottom - 6, bubbles: true }));
+        window.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+      })()`);
+      await sleep(75);
+    }
+    // Hold 6 keys via QWERTY + percussion mousedown so all 6 slots stay bright for screenshot
+    await cdp.evalJs(`(() => {
+      // Shift back to C2–B7 for clean tonal range, then hold 5 QWERTY keys + click C1 after shifting or hold via keyboard
+    })()`);
+    for (const code of ['KeyA', 'KeyD', 'KeyG', 'KeyH', 'KeyK']) {
+      await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: 'a', bubbles: true }))`);
+      await sleep(70);
+    }
+    // Also hold C1 percussion key (MIDI 24 is visible because we shifted down to C1–B6!)
+    await cdp.evalJs(`(() => {
+      const percKey = document.querySelector('#pianoKeyboard .wf-key[data-midi="24"]');
+      if (percKey) {
+        const r = percKey.getBoundingClientRect();
+        percKey.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: r.left + 5, clientY: r.bottom - 6, bubbles: true }));
+      }
+    })()`);
     await sleep(380);
 
-    const activeAudit = await cdp.evalJs(`(() => {
-      const stageRect = document.getElementById('videoStage').getBoundingClientRect();
-      const polyRect = document.getElementById('polyVideoGrid').getBoundingClientRect();
-      const vidRect = document.querySelector('.stage-slot-unit[data-slot="0"] .stage-slot-video').getBoundingClientRect();
-      const specRect = document.querySelector('.stage-slot-unit[data-slot="0"] .slot-mini-spec').getBoundingClientRect();
-      const windsLabels = Array.from(
-        document.querySelectorAll('#explorerList .explorer-cat-group[data-category="winds"] .explorer-video-label')
-      ).map(el => el.textContent.trim());
-      const dockRect = document.getElementById('transportDock').getBoundingClientRect();
-      const octRailRect = document.getElementById('octaveRailZone').getBoundingClientRect();
-      const selZoneRect = document.getElementById('selectedNoteZone').getBoundingClientRect();
-      return {
-        stageHeight: Math.round(stageRect.height),
-        polyTopInStage: Math.round(polyRect.top - stageRect.top),
-        polyBottomInStage: Math.round(polyRect.bottom - stageRect.top),
-        videoSidePx: Math.round(vidRect.height),
-        specHeightPx: Math.round(specRect.height),
-        videoToSpecGapPx: Math.round(specRect.top - vidRect.bottom),
-        dockHeightCollapsed: Math.round(dockRect.height),
-        selectedNoteLeftPx: Math.round(selZoneRect.left),
-        octaveRailRightPx: Math.round(octRailRect.right),
-        windsLabels
-      };
-    })()`);
-    console.log('Active Stage & Grouped Winds Audit:', activeAudit);
+    const shot1Audit = await cdp.evalJs(`(() => ({
+      midiOctText: document.getElementById('midiOctReadout')?.textContent?.trim(),
+      fadeText: document.getElementById('stageFadeReadout')?.textContent?.trim(),
+      occupiedSlots: document.querySelectorAll('#polyVideoGrid .stage-slot-unit.is-occupied').length,
+      octRange: document.getElementById('octaveRangeLabel')?.textContent?.trim()
+    }))()`);
+    console.log('Shot 1 Audit (3x2 + Perc Gray + MIDI +1 oct + Fade 0.6s):', shot1Audit);
 
-    if (!activeAudit.windsLabels.includes('purple bottle')) {
-      throw new Error(`Expected 'purple bottle' in grouped winds list, got: ${activeAudit.windsLabels.join(', ')}`);
-    }
-
-    // ------------------------------------------------------------------------
-    // Shot 19: Grouped File Explorer + Centered Large 3-Up Stage + Compact 1px B&W Tiles w/ Outer Note Stroke + Collapsed Sample Drawer + 6-Octave Keyboard
-    // ------------------------------------------------------------------------
     await cdp.savePng(
-      path.join(SCREENSHOTS_DIR, '19_grouped-sidebar-centered-stage-and-6octave-dock.png')
+      path.join(SCREENSHOTS_DIR, '01_stage-config-3x2-grid-midi-transpose-and-perc-gray.png')
     );
 
-    // Release keys cleanly
+    // Release held voices
     await cdp.evalJs(`(() => {
-      for (const code of ['KeyG', 'KeyD', 'KeyA']) {
+      window.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+      for (const code of ['KeyA', 'KeyD', 'KeyG', 'KeyH', 'KeyK']) {
         window.dispatchEvent(new KeyboardEvent('keyup', { code, key: 'a', bubbles: true }));
       }
     })()`);
-    await sleep(340);
+    await sleep(700);
 
-    // Click the [C4 ✎] pencil button on the left of the keyboard to expand the per-note sample drawer
-    const drawerExpandCheck = await cdp.evalJs(`(() => {
-      document.getElementById('noteSamplesToggleBtn')?.click();
-      const drawer = document.getElementById('noteSamplesDrawer');
-      return {
-        expanded: !drawer.classList.contains('collapsed'),
-        cardCount: document.querySelectorAll('#candidatesGrid .candidate-card').length,
-        cardTitles: Array.from(document.querySelectorAll('#candidatesGrid .cand-slug-title')).map(el => el.textContent.trim())
-      };
+    // 3. Test 2x2 Grid + Clicking a Micro-Thumbnail Tile + 4-Way Arrow Key Cursor Navigation!
+    await cdp.evalJs(`(() => {
+      document.getElementById('octUpBtn')?.click(); // Back to C2–B7
+      document.querySelector('.stage-grid-pill[data-grid-mode="2x2"]')?.click();
     })()`);
-    console.log('Expanded Per-Note Drawer Check:', drawerExpandCheck);
-    if (!drawerExpandCheck.expanded || drawerExpandCheck.cardCount === 0) {
-      throw new Error('Clicking #noteSamplesToggleBtn did not expand per-note sample drawer');
+    await sleep(250);
+
+    // Click inside the micro-thumbnail strip to select a tile, then press ArrowRight, ArrowRight, ArrowDown!
+    const tileNavAudit = await cdp.evalJs(`(() => {
+      const canvas = document.getElementById('threeStageCanvas');
+      const stageRect = canvas.getBoundingClientRect();
+      const polyRect = document.getElementById('polyVideoGrid').getBoundingClientRect();
+      // Click ~24px below the bottom of #polyVideoGrid near horizontal center-left to hit a tile
+      const clickX = Math.round(polyRect.left + 40);
+      const clickY = Math.round(polyRect.bottom + 24);
+      canvas.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: clickX, clientY: clickY, bubbles: true }));
+      window.dispatchEvent(new MouseEvent('mouseup', { button: 0, clientX: clickX, clientY: clickY, bubbles: true }));
+      const selectedKeysAfterTileClick = document.querySelectorAll('#pianoKeyboard .wf-key.selected-key').length;
+      const noteBeforeArrows = document.getElementById('selectedNoteLabel')?.textContent?.trim();
+      return { clickX, clickY, selectedKeysAfterTileClick, noteBeforeArrows };
+    })()`);
+    console.log('Tile Click Focus Audit:', tileNavAudit);
+    if (tileNavAudit.selectedKeysAfterTileClick !== 0) {
+      throw new Error('Expected keyboard .selected-key to clear when a video tile is selected');
     }
+
+    await sleep(120);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }))`);
+    await sleep(120);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }))`);
+    await sleep(120);
+    await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }))`);
     await sleep(260);
 
-    // ------------------------------------------------------------------------
-    // Shot 20: Expanded Per-Note Sample Drawer Above 6-Octave Keyboard via [C4 ✎] Toggle
-    // ------------------------------------------------------------------------
     await cdp.savePng(
-      path.join(SCREENSHOTS_DIR, '20_expanded-note-sample-drawer-above-6octave-keyboard.png')
+      path.join(SCREENSHOTS_DIR, '02_stage-2x2-and-tile-cursor-selection.png')
     );
 
-    // Collapse the per-note sample drawer again via the Hide button, then click "purple bottle" in the sidebar!
-    await cdp.evalJs(`document.getElementById('collapseNoteSamplesBtn')?.click()`);
-    await sleep(200);
-
-    const groupInspectorCheck = await cdp.evalJs(`(() => {
-      const row = Array.from(document.querySelectorAll('#explorerList .explorer-video-row'))
-        .find(r => r.querySelector('.explorer-video-label')?.textContent.trim() === 'purple bottle');
-      row?.click();
-      const modalOpen = !document.getElementById('videoInspectorModal').classList.contains('hidden');
-      const groupInputVal = document.getElementById('videoInspGroupInput')?.value;
-      const badge = document.getElementById('videoInspBadge')?.textContent?.trim();
-      const metaPill = document.getElementById('videoInspMetaPill')?.textContent?.trim();
-      const videoSlugs = Array.from(
-        document.querySelectorAll('#videoInspVideosScroll .group-video-card .inspector-slug-input')
-      ).map(inp => inp.value);
-      return { modalOpen, badge, groupInputVal, metaPill, cardCount: videoSlugs.length, videoSlugs };
+    // Verify clicking a piano key switches select state cleanly back to 'keyboard'
+    const backToKbCheck = await cdp.evalJs(`(() => {
+      const c4 = document.querySelector('#pianoKeyboard .wf-key[data-midi="60"]');
+      const r = c4.getBoundingClientRect();
+      c4.dispatchEvent(new MouseEvent('mousedown', { button: 0, clientX: r.left + 5, clientY: r.bottom - 8, bubbles: true }));
+      window.dispatchEvent(new MouseEvent('mouseup', { button: 0, bubbles: true }));
+      return document.querySelectorAll('#pianoKeyboard .wf-key.selected-key').length;
     })()`);
-    console.log('Purple Bottle Group Inspector Check:', groupInspectorCheck);
-
-    if (!groupInspectorCheck.modalOpen || groupInspectorCheck.cardCount !== 4) {
-      throw new Error(
-        `Expected 4 video cards in 'purple bottle' group inspector, got ${groupInspectorCheck.cardCount}`
-      );
+    console.log('Keyboard Focus Restored Check:', backToKbCheck);
+    if (backToKbCheck !== 1) {
+      throw new Error('Expected 1 .selected-key on keyboard after clicking C4');
     }
-    await sleep(420);
-
-    // ------------------------------------------------------------------------
-    // Shot 21: Single Scrolling Multi-Video Group Inspector for "purple bottle" (All 4 Videos + Editable Group Name)
-    // ------------------------------------------------------------------------
-    await cdp.savePng(
-      path.join(SCREENSHOTS_DIR, '21_purple-bottle-multi-video-scrolling-group-inspector.png')
-    );
-
-    // Test responsive octave scaling on a narrower viewport (e.g. 1120px -> 4 or 5 octaves) and restore!
-    await cdp.evalJs(`document.querySelector('[data-close="videoInspectorModal"]')?.click()`);
-    await sleep(150);
-    await cdp.send('Emulation.setDeviceMetricsOverride', {
-      width: 1120,
-      height: 900,
-      deviceScaleFactor: 1,
-      mobile: false
-    });
     await sleep(300);
-    const narrowCheck = await cdp.evalJs(`(() => {
-      const keys = document.querySelectorAll('#pianoKeyboard .wf-key').length;
-      return { keys, octaves: keys / 12, range: document.getElementById('octaveRangeLabel')?.textContent?.trim() };
+
+    // 4. Test 3x3 Grid + 1.0s Maximum Fade-Out with 9 Populated Slots!
+    await cdp.evalJs(`(() => {
+      document.querySelector('.stage-grid-pill[data-grid-mode="3x3"]')?.click();
+      const fadeSlider = document.getElementById('stageFadeSlider');
+      fadeSlider.value = '1.0';
+      fadeSlider.dispatchEvent(new Event('input', { bubbles: true }));
+      fadeSlider.dispatchEvent(new Event('change', { bubbles: true }));
     })()`);
-    console.log('Responsive Narrow Viewport Check (1120px):', narrowCheck);
+    await sleep(220);
+
+    for (const code of ['KeyA', 'KeyW', 'KeyS', 'KeyD', 'KeyF', 'KeyG', 'KeyH', 'KeyJ', 'KeyK']) {
+      await cdp.evalJs(`window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: 'a', bubbles: true }))`);
+      await sleep(55);
+    }
+    await sleep(350);
+
+    const shot3Audit = await cdp.evalJs(`(() => ({
+      occupiedSlots: document.querySelectorAll('#polyVideoGrid .stage-slot-unit.is-occupied').length,
+      fadeText: document.getElementById('stageFadeReadout')?.textContent?.trim()
+    }))()`);
+    console.log('Shot 3 Audit (3x3 Nine Slots + 1.0s Fade):', shot3Audit);
+
+    await cdp.savePng(
+      path.join(SCREENSHOTS_DIR, '03_stage-3x3-nine-tiles-with-long-fade.png')
+    );
 
     if (cdp.consoleErrors.length > 0) {
       throw new Error(`Console exceptions thrown: ${cdp.consoleErrors.join('; ')}`);

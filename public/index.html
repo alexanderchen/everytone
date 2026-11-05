@@ -30,6 +30,34 @@
       </div>
 
       <div class="explorer-scroll-list" id="explorerList"></div>
+
+      <!-- Discreet Stage Display Config (Visible Only When Sidebar Menu Is Open) -->
+      <div class="explorer-stage-config" id="explorerStageConfig">
+        <div class="stage-cfg-row">
+          <span class="stage-cfg-label">Grid</span>
+          <div class="stage-grid-pills" role="group" aria-label="Foreground stage tile grid">
+            <button type="button" class="stage-grid-pill is-active" data-grid-mode="3x1" title="Single row of 3 film tiles">3×1</button>
+            <button type="button" class="stage-grid-pill" data-grid-mode="2x2" title="2×2 grid (4 film tiles)">2×2</button>
+            <button type="button" class="stage-grid-pill" data-grid-mode="3x2" title="Double row of 3 film tiles (6 tiles)">3×2</button>
+            <button type="button" class="stage-grid-pill" data-grid-mode="3x3" title="3×3 grid (9 film tiles)">3×3</button>
+          </div>
+        </div>
+        <div class="stage-cfg-row">
+          <span class="stage-cfg-label">Fade</span>
+          <div class="stage-fade-wrap" title="Visual fade-out duration when releasing notes (0.2s to 1.0s)">
+            <input
+              id="stageFadeSlider"
+              type="range"
+              min="0.2"
+              max="1.0"
+              step="0.1"
+              value="0.2"
+              class="stage-fade-slider"
+            />
+            <span class="stage-fade-val" id="stageFadeReadout">0.2s</span>
+          </div>
+        </div>
+      </div>
     </aside>
 
     <main class="performance-canvas" id="videoStage">
@@ -45,6 +73,30 @@
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit" data-slot="2">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="3">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="4">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="5">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="6">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="7">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="8">
           <div class="stage-slot-video"></div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
@@ -86,6 +138,11 @@
             Load MIDI
           </button>
           <span id="midiFileLabel" class="midi-file-label">No MIDI</span>
+          <div class="midi-transpose-ctrl" title="Transpose MIDI file by whole octaves">
+            <button id="midiOctDownBtn" type="button" class="midi-oct-btn" title="Transpose MIDI down 1 octave">−</button>
+            <span id="midiOctReadout" class="midi-oct-readout">0 oct</span>
+            <button id="midiOctUpBtn" type="button" class="midi-oct-btn" title="Transpose MIDI up 1 octave">+</button>
+          </div>
         </div>
 
         <div class="transport-scrub-row">
@@ -161,7 +218,7 @@
               spellcheck="false"
               placeholder="group name"
             />
-            <svg class="group-edit-pencil" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <svg class="group-edit-pencil local-only-btn" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M11.4 2.4a1.5 1.5 0 0 1 2.1 2.1L5.4 12.6 2 13.6l1-3.4 8.4-7.8z"></path>
             </svg>
           </div>
@@ -360,13 +417,13 @@
         </div>
       </div>
 
-      <div class="trim-modal-footer">
-        <button id="inspectorTrashClipBtn" class="ghost-btn small danger-text" type="button" title="Move this sample clip to _trash/">
+      <div class="trim-modal-footer local-only-btn">
+        <button id="inspectorTrashClipBtn" class="ghost-btn small danger-text local-only-btn" type="button" title="Move this sample clip to _trash/">
           Move Sample to Trash
         </button>
 
         <div class="trim-footer-right">
-          <button id="trimSaveBtn" type="button" class="trim-btn-primary">
+          <button id="trimSaveBtn" type="button" class="trim-btn-primary local-only-btn">
             ✓ Save Trim
           </button>
         </div>

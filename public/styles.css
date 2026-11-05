@@ -55,6 +55,21 @@ body.static-mode .local-only-btn {
   display: none !important;
 }
 
+body.static-mode .group-name-edit-wrap {
+  border-color: transparent !important;
+  background: transparent !important;
+  padding-left: 0 !important;
+  cursor: default !important;
+}
+
+body.static-mode .inspector-group-input,
+body.static-mode .inspector-slug-input {
+  border-color: transparent !important;
+  background: transparent !important;
+  pointer-events: none;
+  padding-left: 0 !important;
+}
+
 /* ============================================================================
    1. Upper Workspace: Left Collapsible Video File Explorer + Right 3D Stage
    ============================================================================ */
@@ -180,6 +195,117 @@ body.static-mode .local-only-btn {
 .explorer-scroll-list::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.18);
   border-radius: 3px;
+}
+
+/* Discreet Stage Display Config Footer (Visible Only When Sidebar Menu Is Open) */
+.explorer-stage-config {
+  flex-shrink: 0;
+  border-top: 1px solid var(--line-subtle);
+  background: #000000;
+  padding: 8px 12px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stage-cfg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 22px;
+}
+
+.stage-cfg-label {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.stage-grid-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stage-grid-pill {
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 3px;
+  border: 1px solid var(--line-dim);
+  background: #000000;
+  color: var(--text-2);
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.stage-grid-pill:hover {
+  color: var(--text-0);
+  border-color: var(--line-key);
+}
+
+.stage-grid-pill.is-active {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.72);
+  background: #121212;
+}
+
+.stage-fade-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex: 1 1 auto;
+  max-width: 158px;
+}
+
+.stage-fade-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1 1 auto;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--line-dim);
+  outline: none;
+  cursor: pointer;
+}
+
+.stage-fade-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #cfcfcf;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+
+.stage-fade-slider:hover::-webkit-slider-thumb {
+  background: #ffffff;
+  transform: scale(1.12);
+}
+
+.stage-fade-slider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #cfcfcf;
+  border: none;
+  cursor: pointer;
+}
+
+.stage-fade-val {
+  width: 26px;
+  text-align: right;
+  font-size: 10.5px;
+  color: var(--text-2);
+  flex-shrink: 0;
 }
 
 .explorer-cat-group {
@@ -355,11 +481,15 @@ body.static-mode .local-only-btn {
 
 /* --- Right Main 3D Stage Canvas --- */
 .performance-canvas {
+  --stage-cols: 3;
+  --stage-rows: 1;
   --tile-size: 260px;
   --spec-height: 40px;
   --slot-gap: 20px;
+  --row-gap: 10px;
   --strip-width: 820px;
   --strip-top: 40px;
+  --stage-fade-sec: 0.2s;
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
@@ -379,7 +509,7 @@ body.static-mode .local-only-btn {
   z-index: 0;
 }
 
-/* Upper 3-Up Video Slots (Positioned cleanly above the wide 3D tile grid, zero overlap) */
+/* Upper Configurable Stage Film Grid (3×1, 2×2, 3×2, 3×3 cleanly above the wide 3D tile grid) */
 .poly-video-strip {
   position: absolute;
   top: var(--strip-top);
@@ -388,16 +518,16 @@ body.static-mode .local-only-btn {
   z-index: 2;
   pointer-events: none;
   width: var(--strip-width);
-  display: flex;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: repeat(var(--stage-cols, 3), var(--tile-size));
+  column-gap: var(--slot-gap);
+  row-gap: var(--row-gap);
   justify-content: center;
-  gap: var(--slot-gap);
-  flex-shrink: 0;
+  align-items: start;
 }
 
 .stage-slot-unit {
   width: var(--tile-size);
-  flex: 0 0 var(--tile-size);
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -411,10 +541,10 @@ body.static-mode .local-only-btn {
   transition: none;
 }
 
-/* Smooth 0.20s visual fade-out on note release (freezes or keeps playing until faded) */
+/* Smooth configurable (0.2s – 1.0s) visual fade-out on note release (freezes or keeps playing until faded) */
 .stage-slot-unit.is-occupied.is-fading-out {
   opacity: 0;
-  transition: opacity 0.2s ease-out;
+  transition: opacity var(--stage-fade-sec, 0.2s) ease-out;
 }
 
 .stage-slot-video {
@@ -571,12 +701,12 @@ body.static-mode .local-only-btn {
   min-width: 0;
 }
 
-/* --- Zone 1 (Far Left): Compact MIDI Player & Scrubbable Play Bar --- */
+/* --- Zone 1 (Far Left): Compact MIDI Player, Octave Transpose & Scrubbable Play Bar --- */
 .transport-zone {
-  width: clamp(188px, 15.5vw, 228px);
+  width: clamp(218px, 16.6vw, 256px);
   flex-shrink: 0;
   border-right: 1px solid var(--line-dim);
-  padding: 10px 12px;
+  padding: 10px 11px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -586,13 +716,13 @@ body.static-mode .local-only-btn {
 .transport-top-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
 .midi-load-btn {
-  height: 25px;
-  padding: 0 9px;
+  height: 24px;
+  padding: 0 8px;
   border-radius: 3px;
   border: 1px solid var(--line-key);
   background: #000000;
@@ -619,6 +749,55 @@ body.static-mode .local-only-btn {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.midi-transpose-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.midi-oct-btn {
+  width: 20px;
+  height: 22px;
+  border-radius: 3px;
+  border: 1px solid var(--line-dim);
+  background: #000000;
+  color: var(--text-1);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+
+.midi-oct-btn:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: #ffffff;
+  background: #141414;
+}
+
+.midi-oct-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.midi-oct-readout {
+  min-width: 32px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.midi-oct-readout.is-shifted {
+  color: #ffffff;
+  font-weight: 600;
 }
 
 .transport-scrub-row {
@@ -891,6 +1070,21 @@ body.static-mode .local-only-btn {
 
 body.static-mode .local-only-btn {
   display: none !important;
+}
+
+body.static-mode .group-name-edit-wrap {
+  border-color: transparent !important;
+  background: transparent !important;
+  padding-left: 0 !important;
+  cursor: default !important;
+}
+
+body.static-mode .inspector-group-input,
+body.static-mode .inspector-slug-input {
+  border-color: transparent !important;
+  background: transparent !important;
+  pointer-events: none;
+  padding-left: 0 !important;
 }
 
 .cand-slug-title {

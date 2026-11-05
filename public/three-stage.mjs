@@ -3,9 +3,9 @@ import * as THREE from './vendor/three.module.min.js';
 // ============================================================================
 // Three.js 3D Stage Canvas
 // - Powered by THREE.Scene + THREE.PerspectiveCamera + THREE.InstancedBufferGeometry
-// - Compact 1px-gap B&W micro-thumbnail mosaic below the 3 large foreground videos
-// - Zero colored dots in idle; crisp outer note-colored stroke border when playing
-// - Dynamically hides tiles from muted/disabled videos & re-centers the stage cluster
+// - Compact 1px-gap B&W micro-thumbnail mosaic flush beneath the foreground film grid
+// - Zero colored dots in idle; crisp outer stroke border when playing or selected
+// - Percussion tiles use grayish border on trigger (#8a8a8a) & light gray when selected (#e2e2e2)
 // ============================================================================
 
 const CHROMATIC_HEX = [
@@ -22,17 +22,18 @@ const CHROMATIC_HEX = [
   '#a347bf', // A#
   '#ea57b2'  // B
 ];
-const PERC_HEX = '#8c95a4';
+const PERC_TRIGGER_HEX = '#8a8a8a';
+const PERC_SELECT_HEX = '#e2e2e2';
 
 function hexToNormRgb(hex) {
-  const clean = String(hex || PERC_HEX).replace('#', '');
+  const clean = String(hex || PERC_TRIGGER_HEX).replace('#', '');
   const n = parseInt(clean, 16);
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
 function getMidiColorHex(midi) {
   const m = Number.isFinite(midi) ? Math.round(midi) : 60;
-  if (m < 36) return PERC_HEX;
+  if (m < 36) return PERC_TRIGGER_HEX;
   return CHROMATIC_HEX[((m % 12) + 12) % 12];
 }
 
@@ -40,7 +41,7 @@ const TILE_VERT_SHADER = `
 attribute vec3 iOffsetScale; // x: worldX, y: worldY, z: cellSize
 attribute vec4 iUvRect;      // u0, v0, u1, v1
 attribute vec2 iState;       // x: activeAmount, y: hoverAmount
-attribute vec3 iNoteColor;   // r, g, b normalized note color
+attribute vec3 iNoteColor;   // r, g, b normalized border color
 
 varying vec2 vUv;
 varying float vActive;
@@ -84,7 +85,7 @@ void main() {
   float idleAlpha = mix(0.42, 0.74, hoverAmt);
   vec3 idleColor = mix(uBgColor, bwRgb, idleAlpha);
 
-  // Active / playing state: vivid full-color thumbnail at 100% opacity
+  // Active / selected state: vivid full-color thumbnail at 100% opacity
   vec3 activeColor = clamp(texRgb * 1.18 + 0.02, 0.0, 1.0);
 
   float t = smoothstep(0.0, 1.0, clamp(vActive, 0.0, 1.0));
@@ -97,7 +98,7 @@ void main() {
 const BORDER_VERT_SHADER = `
 attribute vec3 iOffsetScale; // x: worldX, y: worldY, z: cellSize
 attribute vec2 iState;       // x: activeAmount, y: hoverAmount
-attribute vec3 iNoteColor;   // r, g, b normalized note color
+attribute vec3 iNoteColor;   // r, g, b normalized border color
 
 varying vec2 vLocalPx;
 varying float vCellPx;
@@ -244,6 +245,8 @@ export function createThreeStage({
 
   let items = [];
   let activeValues = new Float32Array(MAX_INSTANCES);
+  let selectedSliceId = null;
+  let fadeOutSec = 0.20;
 
   let cssW = 1;
   let cssH = 1;
@@ -251,8 +254,8 @@ export function createThreeStage({
   let layoutSpec = {
     stripW: 0,
     topStripH: 0,
-    betweenGap: 20,
-    marginY: 24
+    betweenGap: 16,
+    marginY: 20
   };
   let layout = {
     cols: 1,
@@ -273,6 +276,20 @@ export function createThreeStage({
   let draggedAcrossMultiple = false;
   let rafId = null;
   let lastFrameMs = 0;
+
+  function syncNoteColors() {
+    const N = Math.min(items.length, MAX_INSTANCES);
+    for (let i = 0; i < N; i++) {
+      const it = items[i];
+      const hex = it.sliceId === selectedSliceId ? it.selectColorHex : it.triggerColorHex;
+      const [nr, ng, nb] = hexToNormRgb(hex);
+      const o3 = i * 3;
+      noteColorArray[o3] = nr;
+      noteColorArray[o3 + 1] = ng;
+      noteColorArray[o3 + 2] = nb;
+    }
+    attrNoteColor.needsUpdate = true;
+  }
 
   function syncInstanceTransformsAndUvs() {
     const N = Math.min(items.length, MAX_INSTANCES);
@@ -297,7 +314,8 @@ export function createThreeStage({
       offsetScaleArray[o3 + 1] = wy;
       offsetScaleArray[o3 + 2] = cell;
 
-      const [nr, ng, nb] = hexToNormRgb(it.colorHex);
+      const hex = it.sliceId === selectedSliceId ? it.selectColorHex : it.triggerColorHex;
+      const [nr, ng, nb] = hexToNormRgb(hex);
       noteColorArray[o3] = nr;
       noteColorArray[o3 + 1] = ng;
       noteColorArray[o3 + 2] = nb;
@@ -343,8 +361,8 @@ export function createThreeStage({
 
     const N = Math.min(items.length, MAX_INSTANCES);
     const topStripH = Math.max(0, Number(layoutSpec.topStripH) || 0);
-    const betweenGap = topStripH > 0 ? Math.max(14, Number(layoutSpec.betweenGap) || 20) : 0;
-    const marginY = Math.max(12, Number(layoutSpec.marginY) || 20);
+    const betweenGap = topStripH > 0 ? Math.max(10, Number(layoutSpec.betweenGap) || 14) : 0;
+    const marginY = Math.max(10, Number(layoutSpec.marginY) || 16);
     const gap = 1; // 1px margin between micro-thumbnails for ultra-compact cluster
 
     if (N === 0) {
@@ -365,44 +383,44 @@ export function createThreeStage({
     }
 
     const targetW = Math.max(
-      180,
-      Math.min(cssW - 32, Number(layoutSpec.stripW) > 0 ? Number(layoutSpec.stripW) : Math.round(cssW * 0.80))
+      160,
+      Math.min(cssW - 24, Number(layoutSpec.stripW) > 0 ? Number(layoutSpec.stripW) : Math.round(cssW * 0.80))
     );
-    const availH = Math.max(44, cssH - topStripH - betweenGap - marginY * 2);
-    const maxCellPx = 13.5;
-    const idealCellPx = 12.0;
+    const availH = Math.max(32, cssH - topStripH - betweenGap - marginY * 2);
+    const maxCellPx = 14.0;
+    const idealCellPx = Math.min(12.0, Math.max(7.5, targetW / 76));
 
     let bestCols = N;
     let bestCell = idealCellPx;
 
-    // If all active tiles fit on a single compact row at ~12.5px, center that single row cleanly
-    if (N * idealCellPx + (N - 1) * gap <= targetW) {
+    // Only if N is very small (all tiles fit on 1 row without exceeding maxCellPx), center 1 compact row
+    if (N * maxCellPx + (N - 1) * gap <= targetW) {
       bestCols = N;
       bestCell = Math.min(maxCellPx, availH);
     } else {
+      // Otherwise choose cols so cell = (targetW - (cols - 1) * gap) / cols makes gridW === targetW FLUSH!
       let bestScore = -1e9;
-      const minCols = Math.max(12, Math.floor(targetW / (maxCellPx + gap)));
-      const maxCols = Math.min(N, Math.max(minCols + 1, Math.floor(targetW / (6 + gap))));
+      const minCols = Math.max(10, Math.ceil((targetW + gap) / (maxCellPx + gap)));
+      const maxCols = Math.min(N, Math.max(minCols + 1, Math.floor((targetW + gap) / (4.5 + gap))));
 
       for (let cols = minCols; cols <= maxCols; cols++) {
         const rows = Math.ceil(N / cols);
         const cellByW = (targetW - (cols - 1) * gap) / cols;
-        const cellByH = (availH - (rows - 1) * gap) / rows;
-        const cell = Math.min(maxCellPx, cellByW, cellByH);
-        if (cell < 5) continue;
+        if (cellByW < 4.5 || cellByW > maxCellPx + 0.01) continue;
 
-        const usedW = cols * cell + (cols - 1) * gap;
-        const widthFill = usedW / Math.max(1, targetW);
+        const neededH = rows * cellByW + (rows - 1) * gap;
+        const fitsH = neededH <= availH;
+        const overflowPenalty = fitsH ? 0 : (neededH - availH) * 4.0;
+
         const lastRowCount = N - (rows - 1) * cols;
         const lastRowFill = lastRowCount / cols;
-        const sizeCloseness = 1.0 - Math.min(1.0, Math.abs(cell - idealCellPx) / 8.0);
+        const sizeCloseness = 1.0 - Math.min(1.0, Math.abs(cellByW - idealCellPx) / 7.0);
 
-        // Favor spanning the full 3-video width in just a few compact rows (~5–6 rows at 439 tiles)
-        const score = widthFill * 52 + sizeCloseness * 18 + lastRowFill * 6 - rows * 1.4;
+        const score = sizeCloseness * 28 + lastRowFill * 9 - rows * 1.35 - overflowPenalty;
         if (score > bestScore) {
           bestScore = score;
           bestCols = cols;
-          bestCell = cell;
+          bestCell = fitsH ? cellByW : Math.max(4.0, Math.min(cellByW, (availH - (rows - 1) * gap) / rows));
         }
       }
     }
@@ -411,7 +429,7 @@ export function createThreeStage({
     const gridW = bestCols * bestCell + (bestCols - 1) * gap;
     const gridH = rows * bestCell + (rows - 1) * gap;
     const totalStackH = topStripH + (topStripH > 0 ? betweenGap : 0) + gridH;
-    const stackTopY = Math.max(12, Math.round((cssH - totalStackH) * 0.5));
+    const stackTopY = Math.max(10, Math.round((cssH - totalStackH) * 0.5));
     const originX = (cssW - gridW) * 0.5;
     const originY = stackTopY + topStripH + (topStripH > 0 ? betweenGap : 0);
 
@@ -441,13 +459,35 @@ export function createThreeStage({
       }
     }
 
+    const assignedBySliceId = new Map();
+    if (catalog?.keyboardMap) {
+      for (const [midiStr, entry] of Object.entries(catalog.keyboardMap)) {
+        const m = Number(midiStr);
+        for (const c of entry?.candidates || []) {
+          if (c?.sliceId) {
+            assignedBySliceId.set(c.sliceId, {
+              midi: Number.isFinite(m) ? m : Number(c.midi ?? 60),
+              isPerc: m < 36 || Boolean(c.isPerc)
+            });
+          }
+        }
+      }
+    }
+
     if (!catalog?.videos?.length) {
       items = atlasManifest.items
         .filter(it => !(isVideoDisabled && isVideoDisabled(it.videoId)))
-        .map(it => ({
-          ...it,
-          colorHex: getMidiColorHex(it.midi ?? 60)
-        }));
+        .map(it => {
+          const midi = Number(it.midi ?? 60);
+          const isPerc = midi < 36 || String(it.category || '').toLowerCase() === 'percussion';
+          return {
+            ...it,
+            midi,
+            isPerc,
+            triggerColorHex: isPerc ? PERC_TRIGGER_HEX : getMidiColorHex(midi),
+            selectColorHex: isPerc ? PERC_SELECT_HEX : getMidiColorHex(midi)
+          };
+        });
     } else {
       const activeVideos = catalog.videos
         .filter(v => !v.deleted && !(isVideoDisabled && isVideoDisabled(v.id)))
@@ -464,9 +504,16 @@ export function createThreeStage({
         for (const s of slices) {
           const uvEntry = atlasBySliceId.get(s.id);
           if (!uvEntry) continue;
-          const midi = Number.isFinite(s.manualMidi)
-            ? Number(s.manualMidi)
-            : Number(s.midi ?? uvEntry.midi ?? 60);
+          const assigned = assignedBySliceId.get(s.id);
+          const midi = assigned
+            ? assigned.midi
+            : Number.isFinite(s.manualMidi)
+              ? Number(s.manualMidi)
+              : Number(s.midi ?? uvEntry.midi ?? 60);
+          const isPerc = assigned
+            ? assigned.isPerc
+            : v.category === 'percussion' || Boolean(s.percBucket) || midi < 36;
+
           nextItems.push({
             ...uvEntry,
             videoId: v.id,
@@ -474,16 +521,24 @@ export function createThreeStage({
             videoSlug: v.slug,
             groupName: v.groupName || v.slug,
             midi,
-            colorHex: getMidiColorHex(midi)
+            isPerc,
+            triggerColorHex: isPerc ? PERC_TRIGGER_HEX : getMidiColorHex(midi),
+            selectColorHex: isPerc ? PERC_SELECT_HEX : getMidiColorHex(midi)
           });
         }
       }
       items = nextItems;
     }
 
+    if (selectedSliceId && !items.some(it => it.sliceId === selectedSliceId)) {
+      selectedSliceId = null;
+    }
+
     activeValues.fill(0);
     for (let i = 0; i < items.length && i < MAX_INSTANCES; i++) {
-      activeValues[i] = prevActiveBySlice.get(items[i].sliceId) || 0;
+      const it = items[i];
+      activeValues[i] =
+        it.sliceId === selectedSliceId ? 1.0 : prevActiveBySlice.get(it.sliceId) || 0;
     }
     if (hoveredIdx >= items.length) hoveredIdx = -1;
 
@@ -504,7 +559,7 @@ export function createThreeStage({
     const aw = atlasManifest.atlasWidth;
     const ah = atlasManifest.atlasHeight;
 
-    // Pass 1: all square thumbnails (idle B&W, active vivid color)
+    // Pass 1: all square thumbnails (idle B&W, active/selected vivid color)
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const col = i % cols;
@@ -525,7 +580,7 @@ export function createThreeStage({
       ctx2d.drawImage(atlasImage, sx, sy, sw, sh, x, y, cell, cell);
     }
 
-    // Pass 2: outer 2px note-colored stroke border on active tiles
+    // Pass 2: outer 2px stroke border on active/selected tiles
     ctx2d.filter = 'none';
     ctx2d.lineWidth = 2;
     for (let i = 0; i < items.length; i++) {
@@ -536,7 +591,8 @@ export function createThreeStage({
       const x = originX + col * stride;
       const y = originY + row * stride;
       ctx2d.globalAlpha = Math.min(1, activeValues[i] / 0.35);
-      ctx2d.strokeStyle = it.colorHex || PERC_HEX;
+      ctx2d.strokeStyle =
+        it.sliceId === selectedSliceId ? it.selectColorHex : it.triggerColorHex;
       ctx2d.strokeRect(x - 1, y - 1, cell + 2, cell + 2);
     }
     ctx2d.globalAlpha = 1.0;
@@ -550,12 +606,16 @@ export function createThreeStage({
     const activeSet = getActiveSliceIds ? getActiveSliceIds() : new Set();
     let needsMoreFrames = false;
     const N = Math.min(items.length, MAX_INSTANCES);
+    const decayTime = Math.max(0.18, Number(fadeOutSec) || 0.20);
 
     for (let i = 0; i < N; i++) {
-      const target = activeSet.has(items[i].sliceId) ? 1.0 : 0.0;
+      const isSelected = selectedSliceId !== null && items[i].sliceId === selectedSliceId;
+      const target = isSelected || activeSet.has(items[i].sliceId) ? 1.0 : 0.0;
       const cur = activeValues[i];
-      if (Math.abs(target - cur) > 0.004) {
-        const speed = target > cur ? dt / 0.065 : dt / 0.20;
+      if (isSelected) {
+        activeValues[i] = 1.0;
+      } else if (Math.abs(target - cur) > 0.004) {
+        const speed = target > cur ? dt / 0.055 : dt / decayTime;
         activeValues[i] = target > cur ? Math.min(1.0, cur + speed) : Math.max(0.0, cur - speed);
         if (Math.abs(target - activeValues[i]) > 0.004) {
           needsMoreFrames = true;
@@ -742,6 +802,48 @@ export function createThreeStage({
     loadAtlas,
     getItemCount() {
       return Math.min(items.length, MAX_INSTANCES);
+    },
+    getLayout() {
+      return { ...layout };
+    },
+    setSelectedSliceId(nextSliceId = null) {
+      const normalized = nextSliceId ? String(nextSliceId) : null;
+      if (selectedSliceId === normalized) return;
+      selectedSliceId = normalized;
+      syncNoteColors();
+      scheduleRender();
+    },
+    getSelectedSliceId() {
+      return selectedSliceId;
+    },
+    stepSelection(dCol = 0, dRow = 0) {
+      const N = Math.min(items.length, MAX_INSTANCES);
+      if (N === 0) return null;
+      let curIdx = selectedSliceId ? items.findIndex(it => it.sliceId === selectedSliceId) : -1;
+      if (curIdx < 0) curIdx = 0;
+
+      const cols = Math.max(1, layout.cols || 1);
+      let nextIdx = curIdx;
+      if (dRow === 0) {
+        nextIdx = Math.max(0, Math.min(N - 1, curIdx + dCol));
+      } else {
+        const curCol = curIdx % cols;
+        const curRow = (curIdx / cols) | 0;
+        const maxRow = ((N - 1) / cols) | 0;
+        const targetRow = Math.max(0, Math.min(maxRow, curRow + dRow));
+        nextIdx = Math.min(N - 1, targetRow * cols + curCol);
+      }
+
+      const chosen = items[nextIdx] || null;
+      if (chosen) {
+        selectedSliceId = chosen.sliceId;
+        syncNoteColors();
+        scheduleRender();
+      }
+      return chosen;
+    },
+    setFadeOutSec(nextSec = 0.2) {
+      fadeOutSec = Math.max(0.18, Math.min(1.2, Number(nextSec) || 0.2));
     },
     syncCatalog(catalog) {
       rebuildItemsFromCatalog(catalog);

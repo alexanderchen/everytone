@@ -16,7 +16,16 @@ const CHROMATIC_COLORS = [
   '#a347bf', // A#
   '#ea57b2'  // B
 ];
-const PERC_NOTE_COLOR = '#8c95a4';
+const PERC_NOTE_COLOR = '#8a8a8a';
+
+const STAGE_GRID_SPECS = {
+  '3x1': { cols: 3, rows: 1, slots: 3 },
+  '2x2': { cols: 2, rows: 2, slots: 4 },
+  '3x2': { cols: 3, rows: 2, slots: 6 },
+  '3x3': { cols: 3, rows: 3, slots: 9 }
+};
+const MIN_STAGE_FADE_SEC = 0.2;
+const MAX_STAGE_FADE_SEC = 1.0;
 
 const ACCIDENTAL_SEMITONES = new Set([1, 3, 6, 8, 10]);
 const TOUCH_LEFT_ACCIDENTALS = new Set([3, 8, 10]); // D#, G#, A# touch C#, F#, G#
@@ -61,9 +70,13 @@ const DEFAULT_UI_HOLD_SEC = 0.50; // Fixed simulated hold for mouse clicks & UI 
 const state = {
   catalog: null,
   selectedMidi: 60, // Defaults to C4
+  selectionTarget: 'keyboard', // 'keyboard' | 'tile' — determines active select border & arrow keys
+  selectedTileSliceId: null, // Active selected tile sliceId when selectionTarget === 'tile'
   auditionIndex: 0,
   chromeCollapsed: false,
   noteSamplesExpanded: false, // Collapsed by default on load so playing is uncluttered
+  stageGridMode: '3x1', // '3x1' | '2x2' | '3x2' | '3x3'
+  stageFadeSec: 0.20, // Configurable visual fade-out duration (0.2s to 1.0s)
   visibleOctaves: 6, // Responsively adjusts between 3 and 6 octaves based on keyboard width
   hasCustomKeyboardOctave: false,
   baseOctaveMidi: 36, // Leftmost visible octave of the bottom keyboard (e.g. C2 for C2–B7)
@@ -114,6 +127,18 @@ function clampVideoGainDb(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n)) return 0;
   return Math.max(-12, Math.min(12, Math.round(n)));
+}
+
+function normalizeStageGridMode(raw) {
+  const key = String(raw || '').toLowerCase();
+  return Object.prototype.hasOwnProperty.call(STAGE_GRID_SPECS, key) ? key : '3x1';
+}
+
+function clampStageFadeSec(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return MIN_STAGE_FADE_SEC;
+  const stepped = Math.round(n * 10) / 10;
+  return Math.max(MIN_STAGE_FADE_SEC, Math.min(MAX_STAGE_FADE_SEC, stepped));
 }
 
 function inferClientGroupName(videoOrSlug) {
@@ -177,6 +202,8 @@ function loadPrefsFromStorage() {
         videoGroups: {},
         sliceToggles: {},
         chromeCollapsed: false,
+        stageGridMode: '3x1',
+        stageFadeSec: 0.2,
         hasCustomKeyboardOctave: false,
         baseOctaveMidi: 36,
         qwertyOctaveMidi: 60
@@ -195,6 +222,8 @@ function loadPrefsFromStorage() {
       sliceToggles:
         parsed?.sliceToggles && typeof parsed.sliceToggles === 'object' ? parsed.sliceToggles : {},
       chromeCollapsed: Boolean(parsed?.chromeCollapsed ?? parsed?.explorerCollapsed),
+      stageGridMode: normalizeStageGridMode(parsed?.stageGridMode),
+      stageFadeSec: clampStageFadeSec(parsed?.stageFadeSec ?? 0.2),
       hasCustomKeyboardOctave: Boolean(parsed?.hasCustomKeyboardOctave),
       baseOctaveMidi: Number(parsed?.baseOctaveMidi ?? 36),
       qwertyOctaveMidi: normalizeQwertyOctaveMidi(parsed?.qwertyOctaveMidi ?? 60)
@@ -207,6 +236,8 @@ function loadPrefsFromStorage() {
       videoGroups: {},
       sliceToggles: {},
       chromeCollapsed: false,
+      stageGridMode: '3x1',
+      stageFadeSec: 0.2,
       hasCustomKeyboardOctave: false,
       baseOctaveMidi: 36,
       qwertyOctaveMidi: 60
@@ -222,6 +253,8 @@ function savePrefsToStorage() {
       videoGroups: state.videoGroupOverrides,
       sliceToggles: state.sliceToggleOverrides,
       chromeCollapsed: state.chromeCollapsed,
+      stageGridMode: state.stageGridMode,
+      stageFadeSec: state.stageFadeSec,
       hasCustomKeyboardOctave: state.hasCustomKeyboardOctave,
       baseOctaveMidi: state.baseOctaveMidi,
       qwertyOctaveMidi: state.qwertyOctaveMidi
@@ -368,10 +401,9 @@ async function loadAudioBuffer(url) {
 }
 
 // ============================================================================
-// Three.js 3D Stage + 3 Foreground Slots (0.20s Fade-Out) + Grayscale Screen Spectrograms
+// Three.js 3D Stage + Configurable Foreground Grid (3×1, 2×2, 3×2, 3×3) + Fade-Out
 // ============================================================================
-const STAGE_SLOT_COUNT = 3;
-const STAGE_FADE_OUT_MS = 200; // 0.20s smooth visual fade-out on note release
+const MAX_STAGE_SLOTS = 9;
 
 // Cropped low-rumble (< 130 Hz) + Mel-like perceptual frequency warp
 const SPEC_MIN_FREQ = 130;
@@ -409,15 +441,97 @@ let miniSpecAnimId = null;
 let threeStage = null;
 const miniSpecBitmapCache = new Map();
 
-const stageSlots = [
-  { occupied: false, fadingOut: false, fadeTimer: null, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null },
-  { occupied: false, fadingOut: false, fadeTimer: null, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null },
-  { occupied: false, fadingOut: false, fadeTimer: null, seq: 0, token: null, sliceKey: null, videoEl: null, voice: null, miniBitmap: null }
-];
+function createEmptyStageSlot() {
+  return {
+    occupied: false,
+    fadingOut: false,
+    fadeTimer: null,
+    seq: 0,
+    token: null,
+    sliceKey: null,
+    videoEl: null,
+    voice: null,
+    miniBitmap: null
+  };
+}
+
+const stageSlots = Array.from({ length: MAX_STAGE_SLOTS }, createEmptyStageSlot);
+
+function getActiveStageGridSpec() {
+  return STAGE_GRID_SPECS[state.stageGridMode] || STAGE_GRID_SPECS['3x1'];
+}
+
+function getActiveStageSlotCount() {
+  return getActiveStageGridSpec().slots;
+}
+
+function syncStageConfigUI() {
+  const mode = normalizeStageGridMode(state.stageGridMode);
+  const fadeSec = clampStageFadeSec(state.stageFadeSec);
+
+  document.querySelectorAll('.stage-grid-pill').forEach(btn => {
+    btn.classList.toggle('is-active', btn.dataset.gridMode === mode);
+  });
+
+  const fadeSlider = document.getElementById('stageFadeSlider');
+  if (fadeSlider && document.activeElement !== fadeSlider) {
+    fadeSlider.value = fadeSec.toFixed(1);
+  }
+  const fadeReadout = document.getElementById('stageFadeReadout');
+  if (fadeReadout) {
+    fadeReadout.textContent = `${fadeSec.toFixed(1)}s`;
+  }
+
+  const stageEl = document.getElementById('videoStage');
+  if (stageEl) {
+    stageEl.style.setProperty('--stage-fade-sec', `${fadeSec.toFixed(2)}s`);
+  }
+  threeStage?.setFadeOutSec?.(fadeSec);
+
+  const slotCount = getActiveStageSlotCount();
+  const grid = document.getElementById('polyVideoGrid');
+  if (grid) {
+    for (let i = 0; i < MAX_STAGE_SLOTS; i++) {
+      const unitEl = grid.querySelector(`.stage-slot-unit[data-slot="${i}"]`);
+      if (!unitEl) continue;
+      if (i < slotCount) {
+        unitEl.classList.remove('hidden');
+      } else {
+        if (stageSlots[i]?.occupied) {
+          if (stageSlots[i].voice) {
+            displaceStageSlotVoice(stageSlots[i].voice, false);
+          }
+          removeStageTile({
+            slotIdx: i,
+            token: stageSlots[i].token,
+            videoEl: stageSlots[i].videoEl
+          });
+        }
+        unitEl.classList.add('hidden');
+      }
+    }
+  }
+}
+
+function setStageGridMode(nextMode, persist = true) {
+  const normalized = normalizeStageGridMode(nextMode);
+  state.stageGridMode = normalized;
+  syncStageConfigUI();
+  updateStageTileSizes();
+  if (persist) savePrefsToStorage();
+}
+
+function setStageFadeSec(nextSec, persist = true) {
+  const clamped = clampStageFadeSec(nextSec);
+  state.stageFadeSec = clamped;
+  syncStageConfigUI();
+  if (persist) savePrefsToStorage();
+}
 
 function getActiveStageSliceIds() {
   const set = new Set();
-  for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
+  const slotCount = getActiveStageSlotCount();
+  for (let i = 0; i < slotCount; i++) {
     if (stageSlots[i].occupied && !stageSlots[i].fadingOut && stageSlots[i].sliceKey) {
       set.add(stageSlots[i].sliceKey);
     }
@@ -472,36 +586,50 @@ function updateStageTileSizes() {
   const grid = document.getElementById('polyVideoGrid');
   if (!stageEl || !grid) return;
 
+  const { cols, rows } = getActiveStageGridSpec();
   const stageW = Math.max(320, stageEl.clientWidth);
   const stageH = Math.max(240, stageEl.clientHeight);
-  const gap = stageW < 920 ? 14 : 20;
-  const specRatio = 0.145; // Flush half-height spectrogram directly beneath each video
+  const gap = stageW < 920 ? 12 : rows >= 3 ? 14 : rows === 2 ? 16 : 20;
+  const rowGap = rows > 1 ? (rows >= 3 ? 8 : 10) : 0;
+  const specRatio = rows >= 3 ? 0.13 : 0.145; // Flush spectrogram directly beneath each video
 
   const activeTiles = threeStage?.getItemCount?.() ?? 439;
-  const estCols = Math.max(24, Math.floor((stageW * 0.78) / 13));
-  const estRows = activeTiles > 0 ? Math.max(1, Math.ceil(activeTiles / estCols)) : 0;
-  const estGridH = estRows > 0 ? estRows * 12 + (estRows - 1) : 0;
+  const marginY = Math.max(12, Math.round(stageH * (rows >= 3 ? 0.024 : 0.034)));
+  const betweenGap = activeTiles > 0 ? Math.max(12, Math.round(stageH * (rows >= 3 ? 0.014 : 0.020))) : 0;
 
-  const marginY = Math.max(16, Math.round(stageH * 0.038));
-  const betweenGap = activeTiles > 0 ? Math.max(16, Math.round(stageH * 0.022)) : 0;
+  // Reserve clean vertical room for the flush micro-thumbnail mosaic underneath the grid
+  const estTileReserveH =
+    activeTiles > 0
+      ? rows >= 3
+        ? 54
+        : rows === 2
+          ? 64
+          : 76
+      : 0;
 
-  // Maximize the 3 foreground videos while keeping room for the compact 1px-gap tile rows below
-  const availTopH = Math.max(160, stageH - marginY * 2 - betweenGap - estGridH);
-  const maxSideByH = Math.floor(availTopH / (1 + specRatio));
+  const availTopH = Math.max(
+    140,
+    stageH - marginY * 2 - betweenGap - estTileReserveH - (rows - 1) * rowGap
+  );
+  const maxSideByH = Math.floor(availTopH / (rows * (1 + specRatio)));
 
-  const padX = Math.max(40, Math.round(stageW * 0.072));
-  const availW = Math.max(240, stageW - padX * 2 - gap * (STAGE_SLOT_COUNT - 1));
-  const side = Math.max(96, Math.min(388, Math.floor(Math.min(maxSideByH, availW / STAGE_SLOT_COUNT))));
-  const specH = Math.max(24, Math.round(side * specRatio));
-  const stripW = side * STAGE_SLOT_COUNT + gap * (STAGE_SLOT_COUNT - 1);
-  const topStripH = side + specH;
+  const padX = Math.max(32, Math.round(stageW * 0.065));
+  const availW = Math.max(200, stageW - padX * 2 - gap * (cols - 1));
+  const maxCap = rows === 1 ? 388 : rows === 2 ? 348 : 284;
+  const side = Math.max(68, Math.min(maxCap, Math.floor(Math.min(maxSideByH, availW / cols))));
+  const specH = Math.max(18, Math.round(side * specRatio));
+  const stripW = side * cols + gap * (cols - 1);
+  const topStripH = rows * (side + specH) + (rows - 1) * rowGap;
 
   currentStageTileSize = side;
   currentMiniSpecH = specH;
 
+  stageEl.style.setProperty('--stage-cols', String(cols));
+  stageEl.style.setProperty('--stage-rows', String(rows));
   stageEl.style.setProperty('--tile-size', `${side}px`);
   stageEl.style.setProperty('--spec-height', `${specH}px`);
   stageEl.style.setProperty('--slot-gap', `${gap}px`);
+  stageEl.style.setProperty('--row-gap', `${rowGap}px`);
   stageEl.style.setProperty('--strip-width', `${stripW}px`);
 
   const gridLayout = threeStage?.setStageLayoutSpec({
@@ -521,21 +649,22 @@ function getSliceIdentityKey(slice) {
 }
 
 function allocateStageSlotIndex(sliceKey) {
+  const slotCount = getActiveStageSlotCount();
   // 1. Re-triggering the same sample overrides its own slot (including if currently fading out)
   if (sliceKey) {
-    for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
+    for (let i = 0; i < slotCount; i++) {
       if (stageSlots[i].occupied && stageSlots[i].sliceKey === sliceKey) {
         return i;
       }
     }
   }
   // 2. Empty slot
-  for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
+  for (let i = 0; i < slotCount; i++) {
     if (!stageSlots[i].occupied) return i;
   }
   // 3. Interrupt a slot that is already fading out
   let oldestFadingIdx = -1;
-  for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
+  for (let i = 0; i < slotCount; i++) {
     if (stageSlots[i].fadingOut) {
       if (oldestFadingIdx === -1 || stageSlots[i].seq < stageSlots[oldestFadingIdx].seq) {
         oldestFadingIdx = i;
@@ -546,7 +675,7 @@ function allocateStageSlotIndex(sliceKey) {
 
   // 4. Steal oldest frozen freeze-frame slot
   let oldestFrozenIdx = -1;
-  for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
+  for (let i = 0; i < slotCount; i++) {
     if (stageSlots[i].voice?.audioCompleted) {
       if (oldestFrozenIdx === -1 || stageSlots[i].seq < stageSlots[oldestFrozenIdx].seq) {
         oldestFrozenIdx = i;
@@ -557,7 +686,7 @@ function allocateStageSlotIndex(sliceKey) {
 
   // 5. Steal oldest playing slot
   let oldestIdx = 0;
-  for (let i = 1; i < STAGE_SLOT_COUNT; i++) {
+  for (let i = 1; i < slotCount; i++) {
     if (stageSlots[i].seq < stageSlots[oldestIdx].seq) {
       oldestIdx = i;
     }
@@ -701,9 +830,10 @@ function fadeOutStageTile(tileObj) {
   threeStage?.notifyActivity();
   ensureMiniSpecAnimLoop();
 
+  const fadeMs = Math.round(clampStageFadeSec(state.stageFadeSec) * 1000);
   slotState.fadeTimer = setTimeout(() => {
     removeStageTile(tileObj);
-  }, STAGE_FADE_OUT_MS + 10);
+  }, fadeMs + 20);
 }
 
 function removeStageTile(tileObj) {
@@ -922,7 +1052,8 @@ function ensureMiniSpecAnimLoop() {
     const now = audioCtx.currentTime;
     let anyActive = false;
 
-    for (let i = 0; i < STAGE_SLOT_COUNT; i++) {
+    const slotCount = getActiveStageSlotCount();
+    for (let i = 0; i < slotCount; i++) {
       const slot = stageSlots[i];
       if (!slot.occupied || !slot.voice || !slot.miniBitmap) continue;
       drawSlotMiniSpecFrame(i, now);
@@ -1127,7 +1258,7 @@ function applyVoiceReleaseRamp(voice, customReleaseSec = null) {
   if (voice.audioCompleted || (voice.startedAt && voice.naturalDur && now - voice.startedAt >= voice.naturalDur)) {
     voice.audioCompleted = true;
     voice.releaseStartCtxTime = now;
-    voice.releaseDur = 0.2;
+    voice.releaseDur = clampStageFadeSec(state.stageFadeSec);
     if (voice.tileObj) {
       fadeOutStageTile(voice.tileObj);
     }
@@ -1775,9 +1906,50 @@ function updateSelectedNoteChipUI() {
   }
 }
 
-function selectKeyForConfig(midi, shouldTapPreview = false) {
+function setSelectionFocus(target, sliceId = null) {
+  state.selectionTarget = target === 'tile' ? 'tile' : 'keyboard';
+  state.selectedTileSliceId =
+    state.selectionTarget === 'tile' && sliceId ? String(sliceId) : null;
+  threeStage?.setSelectedSliceId?.(state.selectedTileSliceId);
+
+  document.querySelectorAll('.wf-key').forEach(el => {
+    const m = Number(el.dataset.midi);
+    el.classList.toggle(
+      'selected-key',
+      state.selectionTarget === 'keyboard' && m === state.selectedMidi
+    );
+  });
+}
+
+function stepTileSelection(dCol, dRow) {
+  const nextItem = threeStage?.stepSelection?.(dCol, dRow);
+  if (!nextItem) return;
+  setSelectionFocus('tile', nextItem.sliceId);
+  const cand = resolvePlayableSliceById(nextItem.sliceId);
+  if (!cand) return;
+  state.lastPlayedVideoId = cand.videoId;
+  state.lastPlayedSliceId = cand.sliceId;
+  if (cand.midi >= MIN_MIDI && cand.midi <= MAX_MIDI) {
+    selectKeyForConfig(cand.midi, false, true);
+  }
+  startHeldVoice({
+    triggerId: 'tile_cursor_preview',
+    midi: cand.midi,
+    slice: cand,
+    playbackRate: cand.playbackRate || 1.0,
+    velocity: 0.92
+  });
+  scheduleDefaultVoiceGate('tile_cursor_preview', DEFAULT_UI_HOLD_SEC);
+}
+
+function selectKeyForConfig(midi, shouldTapPreview = false, keepTileFocus = false) {
   const clamped = Math.max(MIN_MIDI, Math.min(MAX_MIDI, midi));
   state.selectedMidi = clamped;
+  if (!keepTileFocus) {
+    state.selectionTarget = 'keyboard';
+    state.selectedTileSliceId = null;
+    threeStage?.setSelectedSliceId?.(null);
+  }
 
   const visCands = getVisibleCandidatesForMidi(clamped);
   if (visCands.length > 0) {
@@ -1789,10 +1961,10 @@ function selectKeyForConfig(midi, shouldTapPreview = false) {
 
   // If stepping with arrows moves outside visible keyboard range, scroll octave window to follow
   const visSpan = state.visibleOctaves * 12;
-  if (clamped < state.baseOctaveMidi) {
+  if (!keepTileFocus && clamped < state.baseOctaveMidi) {
     state.baseOctaveMidi = clampKeyboardStartMidi(Math.floor(clamped / 12) * 12, state.visibleOctaves);
     renderPianoKeyboard();
-  } else if (clamped >= state.baseOctaveMidi + visSpan) {
+  } else if (!keepTileFocus && clamped >= state.baseOctaveMidi + visSpan) {
     state.baseOctaveMidi = clampKeyboardStartMidi(
       Math.floor(clamped / 12) * 12 - (state.visibleOctaves - 1) * 12,
       state.visibleOctaves
@@ -1801,7 +1973,10 @@ function selectKeyForConfig(midi, shouldTapPreview = false) {
   } else {
     document.querySelectorAll('.wf-key').forEach(el => {
       const m = Number(el.dataset.midi);
-      el.classList.toggle('selected-key', m === clamped);
+      el.classList.toggle(
+        'selected-key',
+        state.selectionTarget === 'keyboard' && m === clamped
+      );
     });
   }
 
@@ -1906,7 +2081,7 @@ function renderPianoKeyboard() {
       isAccidental ? 'accidental' : 'natural',
       isAccidental && TOUCH_LEFT_ACCIDENTALS.has(pc) ? 'touch-left' : '',
       isFirstNatural ? 'first-natural' : '',
-      midi === state.selectedMidi ? 'selected-key' : '',
+      state.selectionTarget === 'keyboard' && midi === state.selectedMidi ? 'selected-key' : '',
       isMidiStillHeld(midi) ? 'active-play' : ''
     ]
       .filter(Boolean)
@@ -2022,6 +2197,10 @@ function renderSelectedKeyDeck() {
       document.querySelectorAll('.candidate-card').forEach((el, i) => {
         el.classList.toggle('audition-focus', i === idx);
       });
+      if (state.isStaticMode) {
+        triggerDefaultCandidateGate(`ui_cand_${cand.sliceId}`, midi, cand, idx);
+        return;
+      }
       openTrimModal(cand.videoId, cand.sliceId, cand.playbackRate || 1.0);
     });
 
@@ -2355,8 +2534,11 @@ function renderVideoInspectorModal() {
 
   const groupName = getVideoGroupName(focusedVideo);
   const groupInput = document.getElementById('videoInspGroupInput');
-  if (groupInput && document.activeElement !== groupInput) {
-    groupInput.value = groupName;
+  if (groupInput) {
+    groupInput.readOnly = Boolean(state.isStaticMode);
+    if (document.activeElement !== groupInput) {
+      groupInput.value = groupName;
+    }
   }
 
   const badgeEl = document.getElementById('videoInspBadge');
@@ -3580,6 +3762,7 @@ function refreshAllUI() {
   renderPianoKeyboard();
   renderSelectedKeyDeck();
   threeStage?.syncCatalog(state.catalog);
+  syncStageConfigUI();
   updateStageTileSizes();
 }
 
@@ -3595,11 +3778,15 @@ function stepToAdjacentPopulatedKey(dir) {
 }
 
 // ============================================================================
-// Left Bottom Zone: MIDI File Transport & Scrubbable Play Bar
+// Left Bottom Zone: MIDI File Transport, Whole-Octave Transpose & Scrub Bar
 // ============================================================================
+const MIN_MIDI_TRANSPOSE_OCTAVES = -4;
+const MAX_MIDI_TRANSPOSE_OCTAVES = 4;
+
 const midiPlayer = {
   fileName: '',
   parsed: null,
+  transposeOctaves: 0,
   playing: false,
   scrubbing: false,
   elapsedSec: 0,
@@ -3618,6 +3805,30 @@ function formatClockSec(sec) {
   return `${mins}:${rem}`;
 }
 
+function resolveTransposedMidiNote(ev) {
+  if (!ev) return null;
+  if (ev.channel === 9) return ev.midi; // Never pitch-shift General MIDI drum channel 10
+  const octShift = Math.round(midiPlayer.transposeOctaves || 0);
+  if (octShift === 0) return ev.midi;
+  const shifted = ev.midi + octShift * 12;
+  const floorMidi = ev.midi >= 36 ? 36 : MIN_MIDI;
+  if (shifted < floorMidi || shifted > MAX_MIDI) return null;
+  return shifted;
+}
+
+function shiftMidiTransposeOctave(deltaOctaves) {
+  const next = Math.max(
+    MIN_MIDI_TRANSPOSE_OCTAVES,
+    Math.min(MAX_MIDI_TRANSPOSE_OCTAVES, Math.round((midiPlayer.transposeOctaves || 0) + deltaOctaves))
+  );
+  if (next === midiPlayer.transposeOctaves) return;
+  if (midiPlayer.playing || midiPlayer.activeTriggerIds.size > 0) {
+    silenceAllMidiTransportVoices(0.08);
+  }
+  midiPlayer.transposeOctaves = next;
+  updateMidiTransportUi();
+}
+
 function updateMidiTransportUi() {
   const labelEl = document.getElementById('midiFileLabel');
   const playBtn = document.getElementById('midiPlayPauseBtn');
@@ -3626,6 +3837,9 @@ function updateMidiTransportUi() {
   const scrubFill = document.getElementById('midiScrubFill');
   const scrubThumb = document.getElementById('midiScrubThumb');
   const timeReadout = document.getElementById('midiTimeReadout');
+  const octDownBtn = document.getElementById('midiOctDownBtn');
+  const octUpBtn = document.getElementById('midiOctUpBtn');
+  const octReadout = document.getElementById('midiOctReadout');
 
   const hasMidi = Boolean(midiPlayer.parsed);
   if (playBtn) {
@@ -3638,6 +3852,18 @@ function updateMidiTransportUi() {
   if (scrubTrack) {
     scrubTrack.classList.toggle('is-disabled', !hasMidi);
     scrubTrack.classList.toggle('is-scrubbing', midiPlayer.scrubbing);
+  }
+
+  const oct = Math.round(midiPlayer.transposeOctaves || 0);
+  if (octDownBtn) {
+    octDownBtn.disabled = oct <= MIN_MIDI_TRANSPOSE_OCTAVES;
+  }
+  if (octUpBtn) {
+    octUpBtn.disabled = oct >= MAX_MIDI_TRANSPOSE_OCTAVES;
+  }
+  if (octReadout) {
+    octReadout.textContent = oct > 0 ? `+${oct} oct` : `${oct} oct`;
+    octReadout.classList.toggle('is-shifted', oct !== 0);
   }
 
   const dur = hasMidi ? Math.max(0.01, Number(midiPlayer.parsed.durationSec || 0.01)) : 1;
@@ -3720,10 +3946,13 @@ function tickMidiTransport() {
           }
         }
       } else if (ev.type === 'noteOn') {
-        const tid = `midifile_${ev.channel}_${ev.midi}`;
-        midiPlayer.pendingPedalIds.delete(tid);
-        midiPlayer.activeTriggerIds.add(tid);
-        startPianoKeyHold(tid, ev.midi, ev.velocity, false);
+        const playedMidi = resolveTransposedMidiNote(ev);
+        if (playedMidi !== null) {
+          const tid = `midifile_${ev.channel}_${ev.midi}`;
+          midiPlayer.pendingPedalIds.delete(tid);
+          midiPlayer.activeTriggerIds.add(tid);
+          startPianoKeyHold(tid, playedMidi, ev.velocity, false);
+        }
       } else if (ev.type === 'noteOff') {
         const tid = `midifile_${ev.channel}_${ev.midi}`;
         if (midiPlayer.pedalDown && midiPlayer.activeTriggerIds.has(tid)) {
@@ -3817,10 +4046,28 @@ function setupEventListeners() {
     });
   }
 
+  // Discreet Stage Grid Mode (3×1, 2×2, 3×2, 3×3) & Visual Fade-Out (0.2s – 1.0s)
+  document.querySelectorAll('.stage-grid-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      const mode = pill.dataset.gridMode;
+      if (mode) setStageGridMode(mode, true);
+    });
+  });
+  const stageFadeSlider = document.getElementById('stageFadeSlider');
+  if (stageFadeSlider) {
+    stageFadeSlider.addEventListener('input', () => {
+      setStageFadeSec(Number(stageFadeSlider.value), false);
+    });
+    stageFadeSlider.addEventListener('change', () => {
+      setStageFadeSec(Number(stageFadeSlider.value), true);
+    });
+  }
+
   // Collapsible Per-Note Sample Drawer Toggle (Left of Keyboard + Drawer Hide Button)
   const noteSamplesToggleBtn = document.getElementById('noteSamplesToggleBtn');
   if (noteSamplesToggleBtn) {
     noteSamplesToggleBtn.addEventListener('click', () => {
+      setSelectionFocus('keyboard');
       setNoteSamplesExpanded(!state.noteSamplesExpanded);
     });
   }
@@ -3921,6 +4168,15 @@ function setupEventListeners() {
       if (midiPlayer.playing) pauseMidiTransport();
       else playMidiTransport();
     });
+  }
+
+  const midiOctDownBtn = document.getElementById('midiOctDownBtn');
+  if (midiOctDownBtn) {
+    midiOctDownBtn.addEventListener('click', () => shiftMidiTransposeOctave(-1));
+  }
+  const midiOctUpBtn = document.getElementById('midiOctUpBtn');
+  if (midiOctUpBtn) {
+    midiOctUpBtn.addEventListener('click', () => shiftMidiTransposeOctave(1));
   }
 
   if (midiScrubTrack) {
@@ -4433,23 +4689,37 @@ function setupEventListeners() {
 
     if (e.key === 'ArrowLeft') {
       e.preventDefault();
-      if (e.shiftKey) stepToAdjacentPopulatedKey(-1);
-      else selectKeyForConfig(state.selectedMidi - 1, true);
+      if (state.selectionTarget === 'tile') {
+        stepTileSelection(-1, 0);
+      } else if (e.shiftKey) {
+        stepToAdjacentPopulatedKey(-1);
+      } else {
+        selectKeyForConfig(state.selectedMidi - 1, true);
+      }
       return;
     }
     if (e.key === 'ArrowRight') {
       e.preventDefault();
-      if (e.shiftKey) stepToAdjacentPopulatedKey(1);
-      else selectKeyForConfig(state.selectedMidi + 1, true);
+      if (state.selectionTarget === 'tile') {
+        stepTileSelection(1, 0);
+      } else if (e.shiftKey) {
+        stepToAdjacentPopulatedKey(1);
+      } else {
+        selectKeyForConfig(state.selectedMidi + 1, true);
+      }
       return;
     }
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-      const cands = getCandidatesForSelectedKey();
-      if (cands.length > 0) {
+    if (e.key === 'ArrowUp') {
+      if (state.selectionTarget === 'tile') {
         e.preventDefault();
-        const delta = e.key === 'ArrowDown' ? 1 : -1;
-        const nextIdx = (state.auditionIndex + delta + cands.length) % cands.length;
-        triggerDefaultCandidateGate('arrow_cand', state.selectedMidi, cands[nextIdx], nextIdx);
+        stepTileSelection(0, -1);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      if (state.selectionTarget === 'tile') {
+        e.preventDefault();
+        stepTileSelection(0, 1);
       }
       return;
     }
@@ -4549,6 +4819,10 @@ async function init() {
   const prefs = loadPrefsFromStorage();
   state.chromeCollapsed = Boolean(prefs.chromeCollapsed);
   state.noteSamplesExpanded = false;
+  state.selectionTarget = 'keyboard';
+  state.selectedTileSliceId = null;
+  state.stageGridMode = normalizeStageGridMode(prefs.stageGridMode);
+  state.stageFadeSec = clampStageFadeSec(prefs.stageFadeSec ?? 0.2);
   state.collapsedCategories = new Set(CATEGORY_ORDER);
   state.videoGainOverrides = prefs.videoGains || {};
   state.videoGroupOverrides = prefs.videoGroups || {};
@@ -4571,14 +4845,15 @@ async function init() {
       getActiveSliceIds: getActiveStageSliceIds,
       isVideoDisabled: id => isVideoDisabled(id),
       formatTooltip: item =>
-        `${getVideoGroupName(item.videoId) || item.videoSlug} · ${midiToName(item.midi ?? 60)}`,
+        `${getVideoGroupName(item.videoId) || item.videoSlug} · ${item.isPerc ? 'PERC' : midiToName(item.midi ?? 60)}`,
       onSliceEnter: item => {
+        setSelectionFocus('tile', item.sliceId);
         const cand = resolvePlayableSliceById(item.sliceId);
         if (!cand) return;
         state.lastPlayedVideoId = cand.videoId;
         state.lastPlayedSliceId = cand.sliceId;
         if (cand.midi >= MIN_MIDI && cand.midi <= MAX_MIDI && state.selectedMidi !== cand.midi) {
-          selectKeyForConfig(cand.midi, false);
+          selectKeyForConfig(cand.midi, false, true);
         }
         startHeldVoice({
           triggerId: `bg_${item.sliceId}`,
@@ -4600,6 +4875,7 @@ async function init() {
     });
   }
 
+  syncStageConfigUI();
   updateStageTileSizes();
   const stageEl = document.getElementById('videoStage');
   if (stageEl && typeof ResizeObserver !== 'undefined') {
@@ -4729,6 +5005,7 @@ async function init() {
 
   await atlasPromise;
   refreshAllUI();
+  syncStageConfigUI();
   updateStageTileSizes();
 
   // In static web mode, quietly background-warm enabled scale audio bytes

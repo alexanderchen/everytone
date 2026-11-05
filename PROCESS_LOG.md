@@ -161,3 +161,16 @@
 - Added a left selected-note pencil button (`C4 ✎`) to toggle sample cards. [img](screenshots/2026-11-04/20_expanded-note-sample-drawer-above-6octave-keyboard.png)
 
 - Built a single scrolling multi-video group inspector with live renaming. [img](screenshots/2026-11-04/21_purple-bottle-multi-video-scrolling-group-inspector.png)
+
+
+## Nov 5, 2026 · 9:05 am
+
+- Added discreet sidebar controls for `3×1`, `2×2`, `3×2`, and `3×3` stage grids.
+- Added a `0.2s–1.0s` visual fade-out slider for lingered freeze-frames.
+- Scaled the micro-thumbnail strip to stay edge-to-edge flush below any grid.
+- Made percussion tile borders neutral gray on trigger and light gray when selected.
+- Added whole-octave MIDI transpose (`−` / `+`) in the transport bar. [img](screenshots/2026-11-05/01_stage-config-3x2-grid-midi-transpose-and-perc-gray.png)
+
+- Added mutual keyboard vs. tile selection with 4-way arrow cursor stepping. [img](screenshots/2026-11-05/02_stage-2x2-and-tile-cursor-selection.png)
+
+- Verified `3×3` nine-slot stage layout with `1.0s` fade-out and static-mode guards. [img](screenshots/2026-11-05/03_stage-3x3-nine-tiles-with-long-fade.png)
