@@ -13,11 +13,8 @@ const ATLAS_JPG_PATH = path.join(PUBLIC_DIR, 'stage-atlas.jpg');
 const ATLAS_JSON_PATH = path.join(PUBLIC_DIR, 'stage-atlas.json');
 
 const ATLAS_SIZE = 4096;
-const GRID_COLS = 22;
-const GRID_ROWS = 22;
-const SLOT_STRIDE = Math.floor(ATLAS_SIZE / GRID_COLS); // 186px
+const MIN_GRID_DIM = 24;
 const PAD = 2; // 2px extruded edge gutter per side for zero mipmap bleed
-const INNER_PX = SLOT_STRIDE - PAD * 2; // 182px
 const CONCURRENCY = 8;
 
 async function extractFrameRgb(mp4Path, seekSec, sizePx) {
@@ -57,17 +54,17 @@ async function extractFrameRgb(mp4Path, seekSec, sizePx) {
   return Buffer.alloc(expectedBytes, 18);
 }
 
-function blitCellWithExtrudedBorder(atlasBuf, col, row, cellRgb) {
-  const baseX = col * SLOT_STRIDE + PAD;
-  const baseY = row * SLOT_STRIDE + PAD;
+function blitCellWithExtrudedBorder(atlasBuf, col, row, cellRgb, slotStride, innerPx) {
+  const baseX = col * slotStride + PAD;
+  const baseY = row * slotStride + PAD;
 
-  for (let sy = -PAD; sy < INNER_PX + PAD; sy++) {
-    const clampedY = Math.max(0, Math.min(INNER_PX - 1, sy));
+  for (let sy = -PAD; sy < innerPx + PAD; sy++) {
+    const clampedY = Math.max(0, Math.min(innerPx - 1, sy));
     const dstY = baseY + sy;
-    for (let sx = -PAD; sx < INNER_PX + PAD; sx++) {
-      const clampedX = Math.max(0, Math.min(INNER_PX - 1, sx));
+    for (let sx = -PAD; sx < innerPx + PAD; sx++) {
+      const clampedX = Math.max(0, Math.min(innerPx - 1, sx));
       const dstX = baseX + sx;
-      const srcOff = (clampedY * INNER_PX + clampedX) * 3;
+      const srcOff = (clampedY * innerPx + clampedX) * 3;
       const dstOff = (dstY * ATLAS_SIZE + dstX) * 3;
       atlasBuf[dstOff] = cellRgb[srcOff];
       atlasBuf[dstOff + 1] = cellRgb[srcOff + 1];
@@ -107,9 +104,12 @@ export async function buildStageAtlas() {
     }
   }
 
-  const maxSlots = GRID_COLS * GRID_ROWS;
-  if (orderedEntries.length > maxSlots) {
-    throw new Error(`Slice count ${orderedEntries.length} exceeds atlas capacity ${maxSlots}`);
+  const gridCols = Math.max(MIN_GRID_DIM, Math.ceil(Math.sqrt(Math.max(1, orderedEntries.length))));
+  const gridRows = gridCols;
+  const slotStride = Math.floor(ATLAS_SIZE / gridCols);
+  const innerPx = slotStride - PAD * 2;
+  if (innerPx < 32) {
+    throw new Error(`Slice count ${orderedEntries.length} leaves too small atlas cell (${innerPx}px)`);
   }
 
   const atlasBuf = Buffer.alloc(ATLAS_SIZE * ATLAS_SIZE * 3, 3);
@@ -120,10 +120,10 @@ export async function buildStageAtlas() {
       const idx = cursor++;
       if (idx >= orderedEntries.length) break;
       const entry = orderedEntries[idx];
-      const col = idx % GRID_COLS;
-      const row = Math.floor(idx / GRID_COLS);
-      const rgb = await extractFrameRgb(entry.mp4Abs, entry.trimIn, INNER_PX);
-      blitCellWithExtrudedBorder(atlasBuf, col, row, rgb);
+      const col = idx % gridCols;
+      const row = Math.floor(idx / gridCols);
+      const rgb = await extractFrameRgb(entry.mp4Abs, entry.trimIn, innerPx);
+      blitCellWithExtrudedBorder(atlasBuf, col, row, rgb, slotStride, innerPx);
     }
   }
 
@@ -150,10 +150,10 @@ export async function buildStageAtlas() {
   });
 
   const items = orderedEntries.map((entry, idx) => {
-    const col = idx % GRID_COLS;
-    const row = Math.floor(idx / GRID_COLS);
-    const x0 = col * SLOT_STRIDE + PAD;
-    const y0 = row * SLOT_STRIDE + PAD;
+    const col = idx % gridCols;
+    const row = Math.floor(idx / gridCols);
+    const x0 = col * slotStride + PAD;
+    const y0 = row * slotStride + PAD;
     return {
       sliceId: entry.sliceId,
       videoId: entry.videoId,
@@ -162,8 +162,8 @@ export async function buildStageAtlas() {
       midi: entry.midi,
       u0: Number((x0 / ATLAS_SIZE).toFixed(6)),
       v0: Number((y0 / ATLAS_SIZE).toFixed(6)),
-      u1: Number(((x0 + INNER_PX) / ATLAS_SIZE).toFixed(6)),
-      v1: Number(((y0 + INNER_PX) / ATLAS_SIZE).toFixed(6))
+      u1: Number(((x0 + innerPx) / ATLAS_SIZE).toFixed(6)),
+      v1: Number(((y0 + innerPx) / ATLAS_SIZE).toFixed(6))
     };
   });
 
@@ -172,9 +172,9 @@ export async function buildStageAtlas() {
     generatedAt: new Date().toISOString(),
     atlasWidth: ATLAS_SIZE,
     atlasHeight: ATLAS_SIZE,
-    cols: GRID_COLS,
-    rows: GRID_ROWS,
-    cellPx: INNER_PX,
+    cols: gridCols,
+    rows: gridRows,
+    cellPx: innerPx,
     count: items.length,
     items
   };

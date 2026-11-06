@@ -11,23 +11,56 @@ import {
   inferVideoGroupName,
   getDefaultSliceMidi,
   getEffectiveSliceMidi,
-  extractSquareThumbnail,
   extractSliceAssets,
   analyzeSliceRegion,
   computeKeyboardMap,
-  computePercussionMap
+  enableVideoSlicesByDefault
 } from './dsp-pipeline.mjs';
 
 const PORT = process.env.PORT || 3456;
 const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(ROOT_DIR, 'public');
 const SAMPLES_DIR = path.join(ROOT_DIR, 'samples');
+const MIDI_DIR = path.join(ROOT_DIR, 'midi');
 const TRASH_DIR = path.join(ROOT_DIR, '_trash');
 const CATALOG_PATH = path.join(ROOT_DIR, 'catalog.json');
 
 fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 fs.mkdirSync(SAMPLES_DIR, { recursive: true });
+fs.mkdirSync(MIDI_DIR, { recursive: true });
 fs.mkdirSync(TRASH_DIR, { recursive: true });
+
+function formatLocalMidiStamp(d = new Date()) {
+  const pad = n => String(n).padStart(2, '0');
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_` +
+    `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`
+  );
+}
+
+function listMidiFiles() {
+  if (!fs.existsSync(MIDI_DIR)) return [];
+  const out = [];
+  for (const ent of fs.readdirSync(MIDI_DIR, { withFileTypes: true })) {
+    if (!ent.isFile() || ent.name.startsWith('.')) continue;
+    if (!/\.(mid|midi)$/i.test(ent.name)) continue;
+    const full = path.join(MIDI_DIR, ent.name);
+    const st = fs.statSync(full);
+    out.push({
+      name: ent.name,
+      url: `./midi/${encodeURIComponent(ent.name)}`,
+      mtimeMs: Math.round(st.mtimeMs),
+      size: st.size,
+      isRecording: /^rec_/i.test(ent.name)
+    });
+  }
+  out.sort((a, b) => {
+    if (a.isRecording !== b.isRecording) return a.isRecording ? -1 : 1;
+    if (a.isRecording) return b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name);
+    return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+  });
+  return out;
+}
 
 function loadCatalog() {
   if (!fs.existsSync(CATALOG_PATH)) {
@@ -59,7 +92,7 @@ function saveCatalog(catalog) {
     }
   }
   catalog.keyboardMap = computeKeyboardMap(catalog.videos, catalog.keyboardConfig);
-  catalog.percussionMap = computePercussionMap(catalog.videos, catalog.percussionMap);
+  delete catalog.percussionMap;
 
   const activeVideos = catalog.videos.filter(v => !v.deleted);
   const activeSlices = activeVideos.reduce((sum, v) => sum + (v.slices || []).filter(s => !s.deleted).length, 0);
@@ -68,10 +101,9 @@ function saveCatalog(catalog) {
   const keysWithCandidates = keyEntries.length;
   const totalCandidates = keyEntries.reduce((sum, k) => sum + (k.candidateCount || 0), 0);
   const newConsiderations = keyEntries.reduce((sum, k) => sum + (k.newCount || 0), 0);
-  const percCount =
-    (catalog.percussionMap.kick?.slots.length || 0) +
-    (catalog.percussionMap.snare?.slots.length || 0) +
-    (catalog.percussionMap.hihat?.slots.length || 0);
+  const percCount = keyEntries
+    .filter(k => k.isPercKey)
+    .reduce((sum, k) => sum + (k.candidateCount || 0), 0);
 
   catalog.updatedAt = new Date().toISOString();
   catalog.stats = {
@@ -132,7 +164,9 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml',
   '.wav': 'audio/wav',
   '.m4a': 'audio/mp4',
-  '.mp4': 'video/mp4'
+  '.mp4': 'video/mp4',
+  '.mid': 'audio/midi',
+  '.midi': 'audio/midi'
 };
 
 function serveStaticFile(req, res, filePath) {
@@ -182,103 +216,23 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, cat);
     }
 
-    if (pathname === '/api/video/rename' && req.method === 'POST') {
+    if (pathname === '/api/stage-config' && req.method === 'POST') {
       const body = await parseBody(req);
       const catalog = loadCatalog();
-      const video = catalog.videos.find(v => v.id === body.videoId);
-      if (!video) return sendJson(res, 404, { error: 'Video not found' });
-
-      const newSlug = sanitizeSlug(body.slug || video.slug);
-      if (body.label !== undefined) video.label = String(body.label).trim() || newSlug;
-      if (body.groupName !== undefined) {
-        video.groupName = String(body.groupName).trim() || inferVideoGroupName({ ...video, groupName: '' });
-      }
-      if (body.category !== undefined) video.category = String(body.category).trim().toLowerCase() || video.category;
-
-      if (newSlug !== video.slug) {
-        const numPrefix = String(video.index).padStart(2, '0');
-        const oldFolder = path.join(SAMPLES_DIR, video.folderName);
-        const newFolderName = `${numPrefix}_${newSlug}`;
-        const newFolder = path.join(SAMPLES_DIR, newFolderName);
-
-        if (fs.existsSync(oldFolder) && oldFolder !== newFolder) {
-          fs.renameSync(oldFolder, newFolder);
-        }
-
-        // Rename co-located full source video inside folder if present
-        const oldSourceFile = video.sourceFile || `${video.slug}_source.mp4`;
-        const oldSourceInFolder = path.join(newFolder, oldSourceFile);
-        const newSourceFile = `${newSlug}_source.mp4`;
-        const newSourceInFolder = path.join(newFolder, newSourceFile);
-        if (fs.existsSync(oldSourceInFolder) && oldSourceInFolder !== newSourceInFolder) {
-          fs.renameSync(oldSourceInFolder, newSourceInFolder);
-        }
-        if (fs.existsSync(newSourceInFolder)) {
-          video.sourceFile = newSourceFile;
-          video.sourcePath = `samples/${newFolderName}/${newSourceFile}`;
-        }
-
-        // Rename thumbnail inside folder
-        const oldThumbPath = path.join(newFolder, video.thumbFile);
-        const newThumbFile = `${newSlug}_thumb.jpg`;
-        const newThumbPath = path.join(newFolder, newThumbFile);
-        if (fs.existsSync(oldThumbPath) && oldThumbPath !== newThumbPath) {
-          fs.renameSync(oldThumbPath, newThumbPath);
-        }
-        video.thumbFile = newThumbFile;
-        video.thumbUrl = `/samples/${newFolderName}/${newThumbFile}`;
-
-        // Rename co-located slice MP4 & WAV pairs inside folder
-        for (const s of video.slices || []) {
-          if (s.deleted) continue;
-          const hitNum = String(s.hitIndex).padStart(2, '0');
-          const effMidi = getEffectiveSliceMidi(video, s);
-          const safeNote = Number.isFinite(s.manualMidi)
-            ? midiToName(effMidi).replace('#', 's')
-            : s.percBucket
-              ? s.percBucket.toUpperCase()
-              : (s.name || midiToName(effMidi)).replace('#', 's');
-          const newBase = `${newSlug}_hit${hitNum}_${safeNote}`;
-          const newMp4 = `${newBase}.mp4`;
-          const newWav = `${newBase}.wav`;
-
-          const oldMp4Path = path.join(newFolder, s.mp4File);
-          const oldWavPath = path.join(newFolder, s.wavFile);
-          if (fs.existsSync(oldMp4Path)) fs.renameSync(oldMp4Path, path.join(newFolder, newMp4));
-          if (fs.existsSync(oldWavPath)) fs.renameSync(oldWavPath, path.join(newFolder, newWav));
-
-          s.baseName = newBase;
-          s.mp4File = newMp4;
-          s.wavFile = newWav;
-          s.videoUrl = `/samples/${newFolderName}/${newMp4}`;
-          s.audioUrl = `/samples/${newFolderName}/${newWav}`;
-        }
-
-        video.slug = newSlug;
-        video.folderName = newFolderName;
-      }
-
-      return sendJson(res, 200, saveCatalog(catalog));
-    }
-
-    if (pathname === '/api/video/group-rename' && req.method === 'POST') {
-      const body = await parseBody(req);
-      const catalog = loadCatalog();
-      const targetIds = new Set(
-        Array.isArray(body.videoIds)
-          ? body.videoIds.map(String)
-          : body.videoId
-            ? [String(body.videoId)]
-            : []
-      );
-      if (targetIds.size === 0) return sendJson(res, 400, { error: 'No videoIds provided' });
-      const cleanedName = String(body.groupName || '').trim();
-      for (const v of catalog.videos || []) {
-        if (targetIds.has(v.id)) {
-          v.groupName = cleanedName || inferVideoGroupName({ ...v, groupName: '' });
-        }
-      }
-      return sendJson(res, 200, saveCatalog(catalog));
+      catalog.stageConfig = {
+        ...(catalog.stageConfig || {}),
+        stageGridMode: String(body.stageGridMode || '3x1'),
+        stageTileScale: Number(body.stageTileScale ?? 1.0),
+        stageSpecScale: Number(body.stageSpecScale ?? 1.0),
+        stageFadeInSec: Number(body.stageFadeInSec ?? 0.0),
+        stageFadeSec: Number(body.stageFadeSec ?? 0.2),
+        stageMaxDisplayEnabled: Boolean(body.stageMaxDisplayEnabled),
+        stageMaxDisplaySec: Number(body.stageMaxDisplaySec ?? 1.0),
+        midiTransposeOctaves: Math.round(Number(body.midiTransposeOctaves ?? 0))
+      };
+      catalog.updatedAt = new Date().toISOString();
+      fs.writeFileSync(CATALOG_PATH, JSON.stringify(catalog, null, 2));
+      return sendJson(res, 200, { ok: true, stageConfig: catalog.stageConfig });
     }
 
     if (pathname === '/api/video/toggle' && req.method === 'POST') {
@@ -308,32 +262,6 @@ const server = http.createServer(async (req, res) => {
       if (!video) return sendJson(res, 404, { error: 'Video not found' });
       const rawGain = Number(body.gainDb);
       video.gainDb = Number.isFinite(rawGain) ? Math.max(-12, Math.min(12, Math.round(rawGain))) : 0;
-      return sendJson(res, 200, saveCatalog(catalog));
-    }
-
-    if (pathname === '/api/video/rotate' && req.method === 'POST') {
-      const body = await parseBody(req);
-      const catalog = loadCatalog();
-      const video = catalog.videos.find(v => v.id === body.videoId);
-      if (!video) return sendJson(res, 404, { error: 'Video not found' });
-
-      const delta = Number(body.deltaDeg) || 90;
-      video.extraRotateDeg = ((video.extraRotateDeg || 0) + delta) % 360;
-
-      const sourceAbs = path.join(ROOT_DIR, video.sourcePath);
-      const itemDir = path.join(SAMPLES_DIR, video.folderName);
-      if (fs.existsSync(sourceAbs) && fs.existsSync(itemDir)) {
-        const thumbPath = path.join(itemDir, video.thumbFile);
-        extractSquareThumbnail(sourceAbs, thumbPath, 0.1, video.extraRotateDeg, video.cropLeftFrac ?? null);
-        for (const s of video.slices || []) {
-          if (s.deleted) continue;
-          const mp4Path = path.join(itemDir, s.mp4File);
-          const wavPath = path.join(itemDir, s.wavFile);
-          const rawDur = Math.min(MAX_CLIP_DUR, Number(s.rawDurSec ?? s.durSec ?? 2.0));
-          s.rawDurSec = Number(rawDur.toFixed(2));
-          extractSliceAssets(sourceAbs, s.startSec, rawDur, mp4Path, wavPath, video.extraRotateDeg, s.highpassHz || 85, video.cropLeftFrac ?? null);
-        }
-      }
       return sendJson(res, 200, saveCatalog(catalog));
     }
 
@@ -408,17 +336,6 @@ const server = http.createServer(async (req, res) => {
       if (fs.existsSync(wavPath)) fs.renameSync(wavPath, path.join(TRASH_DIR, slice.wavFile));
 
       slice.deleted = true;
-      return sendJson(res, 200, saveCatalog(catalog));
-    }
-
-    if (pathname === '/api/percussion/select' && req.method === 'POST') {
-      const body = await parseBody(req);
-      const catalog = loadCatalog();
-      catalog.percussionMap = computePercussionMap(catalog.videos, catalog.percussionMap);
-      const bucket = catalog.percussionMap[body.bucket];
-      if (bucket && body.sliceId) {
-        bucket.activeSliceId = body.sliceId;
-      }
       return sendJson(res, 200, saveCatalog(catalog));
     }
 
@@ -512,8 +429,7 @@ const server = http.createServer(async (req, res) => {
           name: slice.name,
           freq: slice.freq,
           cents: slice.cents ?? 0,
-          exactMidi: slice.exactMidi ?? (slice.midi + (slice.cents || 0) / 100),
-          percBucket: slice.percBucket ?? null
+          exactMidi: slice.exactMidi ?? (slice.midi + (slice.cents || 0) / 100)
         };
       }
 
@@ -534,9 +450,7 @@ const server = http.createServer(async (req, res) => {
         const hitNum = String(slice.hitIndex).padStart(2, '0');
         const safeNote = Number.isFinite(slice.manualMidi)
           ? midiToName(nextEffectiveMidi).replace('#', 's')
-          : slice.percBucket
-            ? slice.percBucket.toUpperCase()
-            : (slice.name || midiToName(nextEffectiveMidi)).replace('#', 's');
+          : (slice.name || midiToName(nextEffectiveMidi)).replace('#', 's');
         const newBase = `${video.slug}_hit${hitNum}_${safeNote}`;
         const newMp4 = `${newBase}.mp4`;
         const newWav = `${newBase}.wav`;
@@ -559,13 +473,6 @@ const server = http.createServer(async (req, res) => {
 
       if (body.starred !== undefined) {
         slice.starred = !!body.starred;
-      }
-
-      if (body.percBucket !== undefined) {
-        slice.percBucket = (body.percBucket === 'tonal' || !body.percBucket) ? null : body.percBucket;
-      }
-      if (body.percLabel !== undefined) {
-        slice.percLabel = String(body.percLabel).trim();
       }
 
       const itemDir = path.join(SAMPLES_DIR, video.folderName);
@@ -606,7 +513,6 @@ const server = http.createServer(async (req, res) => {
           if (orig.freq !== undefined) slice.freq = orig.freq;
           slice.cents = orig.cents ?? 0;
           slice.exactMidi = orig.exactMidi ?? slice.midi;
-          slice.percBucket = orig.percBucket ?? null;
         }
         delete slice.manualMidi;
         delete slice.manualTuneCents;
@@ -690,7 +596,7 @@ const server = http.createServer(async (req, res) => {
       fs.renameSync(tempWav, path.join(itemDir, wavFile));
 
       const numPrefix = String(video.index).padStart(2, '0');
-      video.slices.push({
+      const newSlice = {
         id: `v${numPrefix}_s${hitNum}_${Date.now().toString(36).slice(-3)}`,
         hitIndex: nextIdx,
         baseName,
@@ -704,12 +610,92 @@ const server = http.createServer(async (req, res) => {
         starred: true,
         isNew: true,
         deleted: false
-      });
+      };
+      video.slices.push(newSlice);
+      enableVideoSlicesByDefault(
+        catalog.videos,
+        [{ ...video, slices: [newSlice] }],
+        catalog.keyboardConfig
+      );
 
       return sendJson(res, 200, saveCatalog(catalog));
     }
 
-    // Serve static files from /samples/ or /public/
+    if (pathname === '/api/midi/list' && req.method === 'GET') {
+      return sendJson(res, 200, { files: listMidiFiles() });
+    }
+
+    if (pathname === '/api/midi/save' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const rawB64 = String(body.base64 || '').trim();
+      if (!rawB64) return sendJson(res, 400, { error: 'Missing MIDI base64 payload' });
+      const buf = Buffer.from(rawB64, 'base64');
+      if (buf.length < 14 || buf.toString('ascii', 0, 4) !== 'MThd') {
+        return sendJson(res, 400, { error: 'Invalid Standard MIDI File payload' });
+      }
+
+      let baseStem = '';
+      if (body.fileName) {
+        baseStem = path
+          .basename(String(body.fileName))
+          .replace(/\.(mid|midi)$/i, '')
+          .replace(/[^a-zA-Z0-9._-]+/g, '_')
+          .replace(/^_+|_+$/g, '');
+      }
+      if (!baseStem) {
+        baseStem = `rec_${formatLocalMidiStamp(new Date())}`;
+      }
+
+      let finalName = `${baseStem}.mid`;
+      let suffix = 2;
+      while (fs.existsSync(path.join(MIDI_DIR, finalName))) {
+        finalName = `${baseStem}-${suffix++}.mid`;
+      }
+
+      const destPath = path.join(MIDI_DIR, finalName);
+      fs.writeFileSync(destPath, buf);
+      const st = fs.statSync(destPath);
+      const savedEntry = {
+        name: finalName,
+        url: `./midi/${encodeURIComponent(finalName)}`,
+        mtimeMs: Math.round(st.mtimeMs),
+        size: st.size,
+        isRecording: /^rec_/i.test(finalName)
+      };
+      return sendJson(res, 200, { ok: true, file: savedEntry, files: listMidiFiles() });
+    }
+
+    if (pathname === '/api/midi/trash' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const cleanName = path.basename(String(body.name || ''));
+      if (!cleanName || !/\.(mid|midi)$/i.test(cleanName)) {
+        return sendJson(res, 400, { error: 'Invalid MIDI filename' });
+      }
+      const srcPath = path.join(MIDI_DIR, cleanName);
+      if (!fs.existsSync(srcPath)) {
+        return sendJson(res, 404, { error: 'MIDI file not found' });
+      }
+      const trashMidiDir = path.join(TRASH_DIR, 'midi');
+      fs.mkdirSync(trashMidiDir, { recursive: true });
+      let dstPath = path.join(trashMidiDir, cleanName);
+      if (fs.existsSync(dstPath)) {
+        dstPath = path.join(trashMidiDir, `${Date.now()}_${cleanName}`);
+      }
+      fs.renameSync(srcPath, dstPath);
+      return sendJson(res, 200, { ok: true, files: listMidiFiles() });
+    }
+
+    // Serve static files from /midi/, /samples/, or /public/
+    if (pathname.startsWith('/midi/')) {
+      const rel = pathname.slice('/midi/'.length);
+      const safePath = path.normalize(path.join(MIDI_DIR, rel));
+      if (!safePath.startsWith(MIDI_DIR)) {
+        res.writeHead(403);
+        return res.end('Forbidden');
+      }
+      return serveStaticFile(req, res, safePath);
+    }
+
     if (pathname.startsWith('/samples/')) {
       const rel = pathname.slice('/samples/'.length);
       const safePath = path.normalize(path.join(SAMPLES_DIR, rel));

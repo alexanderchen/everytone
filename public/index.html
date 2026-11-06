@@ -25,9 +25,7 @@
   <!-- 1. Upper Workspace: Left Collapsible Video File Explorer + Right Three.js 3D Stage -->
   <div class="upper-workspace">
     <aside class="file-explorer" id="fileExplorer">
-      <div class="explorer-header">
-        <span class="explorer-count" id="explorerActiveCount">0/0</span>
-      </div>
+      <div class="explorer-header"></div>
 
       <div class="explorer-scroll-list" id="explorerList"></div>
 
@@ -39,65 +37,190 @@
             <button type="button" class="stage-grid-pill is-active" data-grid-mode="3x1" title="Single row of 3 film tiles">3×1</button>
             <button type="button" class="stage-grid-pill" data-grid-mode="2x2" title="2×2 grid (4 film tiles)">2×2</button>
             <button type="button" class="stage-grid-pill" data-grid-mode="3x2" title="Double row of 3 film tiles (6 tiles)">3×2</button>
+            <button type="button" class="stage-grid-pill" data-grid-mode="4x2" title="4×2 grid (8 film tiles)">4×2</button>
             <button type="button" class="stage-grid-pill" data-grid-mode="3x3" title="3×3 grid (9 film tiles)">3×3</button>
           </div>
         </div>
         <div class="stage-cfg-row">
-          <span class="stage-cfg-label">Fade</span>
-          <div class="stage-fade-wrap" title="Visual fade-out duration when releasing notes (0.2s to 1.0s)">
+          <span class="stage-cfg-label">Tile size</span>
+          <div class="stage-fade-wrap" title="Bottom sample mosaic tile size (100% to 250%, snapped flush to grid width)">
+            <input
+              id="stageTileScaleSlider"
+              type="range"
+              min="100"
+              max="250"
+              step="5"
+              value="100"
+              class="stage-fade-slider"
+            />
+            <span class="stage-fade-val" id="stageTileScaleReadout">100%</span>
+          </div>
+        </div>
+        <div class="stage-cfg-row">
+          <span class="stage-cfg-label">Spectrogram size</span>
+          <div class="stage-fade-wrap" title="Visual spectrogram height underneath each video (75% up to 450%, about two-thirds of video height)">
+            <input
+              id="stageSpecScaleSlider"
+              type="range"
+              min="75"
+              max="450"
+              step="5"
+              value="100"
+              class="stage-fade-slider"
+            />
+            <span class="stage-fade-val" id="stageSpecScaleReadout">100%</span>
+          </div>
+        </div>
+        <div class="stage-cfg-row">
+          <span class="stage-cfg-label">Fade in</span>
+          <div class="stage-fade-wrap" title="Visual fade-in / dissolve duration for new notes (Off = 0.0s hard cut, up to 1.0s)">
+            <input
+              id="stageFadeInSlider"
+              type="range"
+              min="0"
+              max="1.0"
+              step="0.05"
+              value="0"
+              class="stage-fade-slider"
+            />
+            <span class="stage-fade-val" id="stageFadeInReadout">Off</span>
+          </div>
+        </div>
+        <div class="stage-cfg-row">
+          <span class="stage-cfg-label">Fade out</span>
+          <div class="stage-fade-wrap" title="Visual fade-out duration when releasing notes (Off = 0.0s hard cut, up to 2.0s)">
             <input
               id="stageFadeSlider"
               type="range"
-              min="0.2"
-              max="1.0"
-              step="0.1"
+              min="0"
+              max="2.0"
+              step="0.05"
               value="0.2"
               class="stage-fade-slider"
             />
             <span class="stage-fade-val" id="stageFadeReadout">0.2s</span>
           </div>
         </div>
+        <div class="stage-cfg-row">
+          <label
+            class="stage-cfg-check-wrap"
+            for="stageMaxDisplayToggle"
+            title="Automatically fade displayed videos after a maximum time even if the note stays held"
+          >
+            <input
+              id="stageMaxDisplayToggle"
+              type="checkbox"
+              class="stage-cfg-checkbox"
+            />
+            <span class="stage-cfg-label">Max display time</span>
+          </label>
+          <span class="stage-fade-val" id="stageMaxDisplayReadout">Off</span>
+        </div>
+        <div class="stage-cfg-row stage-max-slider-row hidden" id="stageMaxDisplaySliderRow">
+          <input
+            id="stageMaxDisplaySlider"
+            type="range"
+            min="0.5"
+            max="2.0"
+            step="0.1"
+            value="1.0"
+            class="stage-fade-slider"
+            aria-label="Max display time (0.5s to 2.0s)"
+          />
+        </div>
       </div>
     </aside>
+
+    <!-- Unified Flush Instrument + Sample Sidebar Blade -->
+    <section
+      class="inspector-blade hidden"
+      id="inspectorBlade"
+      aria-label="Instrument and Sample Inspector"
+    >
+      <div class="blade-header">
+        <div class="blade-header-left">
+          <span class="inspector-group-title" id="bladeGroupTitle"></span>
+        </div>
+        <div class="blade-header-right">
+          <button
+            id="bladeGroupSwitch"
+            type="button"
+            class="ui-switch is-on"
+            role="switch"
+            aria-checked="true"
+            title="Enable or mute all videos in this instrument"
+          ></button>
+          <button
+            id="bladeCloseBtn"
+            type="button"
+            class="panel-icon-btn"
+            title="Close inspector (Esc)"
+            aria-label="Close inspector"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <div class="blade-scroll" id="bladeScroll"></div>
+    </section>
 
     <main class="performance-canvas" id="videoStage">
       <canvas id="threeStageCanvas" class="three-stage-bg"></canvas>
 
       <div class="poly-video-strip" id="polyVideoGrid">
         <div class="stage-slot-unit" data-slot="0">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit" data-slot="1">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit" data-slot="2">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit hidden" data-slot="3">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit hidden" data-slot="4">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit hidden" data-slot="5">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit hidden" data-slot="6">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit hidden" data-slot="7">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
         <div class="stage-slot-unit hidden" data-slot="8">
-          <div class="stage-slot-video"></div>
+          <div class="stage-slot-video">
+            <canvas class="slot-video-canvas" width="512" height="512"></canvas>
+          </div>
           <canvas class="slot-mini-spec" width="320" height="96"></canvas>
         </div>
       </div>
@@ -108,14 +231,6 @@
   <footer class="bottom-transport-dock" id="transportDock">
     <!-- Collapsible Single-Note Sample Shelf (Collapsed by Default on Load) -->
     <section class="note-samples-drawer collapsed" id="noteSamplesDrawer">
-      <div class="samples-drawer-meta">
-        <div class="samples-drawer-heading">
-          <span class="samples-drawer-dot" id="drawerNoteDot"></span>
-          <span class="samples-drawer-note" id="drawerNoteName">C4</span>
-        </div>
-        <span class="samples-drawer-sub" id="drawerNoteSub">261.6 Hz</span>
-      </div>
-
       <div class="candidates-strip" id="candidatesGrid"></div>
 
       <button
@@ -130,14 +245,20 @@
 
     <!-- Main Frugal Row: [ MIDI Transport ] | [ Selected Note + Pencil ] | [ Wide 3–6 Oct Keyboard ] | [ Octave Switcher ] -->
     <div class="dock-main-row">
-      <!-- Far Left: Compact MIDI Player & Scrubbable Play Bar -->
+      <!-- Far Left: Compact MIDI Player, Recorder & Scrubbable Play Bar -->
       <section class="dock-zone transport-zone" id="midiTransportZone">
         <div class="transport-top-row">
           <input id="midiFileInput" type="file" accept=".mid,.midi" class="hidden" />
-          <button id="midiUploadBtn" type="button" class="midi-load-btn" title="Load a Standard MIDI File (.mid)">
-            Load MIDI
+          <button
+            id="midiBrowserToggleBtn"
+            type="button"
+            class="midi-browser-btn"
+            aria-expanded="false"
+            title="Browse ./midi/ files or import a .mid file"
+          >
+            <span id="midiFileLabel" class="midi-file-label">MIDI Files</span>
+            <span class="midi-browser-caret" aria-hidden="true">▾</span>
           </button>
-          <span id="midiFileLabel" class="midi-file-label">No MIDI</span>
           <div class="midi-transpose-ctrl" title="Transpose MIDI file by whole octaves">
             <button id="midiOctDownBtn" type="button" class="midi-oct-btn" title="Transpose MIDI down 1 octave">−</button>
             <span id="midiOctReadout" class="midi-oct-readout">0 oct</span>
@@ -146,9 +267,34 @@
         </div>
 
         <div class="transport-scrub-row">
-          <button id="midiPlayPauseBtn" type="button" class="midi-play-btn" disabled title="Play / Pause MIDI">
-            <span id="midiPlayPauseIcon">▶</span>
-          </button>
+          <div class="midi-transport-btns">
+            <button
+              id="midiResetBtn"
+              type="button"
+              class="midi-icon-btn"
+              title="Rewind to 0:00 &amp; reset sample round-robin cycle"
+              aria-label="Rewind and reset samples"
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+                <rect x="2.4" y="3.2" width="1.8" height="9.6" rx="0.5"></rect>
+                <path d="M13.2 3.4L6.2 8l7 4.6V3.4z"></path>
+              </svg>
+            </button>
+
+            <button id="midiPlayPauseBtn" type="button" class="midi-play-btn" disabled title="Play / Pause MIDI">
+              <span id="midiPlayPauseIcon">▶</span>
+            </button>
+
+            <button
+              id="midiRecordBtn"
+              type="button"
+              class="midi-rec-btn"
+              title="Record MIDI take (starts on first note pressed)"
+              aria-label="Record MIDI"
+            >
+              <span class="midi-rec-glyph" id="midiRecGlyph"></span>
+            </button>
+          </div>
 
           <div class="midi-scrub-track is-disabled" id="midiScrubTrack" title="Drag to scrub through MIDI file">
             <span class="scrub-endpoint left"></span>
@@ -177,7 +323,6 @@
             <span class="sel-note-name" id="selectedNoteLabel">C4</span>
           </span>
           <span class="sel-note-edit-row">
-            <span class="sel-note-count" id="selectedNoteCount">0</span>
             <svg class="sel-note-pencil" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M11.4 2.4a1.5 1.5 0 0 1 2.1 2.1L5.4 12.6 2 13.6l1-3.4 8.4-7.8z"></path>
             </svg>
@@ -203,231 +348,11 @@
     </div>
   </footer>
 
-  <!-- 3A. Grouped Video Inspector Overlay (Editable Group Name + Scrolling Multi-Video Editor) -->
-  <div class="drawer-backdrop hidden" id="videoInspectorModal">
-    <div class="trim-modal-card video-inspector-card">
-      <div class="trim-modal-header">
-        <div class="inspector-title-row">
-          <span class="crumb-type-badge" id="videoInspBadge">GROUP</span>
-          <div class="group-name-edit-wrap" title="Edit readable instrument group name">
-            <input
-              id="videoInspGroupInput"
-              type="text"
-              class="inspector-group-input"
-              value=""
-              spellcheck="false"
-              placeholder="group name"
-            />
-            <svg class="group-edit-pencil local-only-btn" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M11.4 2.4a1.5 1.5 0 0 1 2.1 2.1L5.4 12.6 2 13.6l1-3.4 8.4-7.8z"></path>
-            </svg>
-          </div>
-          <span class="video-insp-meta-pill" id="videoInspMetaPill">WINDS · 4 VIDEOS · 8 SAMPLES</span>
-          <button
-            id="videoInspGroupSwitch"
-            type="button"
-            class="ui-switch is-on"
-            role="switch"
-            aria-checked="true"
-            title="Enable or mute all videos in this group"
-          ></button>
-        </div>
-        <button class="close-drawer-btn" data-close="videoInspectorModal">✕ Close</button>
-      </div>
-
-      <div class="trim-modal-body group-inspector-body">
-        <div class="trim-video-col">
-          <div class="trim-video-square">
-            <video id="videoInspPreviewVideo" playsinline preload="auto"></video>
-          </div>
-          <div class="trim-video-meta-row">
-            <span class="trim-scrub-time" id="videoInspTimeReadout">Sample #1</span>
-            <button id="videoInspRotateBtn" type="button" class="ghost-btn tiny local-only-btn" title="Rotate selected video 90°">↻ 90°</button>
-          </div>
-          <button id="videoInspPreviewBtn" type="button" class="trim-btn-secondary full-w">
-            ▶ Preview (Space)
-          </button>
-        </div>
-
-        <div class="group-videos-scroll-col" id="videoInspVideosScroll"></div>
-      </div>
-
-      <div class="trim-modal-footer group-inspector-footer">
-        <span class="group-footer-hint">Click any sample row to audition · Edit group name above to rename or merge</span>
-        <div class="trim-footer-right">
-          <button type="button" class="trim-btn-primary" data-close="videoInspectorModal">
-            Done
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 3B. Individual Sample Inspector Overlay (Group/Video Crumb › Sample + Pitch Slot + Spectrogram + Trim) -->
-  <div class="drawer-backdrop hidden" id="trimModal">
-    <div class="trim-modal-card">
-      <div class="trim-modal-header">
-        <div class="inspector-title-row">
-          <div class="inspector-breadcrumb">
-            <span class="crumb-type-badge">GROUP:</span>
-            <button
-              id="sampleInspParentBtn"
-              type="button"
-              class="crumb-video-link"
-              title="Open parent Group Inspector (edit all videos &amp; holistic volumes in this group)"
-            >
-              purple bottle
-            </button>
-            <span class="crumb-sep">›</span>
-            <span class="crumb-sample-name" id="sampleInspSliceLabel">Sample #1</span>
-          </div>
-
-          <div class="inspector-slot-wrap" title="Audition reference tones across notes and assign this sample's MIDI slot">
-            <span class="inspector-slot-tag">Note</span>
-            <button
-              id="inspectorSlotPrevBtn"
-              type="button"
-              class="slot-step-btn"
-              title="Step down 1 semitone &amp; play reference tone"
-            >
-              ◀
-            </button>
-            <select id="inspectorSlotSelect" class="inspector-slot-select"></select>
-            <button
-              id="inspectorSlotNextBtn"
-              type="button"
-              class="slot-step-btn"
-              title="Step up 1 semitone &amp; play reference tone"
-            >
-              ▶
-            </button>
-            <button
-              id="inspectorTestToneBtn"
-              type="button"
-              class="test-tone-btn"
-              title="Play pure reference test tone at this note's frequency"
-            >
-              ♪ Tone
-            </button>
-            <button
-              id="inspectorAssignSlotBtn"
-              type="button"
-              class="assign-slot-btn hidden"
-              title="Move sample permanently to this MIDI slot at original 1.0x pitch"
-            >
-              Move → C4
-            </button>
-          </div>
-
-          <button
-            id="inspectorResetDspBtn"
-            type="button"
-            class="inspector-reset-dsp-btn hidden"
-            title="Revert sample back to its DSP-suggested MIDI note slot and tuning"
-          >
-            ↺ Reset to DSP
-          </button>
-        </div>
-        <button class="close-drawer-btn" data-close="trimModal">✕ Close</button>
-      </div>
-
-      <div class="trim-modal-body">
-        <div class="trim-video-col">
-          <div class="trim-video-square">
-            <video id="trimScrubVideo" playsinline preload="auto"></video>
-          </div>
-          <div class="trim-video-meta-row">
-            <span class="trim-scrub-time" id="trimScrubTimeReadout">Frame @ 0.00s</span>
-            <button id="inspectorRotateBtn" type="button" class="ghost-btn tiny local-only-btn" title="Rotate video 90°">↻ 90°</button>
-          </div>
-          <button id="trimPreviewBtn" type="button" class="trim-btn-secondary full-w">
-            ▶ Preview (Space)
-          </button>
-        </div>
-
-        <div class="trim-timeline-col">
-          <!-- 1. Log/Perceptual Spectrogram -->
-          <div class="inspector-spec-block">
-            <div class="inspector-subbar">
-              <span class="inspector-section-label">SPECTROGRAM</span>
-              <span class="inspector-spec-meta" id="inspectorSpecMeta">--</span>
-            </div>
-            <div class="inspector-spec-stage">
-              <canvas id="inspectorSpectrogramCanvas" width="600" height="248"></canvas>
-              <div class="inspector-spec-playhead" id="inspectorSpecPlayhead"></div>
-            </div>
-            <div class="inspector-tune-row" id="inspectorTuneRow">
-              <span class="peaks-mini-label">Re-Pitch</span>
-              <input
-                id="inspectorTuneSlider"
-                type="range"
-                min="-100"
-                max="100"
-                step="1"
-                value="0"
-                class="inspector-tune-slider"
-                title="Fine-tune sample (−1 to +1 semitone / ±100 cents max)"
-              />
-              <span class="inspector-tune-readout" id="inspectorTuneReadout">0c · 1.00x</span>
-              <button
-                id="inspectorZeroTuneBtn"
-                type="button"
-                class="nudge-btn hidden"
-                title="Reset to un-shifted original pitch (0c · 1.00x)"
-              >
-                0c
-              </button>
-            </div>
-          </div>
-
-          <!-- 2. Single-Clip Waveform + Non-Destructive [ IN ... OUT ] Sub-Trim -->
-          <div class="inspector-trim-block">
-            <div class="trim-view-bar">
-              <span class="inspector-section-label">TRIM</span>
-              <div class="trim-bar-right">
-                <span class="trim-span-meta" id="trimSpanMeta">0.00s – 2.00s · 2.00s</span>
-                <button
-                  id="trimResetBtn"
-                  class="inspector-reset-dsp-btn hidden"
-                  type="button"
-                  title="Restore full DSP-cropped sample length"
-                >
-                  ↺ Reset Full Sample
-                </button>
-              </div>
-            </div>
-
-            <div class="trim-timeline-stage" id="trimTimelineStage">
-              <canvas id="trimWaveformCanvas" width="600" height="96"></canvas>
-              <div class="trim-curtain left" id="trimCurtainLeft"></div>
-              <div class="trim-curtain right" id="trimCurtainRight"></div>
-              <div class="trim-window-box" id="trimWindowBox" title="Drag middle to slide In &amp; Out together">
-                <div class="trim-handle in-handle" id="trimHandleIn" title="Drag IN start point">
-                  <span class="handle-grip"></span>
-                  <span class="handle-tag" id="trimHandleInTag">IN</span>
-                </div>
-                <div class="trim-playhead" id="trimPlayhead"></div>
-                <div class="trim-handle out-handle" id="trimHandleOut" title="Drag OUT end point">
-                  <span class="handle-grip"></span>
-                  <span class="handle-tag" id="trimHandleOutTag">OUT</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="trim-modal-footer local-only-btn">
-        <button id="inspectorTrashClipBtn" class="ghost-btn small danger-text local-only-btn" type="button" title="Move this sample clip to _trash/">
-          Move Sample to Trash
-        </button>
-
-        <div class="trim-footer-right">
-          <button id="trimSaveBtn" type="button" class="trim-btn-primary local-only-btn">
-            ✓ Save Trim
-          </button>
-        </div>
-      </div>
+  <!-- Lightweight Floating ./midi/ File Browser Popover -->
+  <div class="midi-browser-popover hidden" id="midiBrowserPopover" role="menu" aria-label="MIDI Files">
+    <div class="midi-popover-list" id="midiBrowserList"></div>
+    <div class="midi-popover-footer">
+      <button id="midiImportExternalBtn" type="button" class="midi-import-btn">+ Import .mid file…</button>
     </div>
   </div>
 

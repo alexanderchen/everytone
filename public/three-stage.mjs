@@ -4,8 +4,8 @@ import * as THREE from './vendor/three.module.min.js';
 // Three.js 3D Stage Canvas
 // - Powered by THREE.Scene + THREE.PerspectiveCamera + THREE.InstancedBufferGeometry
 // - Compact 1px-gap B&W micro-thumbnail mosaic flush beneath the foreground film grid
-// - Zero colored dots in idle; crisp outer stroke border when playing or selected
-// - Percussion tiles use grayish border on trigger (#8a8a8a) & light gray when selected (#e2e2e2)
+// - Zero colored dots in idle; active/selected squares fill with chromatic hex at 85% max opacity and fade out
+// - Percussion tiles use #8a8a8a gray fill on trigger & #e2e2e2 light gray when selected
 // ============================================================================
 
 const CHROMATIC_HEX = [
@@ -41,11 +41,12 @@ const TILE_VERT_SHADER = `
 attribute vec3 iOffsetScale; // x: worldX, y: worldY, z: cellSize
 attribute vec4 iUvRect;      // u0, v0, u1, v1
 attribute vec2 iState;       // x: activeAmount, y: hoverAmount
-attribute vec3 iNoteColor;   // r, g, b normalized border color
+attribute vec3 iNoteColor;   // r, g, b normalized chromatic / percussion hex color
 
 varying vec2 vUv;
 varying float vActive;
 varying float vHover;
+varying vec3 vNoteColor;
 
 void main() {
   vec3 worldPos = vec3(
@@ -60,6 +61,7 @@ void main() {
   );
   vActive = iState.x;
   vHover = iState.y;
+  vNoteColor = iNoteColor;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPos, 1.0);
 }
 `;
@@ -73,6 +75,7 @@ uniform vec3 uBgColor;
 varying vec2 vUv;
 varying float vActive;
 varying float vHover;
+varying vec3 vNoteColor;
 
 void main() {
   vec3 texRgb = texture2D(uAtlas, vUv).rgb;
@@ -85,68 +88,11 @@ void main() {
   float idleAlpha = mix(0.42, 0.74, hoverAmt);
   vec3 idleColor = mix(uBgColor, bwRgb, idleAlpha);
 
-  // Active / selected state: vivid full-color thumbnail at 100% opacity
-  vec3 activeColor = clamp(texRgb * 1.18 + 0.02, 0.0, 1.0);
-
+  // Active / selected state: chromatic hex color at 85% max opacity over the square, fading out smoothly
   float t = smoothstep(0.0, 1.0, clamp(vActive, 0.0, 1.0));
-  vec3 finalRgb = mix(idleColor, activeColor, t);
+  vec3 finalRgb = mix(idleColor, vNoteColor, t * 0.85);
 
   gl_FragColor = vec4(finalRgb, 1.0);
-}
-`;
-
-const BORDER_VERT_SHADER = `
-attribute vec3 iOffsetScale; // x: worldX, y: worldY, z: cellSize
-attribute vec2 iState;       // x: activeAmount, y: hoverAmount
-attribute vec3 iNoteColor;   // r, g, b normalized border color
-
-varying vec2 vLocalPx;
-varying float vCellPx;
-varying float vActive;
-varying vec3 vNoteColor;
-
-void main() {
-  if (iState.x <= 0.005) {
-    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-    vLocalPx = vec2(0.0);
-    vCellPx = 1.0;
-    vActive = 0.0;
-    vNoteColor = vec3(0.0);
-    return;
-  }
-
-  float outStrokePx = 2.0;
-  float quadSize = iOffsetScale.z + outStrokePx * 2.0;
-  vec3 worldPos = vec3(
-    position.x * quadSize + iOffsetScale.x,
-    position.y * quadSize + iOffsetScale.y,
-    position.z
-  );
-  vLocalPx = position.xy * quadSize;
-  vCellPx = iOffsetScale.z;
-  vActive = iState.x;
-  vNoteColor = iNoteColor;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPos, 1.0);
-}
-`;
-
-const BORDER_FRAG_SHADER = `
-precision highp float;
-
-varying vec2 vLocalPx;
-varying float vCellPx;
-varying float vActive;
-varying vec3 vNoteColor;
-
-void main() {
-  float halfCell = vCellPx * 0.5;
-  float maxCoord = max(abs(vLocalPx.x), abs(vLocalPx.y));
-  // Strictly outside the inner cell square (2px outer stroke ring)
-  if (maxCoord < halfCell - 0.15) {
-    discard;
-  }
-  float alpha = smoothstep(0.0, 0.35, clamp(vActive, 0.0, 1.0));
-  gl_FragColor = vec4(vNoteColor, alpha);
 }
 `;
 
@@ -220,23 +166,10 @@ export function createThreeStage({
     depthWrite: false
   });
 
-  const borderMaterial = new THREE.ShaderMaterial({
-    vertexShader: BORDER_VERT_SHADER,
-    fragmentShader: BORDER_FRAG_SHADER,
-    transparent: true,
-    depthTest: false,
-    depthWrite: false
-  });
-
   const tileMesh = new THREE.Mesh(instGeo, material);
   tileMesh.frustumCulled = false;
   tileMesh.renderOrder = 0;
   scene.add(tileMesh);
-
-  const borderMesh = new THREE.Mesh(instGeo, borderMaterial);
-  borderMesh.frustumCulled = false;
-  borderMesh.renderOrder = 1;
-  scene.add(borderMesh);
 
   let atlasManifest = null;
   let atlasBySliceId = new Map();
@@ -255,7 +188,9 @@ export function createThreeStage({
     stripW: 0,
     topStripH: 0,
     betweenGap: 16,
-    marginY: 20
+    marginY: 20,
+    tileScale: 1.0,
+    desiredCell: 0
   };
   let layout = {
     cols: 1,
@@ -387,42 +322,53 @@ export function createThreeStage({
       Math.min(cssW - 24, Number(layoutSpec.stripW) > 0 ? Number(layoutSpec.stripW) : Math.round(cssW * 0.80))
     );
     const availH = Math.max(32, cssH - topStripH - betweenGap - marginY * 2);
-    const maxCellPx = 14.0;
-    const idealCellPx = Math.min(12.0, Math.max(7.5, targetW / 76));
+    const tileScale = Math.max(1.0, Math.min(2.5, Number(layoutSpec.tileScale) || 1.0));
+    const baseIdealCellPx = Math.min(12.0, Math.max(7.5, targetW / 76));
+    const desiredCellPx =
+      Number(layoutSpec.desiredCell) > 0 ? Number(layoutSpec.desiredCell) : baseIdealCellPx * tileScale;
+    const maxCellPx = Math.max(14.0 * tileScale, desiredCellPx * 1.35);
+    const minCellPx = 4.5;
 
     let bestCols = N;
-    let bestCell = idealCellPx;
+    let bestCell = desiredCellPx;
 
-    // Only if N is very small (all tiles fit on 1 row without exceeding maxCellPx), center 1 compact row
-    if (N * maxCellPx + (N - 1) * gap <= targetW) {
+    // Only if N is ultra-tiny (1–3 tiles) and fits without stretching across the full strip, center 1 compact row
+    if (N <= 3 && N * desiredCellPx + (N - 1) * gap <= targetW) {
       bestCols = N;
-      bestCell = Math.min(maxCellPx, availH);
+      bestCell = Math.min(desiredCellPx, availH);
     } else {
-      // Otherwise choose cols so cell = (targetW - (cols - 1) * gap) / cols makes gridW === targetW FLUSH!
-      let bestScore = -1e9;
-      const minCols = Math.max(10, Math.ceil((targetW + gap) / (maxCellPx + gap)));
-      const maxCols = Math.min(N, Math.max(minCols + 1, Math.floor((targetW + gap) / (4.5 + gap))));
+      // Force-snap cols so cellByW = (targetW - (cols - 1) * gap) / cols makes gridW === targetW (stripW) FLUSH!
+      const minCols = Math.max(1, Math.min(N, Math.ceil((targetW + gap) / (maxCellPx + gap))));
+      const maxCols = Math.min(N, Math.max(minCols, Math.floor((targetW + gap) / (minCellPx + gap))));
 
+      let bestScore = -1e9;
+      let foundFitting = false;
       for (let cols = minCols; cols <= maxCols; cols++) {
         const rows = Math.ceil(N / cols);
         const cellByW = (targetW - (cols - 1) * gap) / cols;
-        if (cellByW < 4.5 || cellByW > maxCellPx + 0.01) continue;
+        if (cellByW < minCellPx - 0.01) continue;
 
         const neededH = rows * cellByW + (rows - 1) * gap;
-        const fitsH = neededH <= availH;
-        const overflowPenalty = fitsH ? 0 : (neededH - availH) * 4.0;
+        if (neededH > availH + 0.5) continue;
 
+        foundFitting = true;
         const lastRowCount = N - (rows - 1) * cols;
         const lastRowFill = lastRowCount / cols;
-        const sizeCloseness = 1.0 - Math.min(1.0, Math.abs(cellByW - idealCellPx) / 7.0);
+        const orphanPenalty = rows > 1 && lastRowFill < 0.25 ? (0.25 - lastRowFill) * 22 : 0;
+        const sizeCloseness =
+          1.0 - Math.min(1.0, Math.abs(cellByW - desiredCellPx) / Math.max(4.0, desiredCellPx * 0.6));
 
-        const score = sizeCloseness * 28 + lastRowFill * 9 - rows * 1.35 - overflowPenalty;
+        const score = sizeCloseness * 38 + lastRowFill * 9 - orphanPenalty;
         if (score > bestScore) {
           bestScore = score;
           bestCols = cols;
-          bestCell = fitsH ? cellByW : Math.max(4.0, Math.min(cellByW, (availH - (rows - 1) * gap) / rows));
         }
       }
+
+      if (!foundFitting) {
+        bestCols = maxCols;
+      }
+      bestCell = (targetW - (bestCols - 1) * gap) / bestCols;
     }
 
     const rows = Math.ceil(N / bestCols);
@@ -512,7 +458,7 @@ export function createThreeStage({
               : Number(s.midi ?? uvEntry.midi ?? 60);
           const isPerc = assigned
             ? assigned.isPerc
-            : v.category === 'percussion' || Boolean(s.percBucket) || midi < 36;
+            : v.category === 'percussion' || midi < 36;
 
           nextItems.push({
             ...uvEntry,
@@ -559,7 +505,8 @@ export function createThreeStage({
     const aw = atlasManifest.atlasWidth;
     const ah = atlasManifest.atlasHeight;
 
-    // Pass 1: all square thumbnails (idle B&W, active/selected vivid color)
+    // Pass 1: all square B&W micro-thumbnails
+    ctx2d.filter = 'grayscale(1) contrast(1.08)';
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const col = i % cols;
@@ -570,30 +517,25 @@ export function createThreeStage({
       const sy = it.v0 * ah;
       const sw = (it.u1 - it.u0) * aw;
       const sh = (it.v1 - it.v0) * ah;
-      if (activeValues[i] > 0.02) {
-        ctx2d.filter = 'brightness(1.18)';
-        ctx2d.globalAlpha = 1.0;
-      } else {
-        ctx2d.filter = 'grayscale(1) contrast(1.08)';
-        ctx2d.globalAlpha = i === hoveredIdx ? 0.74 : 0.42;
-      }
+      ctx2d.globalAlpha = i === hoveredIdx ? 0.74 : 0.42;
       ctx2d.drawImage(atlasImage, sx, sy, sw, sh, x, y, cell, cell);
     }
 
-    // Pass 2: outer 2px stroke border on active/selected tiles
+    // Pass 2: chromatic hex square fill at 85% max opacity on active/selected tiles
     ctx2d.filter = 'none';
-    ctx2d.lineWidth = 2;
     for (let i = 0; i < items.length; i++) {
-      if (activeValues[i] <= 0.01) continue;
+      const v = Math.max(0, Math.min(1, activeValues[i]));
+      if (v <= 0.004) continue;
       const it = items[i];
       const col = i % cols;
       const row = (i / cols) | 0;
       const x = originX + col * stride;
       const y = originY + row * stride;
-      ctx2d.globalAlpha = Math.min(1, activeValues[i] / 0.35);
-      ctx2d.strokeStyle =
+      const smooth = v * v * (3 - 2 * v);
+      ctx2d.globalAlpha = smooth * 0.85;
+      ctx2d.fillStyle =
         it.sliceId === selectedSliceId ? it.selectColorHex : it.triggerColorHex;
-      ctx2d.strokeRect(x - 1, y - 1, cell + 2, cell + 2);
+      ctx2d.fillRect(x, y, cell, cell);
     }
     ctx2d.globalAlpha = 1.0;
   }
@@ -606,22 +548,23 @@ export function createThreeStage({
     const activeSet = getActiveSliceIds ? getActiveSliceIds() : new Set();
     let needsMoreFrames = false;
     const N = Math.min(items.length, MAX_INSTANCES);
-    const decayTime = Math.max(0.18, Number(fadeOutSec) || 0.20);
+    // Snappy bottom mosaic decay: starts on note/slot end and dims fast (~0.12s), never fading in
+    const TILE_COLOR_DECAY_SEC = 0.12;
 
     for (let i = 0; i < N; i++) {
       const isSelected = selectedSliceId !== null && items[i].sliceId === selectedSliceId;
       const target = isSelected || activeSet.has(items[i].sliceId) ? 1.0 : 0.0;
       const cur = activeValues[i];
-      if (isSelected) {
+      if (target >= 1.0) {
+        // Hard pop-on: bottom mosaic tile colors NEVER fade in
         activeValues[i] = 1.0;
-      } else if (Math.abs(target - cur) > 0.004) {
-        const speed = target > cur ? dt / 0.055 : dt / decayTime;
-        activeValues[i] = target > cur ? Math.min(1.0, cur + speed) : Math.max(0.0, cur - speed);
-        if (Math.abs(target - activeValues[i]) > 0.004) {
+      } else if (cur > 0.004) {
+        activeValues[i] = Math.max(0.0, cur - dt / TILE_COLOR_DECAY_SEC);
+        if (activeValues[i] > 0.004) {
           needsMoreFrames = true;
         }
       } else {
-        activeValues[i] = target;
+        activeValues[i] = 0.0;
       }
 
       const o2 = i * 2;
@@ -843,7 +786,8 @@ export function createThreeStage({
       return chosen;
     },
     setFadeOutSec(nextSec = 0.2) {
-      fadeOutSec = Math.max(0.18, Math.min(1.2, Number(nextSec) || 0.2));
+      const n = Number(nextSec);
+      fadeOutSec = Number.isFinite(n) ? Math.max(0.0, Math.min(2.0, n)) : 0.2;
     },
     syncCatalog(catalog) {
       rebuildItemsFromCatalog(catalog);

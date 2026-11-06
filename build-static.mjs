@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { computeKeyboardMap, computePercussionMap, inferVideoGroupName } from './dsp-pipeline.mjs';
+import { computeKeyboardMap, inferVideoGroupName } from './dsp-pipeline.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -61,6 +61,7 @@ export async function buildStaticSite(versionSlug = 'v1') {
     'styles.css',
     'app.js',
     'midi-parser.mjs',
+    'midi-timeline.mjs',
     'three-stage.mjs',
     'stage-atlas.jpg',
     'stage-atlas.json'
@@ -83,6 +84,32 @@ export async function buildStaticSite(versionSlug = 'v1') {
     for (const ff of fs.readdirSync(fontsDirSrc)) {
       fs.copyFileSync(path.join(fontsDirSrc, ff), path.join(fontsDirDst, ff));
     }
+  }
+  const midiDirSrc = path.join(ROOT_DIR, 'midi');
+  if (fs.existsSync(midiDirSrc)) {
+    const midiDirDst = path.join(outDir, 'midi');
+    fs.mkdirSync(midiDirDst, { recursive: true });
+    const staticMidiFiles = [];
+    for (const mf of fs.readdirSync(midiDirSrc)) {
+      if (mf.startsWith('.') || !/\.(mid|midi)$/i.test(mf)) continue;
+      const srcP = path.join(midiDirSrc, mf);
+      const st = fs.statSync(srcP);
+      if (!st.isFile()) continue;
+      fs.copyFileSync(srcP, path.join(midiDirDst, mf));
+      staticMidiFiles.push({
+        name: mf,
+        url: `./midi/${encodeURIComponent(mf)}`,
+        mtimeMs: Math.round(st.mtimeMs),
+        size: st.size,
+        isRecording: /^rec_/i.test(mf)
+      });
+    }
+    staticMidiFiles.sort((a, b) => {
+      if (a.isRecording !== b.isRecording) return a.isRecording ? -1 : 1;
+      if (a.isRecording) return b.mtimeMs - a.mtimeMs || b.name.localeCompare(a.name);
+      return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+    });
+    fs.writeFileSync(path.join(midiDirDst, 'index.json'), JSON.stringify({ files: staticMidiFiles }));
   }
 
   // 2. Copy spliced Tier-1 media (thumbnails + clip MP4s) and encode clip WAVs -> M4As
@@ -157,22 +184,21 @@ export async function buildStaticSite(versionSlug = 'v1') {
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
 
-  // 3. Recompute keyboardMap & percussionMap against the slimmed .m4a catalog
+  // 3. Recompute keyboardMap against the slimmed .m4a catalog
   const keyboardConfig = JSON.parse(
     JSON.stringify(rawCatalog.keyboardConfig || { selectedByMidi: {}, enabledByMidi: {}, clearedMidis: [] })
   );
   const keyboardMap = computeKeyboardMap(slimVideos, keyboardConfig);
-  const percussionMap = computePercussionMap(slimVideos, rawCatalog.percussionMap || {});
 
   const staticCatalog = {
     version: rawCatalog.version || 2,
     staticBuild: versionSlug,
     updatedAt: new Date().toISOString(),
     stats: rawCatalog.stats || {},
+    stageConfig: rawCatalog.stageConfig || undefined,
     keyboardConfig,
     videos: slimVideos,
-    keyboardMap,
-    percussionMap
+    keyboardMap
   };
 
   fs.writeFileSync(path.join(outDir, 'catalog.json'), JSON.stringify(staticCatalog));

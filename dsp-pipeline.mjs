@@ -62,7 +62,20 @@ const EXPLICIT_VIDEO_GROUP_NAMES = {
   'cat-toy-piano': 'cat toy piano',
   'hand-drum-head': 'hand drum',
   'chord-organ-low': 'chord organ',
-  'chord-organ-mid': 'chord organ'
+  'chord-organ-mid': 'chord organ',
+  'wood-log-mallet-01': 'wood log 1',
+  'wood-log-mallet-02': 'wood log 1',
+  'wood-log-mallet-03': 'wood log 1',
+  'wood-log-mallet-04': 'wood log 1',
+  'wood-log-mallet-05': 'wood log 1',
+  'wood-log-mallet-06': 'wood log 1',
+  'wood-log-mallet-07': 'wood log 1',
+  'wood-log-mallet-08': 'wood log 1',
+  'wood-log-mallet-09': 'wood log 2',
+  'wood-log-mallet-10': 'wood log 2',
+  'wood-log-mallet-11': 'wood log 2',
+  'wood-log-mallet-12': 'wood log 2',
+  'wood-log-mallet-13': 'wood log 2'
 };
 
 export function inferVideoGroupName(videoOrSlug) {
@@ -691,95 +704,42 @@ export function analyzeVideoAudio(filePath, options = {}) {
   };
 }
 
-// Curated low-to-high 12-key Percussion Octave (MIDI 24 C1 -> 35 B1)
-export const PERC_OCTAVE_ROLES = {
-  24: 'Sub Kick',
-  25: 'Deep Kick',
-  26: 'Soft Thud',
-  27: 'Metal Thump',
-  28: 'Low Log',
-  29: 'Warm Log',
-  30: 'Wood Block',
-  31: 'High Wood',
-  32: 'Hollow Gong',
-  33: 'Tin & Glass',
-  34: 'Ping & Tick',
-  35: 'Crisp Click'
+// Bottom-octave percussion mapping: 1 instrument per note (MIDI 24 C1 -> 35 B1)
+export const PERC_GROUP_TO_MIDI = {
+  'puffball mushroom': 24, // C1
+  'wet leaf': 25,          // C#1
+  'wood log 1': 26,        // D1
+  'wood log 2': 27,        // D#1
+  'bird feeder': 28,       // E1
+  'clock pendulum': 29,    // F1
+  'ping pong ball': 30,    // F#1
+  'glass lamp': 31         // G1
+  // MIDI 32..35 (G#1..B1) left open for future percussion instruments
 };
 
-const PERC_SLICE_TO_MIDI = {
-  // 24 C1 — Sub Kick (Puffball Mushroom 1)
-  v53_s01: 24, v53_s02: 24, v08_s01: 24,
-  // 25 C#1 — Deep Kick (Puffball Mushroom 2)
-  v54_s01: 25, v54_s02: 25, v08_s03: 25,
-  // 26 D1 — Soft Thud (Puffball + Lamp / Clock Low)
-  v53_s03: 26, v08_s02: 26, v09_s01: 26,
-  // 27 D#1 — Low Metal Thump (Bird Feeder Low)
-  v55_s01: 27, v57_s01: 27,
-  // 28 E1 — Low Wood Log
-  v46_s01: 28, v48_s01: 28, v52_s01: 28,
-  // 29 F1 — Warm Wood Log
-  v44_s01: 29, v50_s01: 29, v51_s01: 29, v58_s01: 29,
-  // 30 F#1 — Mid Wood Block
-  v40_s01: 30, v43_s01: 30, v42_s01: 30, v41_s01: 30,
-  // 31 G1 — High Wood Clack
-  v45_s01: 31, v47_s01: 31, v49_s01: 31,
-  // 32 G#1 — Hollow Resonance
-  v08_s06: 32, v08_s04: 32, v08_s05: 32,
-  // 33 A1 — Tin & Glass Rim
-  v56_s01: 33, v59_s01: 33, v09_s02: 33, v09_s03: 33,
-  // 34 A#1 — Ping-Pong & Clock Tick
-  v110_s01: 34, v08_s09: 34, v08_s08: 34, v08_s07: 34,
-  // 35 B1 — Crisp High Click
-  v09_s04: 35, v09_s06: 35, v09_s05: 35, v09_s07: 35
-};
-
-const DEFAULT_PERC_ON_BY_MIDI = {
-  24: 'v53_s01',
-  25: 'v54_s01',
-  26: 'v53_s03',
-  27: 'v55_s01',
-  28: 'v46_s01',
-  29: 'v44_s01',
-  30: 'v40_s01',
-  31: 'v45_s01',
-  32: 'v08_s06',
-  33: 'v56_s01',
-  34: 'v110_s01',
-  35: 'v09_s04'
-};
-
-function inferPercMidiFallback(video, slice) {
-  if ((video?.slug || '').includes('puffball')) return slice.freq < 100 ? 24 : 26;
-  const f = slice?.freq || 200;
-  if (f < 76) return 24;
-  if (f < 86) return 25;
-  if (f < 110) return 28;
-  if (f < 160) return 26;
-  if (f < 204) return 29;
-  if (f < 230) return 30;
-  if (f < 290) return 31;
-  if (f < 360) return 32;
-  if (f < 650) return 33;
-  if (f < 1450) return 34;
-  return 35;
+function getPercInstrumentMidi(video) {
+  const groupKey = inferVideoGroupName(video).trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(PERC_GROUP_TO_MIDI, groupKey)) {
+    return PERC_GROUP_TO_MIDI[groupKey];
+  }
+  // Deterministic fallback into open upper percussion slots (32..35) for new percussion instruments
+  let hash = 0;
+  for (let i = 0; i < groupKey.length; i++) {
+    hash = (hash * 31 + groupKey.charCodeAt(i)) >>> 0;
+  }
+  return 32 + (hash % 4);
 }
 
-export function isDefaultPercSlice(video, slice) {
-  return (
-    video?.category === 'percussion' ||
-    slice?.percBucket === 'kick' ||
-    slice?.percBucket === 'snare' ||
-    slice?.percBucket === 'hihat'
-  );
+export function isDefaultPercSlice(video) {
+  return video?.category === 'percussion';
 }
 
 export function getDefaultSliceMidi(video, slice) {
+  if (isDefaultPercSlice(video)) {
+    return getPercInstrumentMidi(video);
+  }
   if (slice?.dspOriginal && Number.isFinite(slice.dspOriginal.midi)) {
     return Number(slice.dspOriginal.midi);
-  }
-  if (isDefaultPercSlice(video, slice)) {
-    return PERC_SLICE_TO_MIDI[slice.id] ?? inferPercMidiFallback(video, slice);
   }
   return Number(slice?.midi ?? 60);
 }
@@ -788,19 +748,19 @@ export function getEffectiveSliceMidi(video, slice) {
   if (Number.isFinite(slice?.manualMidi)) {
     return Number(slice.manualMidi);
   }
-  if (isDefaultPercSlice(video, slice)) {
-    return PERC_SLICE_TO_MIDI[slice.id] ?? inferPercMidiFallback(video, slice);
+  if (isDefaultPercSlice(video)) {
+    return getPercInstrumentMidi(video);
   }
   return Number(slice?.midi ?? 60);
 }
 
 /**
  * Unified Keyboard Configurator:
- *  - MIDI 24..35 (C1..B1): 12-key Percussion Octave mapped low kick (puffballs) -> high clicks
+ *  - MIDI 24..35 (C1..B1): Bottom-octave Percussion Range (1 instrument per note, all slices active for round-robin)
  *  - MIDI 36..103 (C2..G7): 68-key Nearest-Note Tonal Range (<= ±50c micro-tuning)
  *  - Supports manual MIDI slot reassignment (`s.manualMidi`) at original pitch (`1.0x`) + manual re-pitch (`s.manualTuneCents`),
  *    with non-destructive revert to `s.dspOriginal`.
- *  - Supports multiple `ON` clips per key (`keyboardConfig.enabledByMidi[midi]`) for round-robin / random playback.
+ *  - Supports multiple `ON` clips per key (`keyboardConfig.enabledByMidi[midi]`) for round-robin playback.
  */
 export function computeKeyboardMap(videos, keyboardConfig = {}) {
   if (!keyboardConfig.selectedByMidi) keyboardConfig.selectedByMidi = {};
@@ -841,10 +801,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
       }
 
       const isPercSlot = targetMidi < 36;
-      const dspName =
-        dspMidi < 36
-          ? `${midiToName(dspMidi)} (${PERC_OCTAVE_ROLES[dspMidi] || 'Perc'})`
-          : midiToName(dspMidi);
+      const dspName = midiToName(dspMidi);
 
       let shiftCents = 0;
       let playbackRate = 1.0;
@@ -871,7 +828,6 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
       const isTrimmed = trimIn > 0.005 || trimOut < rawDurSec - 0.005;
 
       if (isPercSlot) {
-        const isDefaultHero = DEFAULT_PERC_ON_BY_MIDI[targetMidi] === s.id;
         const item = {
           videoId: v.id,
           videoIndex: v.index,
@@ -883,7 +839,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
           thumbUrl: v.thumbUrl,
           sliceId: s.id,
           midi: targetMidi,
-          name: PERC_OCTAVE_ROLES[targetMidi] || midiToName(targetMidi),
+          name: midiToName(targetMidi),
           dspMidi,
           dspName,
           manualMidi: hasManualMove ? targetMidi : null,
@@ -905,7 +861,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
           trimOut,
           durSec: activeDurSec,
           isTrimmed,
-          _score: (isDefaultHero ? 1000 : 0) + (hasManualMove ? 500 : 0) - (s.freq || 0) * 0.01
+          _score: hasManualMove ? 500 : 0
         };
         const list = bucketsByMidi.get(targetMidi) || [];
         list.push(item);
@@ -980,9 +936,7 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
       if (clearedSet.has(targetMidi)) {
         enabledIds = [];
       } else if (isPercKey) {
-        const heroId = DEFAULT_PERC_ON_BY_MIDI[targetMidi];
-        const hero = candidates.find(c => c.sliceId === heroId) || candidates[0];
-        enabledIds = hero ? [hero.sliceId] : [];
+        enabledIds = candidates.map(c => c.sliceId);
       } else {
         const savedId = keyboardConfig.selectedByMidi[targetMidi];
         const savedCand = candidates.find(c => c.sliceId === savedId) || candidates[0];
@@ -1017,7 +971,6 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
       targetName,
       targetFreq,
       isPercKey,
-      percRole: isPercKey ? PERC_OCTAVE_ROLES[targetMidi] : null,
       isCleared: enabledIds.length === 0,
       enabledSliceIds: enabledIds,
       enabledCount: enabledIds.length,
@@ -1036,61 +989,31 @@ export function computeKeyboardMap(videos, keyboardConfig = {}) {
 }
 
 /**
- * Build the 3 minimal Percussion Buckets: 'kick', 'snare', 'hihat'
+ * Turn ON all active slices of newly imported/created videos on their assigned MIDI notes
+ * while preserving all existing enabled slices across the keyboard.
  */
-export function computePercussionMap(videos, prevPercMap = {}) {
-  const buckets = {
-    kick: { id: 'kick', label: 'Kick', keyShortcut: '1', midiNote: 36, activeSliceId: prevPercMap?.kick?.activeSliceId || null, slots: [] },
-    snare: { id: 'snare', label: 'Snare', keyShortcut: '2', midiNote: 38, activeSliceId: prevPercMap?.snare?.activeSliceId || null, slots: [] },
-    hihat: { id: 'hihat', label: 'Hi-Hat / Click', keyShortcut: '3', midiNote: 42, activeSliceId: prevPercMap?.hihat?.activeSliceId || null, slots: [] }
-  };
-
-  for (const v of videos) {
-    if (v.deleted) continue;
+export function enableVideoSlicesByDefault(allVideos, targetVideos, keyboardConfig = {}) {
+  computeKeyboardMap(allVideos, keyboardConfig);
+  for (const v of targetVideos || []) {
+    if (!v || v.deleted) continue;
+    v.enabled = true;
     for (const s of v.slices || []) {
-      if (s.deleted) continue;
-      let b = s.percBucket;
-      if (!b && v.category === 'percussion') {
-        if (s.freq < 130) b = 'kick';
-        else if (s.freq < 900) b = 'snare';
-        else b = 'hihat';
+      if (!s || s.deleted) continue;
+      const targetMidi = getEffectiveSliceMidi(v, s);
+      if (!Number.isFinite(targetMidi) || targetMidi < 24 || targetMidi > 103) continue;
+      if (!Array.isArray(keyboardConfig.enabledByMidi[targetMidi])) {
+        keyboardConfig.enabledByMidi[targetMidi] = [];
       }
-      if (b && buckets[b]) {
-        buckets[b].slots.push({
-          videoId: v.id,
-          videoSlug: v.slug,
-          videoLabel: v.label,
-          thumbUrl: v.thumbUrl,
-          sliceId: s.id,
-          baseName: s.baseName,
-          percBucket: b,
-          percLabel: s.percLabel || `${v.slug} #${s.hitIndex}`,
-          freq: s.freq,
-          name: s.name,
-          peakDb: s.peakDb,
-          startSec: s.startSec,
-          durSec: s.durSec,
-          starred: !!s.starred,
-          videoUrl: s.videoUrl,
-          audioUrl: s.audioUrl
-        });
+      if (!keyboardConfig.enabledByMidi[targetMidi].includes(s.id)) {
+        keyboardConfig.enabledByMidi[targetMidi].push(s.id);
+      }
+      if (Array.isArray(keyboardConfig.clearedMidis)) {
+        keyboardConfig.clearedMidis = keyboardConfig.clearedMidis.filter(
+          m => Number(m) !== targetMidi
+        );
       }
     }
   }
-
-  for (const bKey of ['kick', 'snare', 'hihat']) {
-    const bucket = buckets[bKey];
-    if (bucket.slots.length > 0) {
-      const stillValid = bucket.slots.some(sl => sl.sliceId === bucket.activeSliceId);
-      if (!stillValid) {
-        const starred = bucket.slots.find(sl => sl.starred);
-        bucket.activeSliceId = (starred || bucket.slots[0]).sliceId;
-      }
-    } else {
-      bucket.activeSliceId = null;
-    }
-  }
-
-  return buckets;
+  return computeKeyboardMap(allVideos, keyboardConfig);
 }
 
