@@ -259,3 +259,111 @@ export function parseMidiFile(inputBuffer) {
     events: timedEvents
   };
 }
+
+function pushVarLen(out, value) {
+  let v = Math.max(0, Math.floor(value || 0)) >>> 0;
+  const bytes = [v & 0x7f];
+  while ((v >>= 7) > 0) {
+    bytes.push((v & 0x7f) | 0x80);
+  }
+  for (let i = bytes.length - 1; i >= 0; i--) {
+    out.push(bytes[i]);
+  }
+}
+
+function writeUInt16BE(out, pos, val) {
+  out[pos] = (val >>> 8) & 0xff;
+  out[pos + 1] = val & 0xff;
+}
+
+function writeUInt32BE(out, pos, val) {
+  out[pos] = (val >>> 24) & 0xff;
+  out[pos + 1] = (val >>> 16) & 0xff;
+  out[pos + 2] = (val >>> 8) & 0xff;
+  out[pos + 3] = val & 0xff;
+}
+
+/**
+ * Encode timed events ({ timeSec, type: 'noteOn'|'noteOff'|'sustain', midi, velocity, pedalDown, channel })
+ * into a Standard MIDI File (Format 0, 480 PPQ @ 120 BPM => 960 ticks/sec, ~1.04ms resolution).
+ */
+export function encodeMidiFile(events = []) {
+  const ticksPerBeat = 480;
+  const usPerBeat = 500000; // 120 BPM => 0.5s/beat => 960 ticks/sec
+  const ticksPerSec = (ticksPerBeat * 1e6) / usPerBeat;
+
+  const typePriority = { noteOff: 0, sustain: 1, noteOn: 2 };
+  const prepared = [];
+  events.forEach((ev, seq) => {
+    if (!ev || !ev.type) return;
+    const tick = Math.max(0, Math.round(Math.max(0, Number(ev.timeSec || 0)) * ticksPerSec));
+    const ch = Math.max(0, Math.min(15, Number(ev.channel || 0)));
+    if (ev.type === 'noteOn' || ev.type === 'noteOff') {
+      const midi = Math.max(0, Math.min(127, Math.round(Number(ev.midi ?? 60))));
+      const velByte =
+        ev.type === 'noteOn'
+          ? Math.max(1, Math.min(127, Math.round(Number(ev.velocity ?? 0.9) * 127)))
+          : 0;
+      prepared.push({ tick, seq, type: ev.type, ch, d1: midi, d2: velByte });
+    } else if (ev.type === 'sustain') {
+      prepared.push({
+        tick,
+        seq,
+        type: 'sustain',
+        ch,
+        d1: 64,
+        d2: ev.pedalDown ? 127 : 0
+      });
+    }
+  });
+
+  prepared.sort((a, b) => {
+    if (a.tick !== b.tick) return a.tick - b.tick;
+    const pa = typePriority[a.type] ?? 1;
+    const pb = typePriority[b.type] ?? 1;
+    if (pa !== pb) return pa - pb;
+    return a.seq - b.seq;
+  });
+
+  const track = [];
+  // Meta Tempo @ tick 0: FF 51 03 07 A1 20 (500,000 us/beat = 120 BPM)
+  track.push(0x00, 0xff, 0x51, 0x03, 0x07, 0xa1, 0x20);
+
+  let prevTick = 0;
+  for (const ev of prepared) {
+    const delta = Math.max(0, ev.tick - prevTick);
+    prevTick = ev.tick;
+    pushVarLen(track, delta);
+    if (ev.type === 'noteOn') {
+      track.push(0x90 | ev.ch, ev.d1, ev.d2);
+    } else if (ev.type === 'noteOff') {
+      track.push(0x80 | ev.ch, ev.d1, 0x00);
+    } else if (ev.type === 'sustain') {
+      track.push(0xb0 | ev.ch, 64, ev.d2);
+    }
+  }
+
+  // End of Track: delta 0, FF 2F 00
+  track.push(0x00, 0xff, 0x2f, 0x00);
+
+  const out = new Uint8Array(14 + 8 + track.length);
+  // MThd
+  out[0] = 0x4d;
+  out[1] = 0x54;
+  out[2] = 0x68;
+  out[3] = 0x64;
+  writeUInt32BE(out, 4, 6);
+  writeUInt16BE(out, 8, 0); // Format 0
+  writeUInt16BE(out, 10, 1); // 1 track
+  writeUInt16BE(out, 12, ticksPerBeat);
+
+  // MTrk
+  out[14] = 0x4d;
+  out[15] = 0x54;
+  out[16] = 0x72;
+  out[17] = 0x6b;
+  writeUInt32BE(out, 18, track.length);
+  out.set(track, 22);
+
+  return out;
+}
