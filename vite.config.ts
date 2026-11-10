@@ -10,7 +10,8 @@ export default defineConfig({
   publicDir: false,
   server: {
     port: 3000,
-    host: '0.0.0.0'
+    host: '0.0.0.0',
+    allowedHosts: true
   },
   build: {
     outDir: 'dist',
