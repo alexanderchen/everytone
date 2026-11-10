@@ -177,11 +177,12 @@ const lastPlayedSliceByMidi = new Map();
 // ============================================================================
 function getDefaultStartMidiForOctaves(octaves) {
   if (octaves >= 3) return 48; // C3–B6 (4 oct) or C3–B5 (3 oct)
-  return 60; // C4–B5 (2 oct)
+  return 60; // C4–B5 (2 oct) or C4–B4 (1 oct)
 }
 
 function clampKeyboardStartMidi(raw, octaves = state.visibleOctaves) {
-  const vis = Math.max(MIN_VISIBLE_OCTAVES, Math.min(MAX_VISIBLE_OCTAVES, Math.round(Number(octaves) || 5)));
+  const minOct = state.isLiteMode ? 1 : MIN_VISIBLE_OCTAVES;
+  const vis = Math.max(minOct, Math.min(MAX_VISIBLE_OCTAVES, Math.round(Number(octaves) || 3)));
   const maxStart = Math.max(MIN_BASE_OCTAVE_MIDI, TOP_KEYBOARD_MIDI_LIMIT - vis * 12);
   const n = Number(raw);
   if (!Number.isFinite(n)) return Math.min(maxStart, getDefaultStartMidiForOctaves(vis));
@@ -1560,7 +1561,7 @@ function computeCurrentIntroBuildPlan() {
     rampUp: state.stageBuildRampUp,
     buildSound: state.stageBuildSound,
     maxFps: state.stageBuildMaxFps,
-    hasHandVideo: shouldShowHandVideoStrip(),
+    hasHandVideo: shouldShowHandVideoStrip() || Boolean(state.isLiteMode),
     getVideoGainDb
   });
 }
@@ -1640,6 +1641,10 @@ function stopIntroBuildPreview() {
   }
   if (handVideoEl) {
     handVideoEl.style.opacity = '';
+  }
+  const stagePianoWrapEl = document.getElementById('stagePianoWrap');
+  if (stagePianoWrapEl) {
+    stagePianoWrapEl.style.opacity = '';
   }
   if (hasSessionHandVideoStrip()) {
     requestHandVideoSeek(midiPlayer.elapsedSec);
@@ -2016,6 +2021,10 @@ async function toggleIntroBuildPreview() {
     // Camera stays OFF (showing solid #080808 stageHandVideoWrap) while tiles build, ramping in over last ~0.2s
     handVideoEl.style.opacity = '0';
   }
+  const stagePianoWrapEl = document.getElementById('stagePianoWrap');
+  if (state.isLiteMode && stagePianoWrapEl) {
+    stagePianoWrapEl.style.opacity = '0';
+  }
   const showcaseEl = document.getElementById('stageBuildShowcase');
   if (showcaseEl) {
     showcaseEl.classList.add('hidden');
@@ -2089,11 +2098,11 @@ async function toggleIntroBuildPreview() {
     if (
       plan.handFadeStartSec !== null &&
       plan.handFadeEndSec !== null &&
-      shouldShowHandVideoStrip() &&
-      handVideoEl
+      ((shouldShowHandVideoStrip() && handVideoEl) || (state.isLiteMode && stagePianoWrapEl))
     ) {
+      let fadeAlpha = '1';
       if (elapsed <= plan.handFadeStartSec) {
-        handVideoEl.style.opacity = '0';
+        fadeAlpha = '0';
       } else if (elapsed < plan.handFadeEndSec) {
         const u = Math.max(
           0,
@@ -2104,9 +2113,13 @@ async function toggleIntroBuildPreview() {
           )
         );
         const smooth = u * u * (3 - 2 * u);
-        handVideoEl.style.opacity = smooth.toFixed(4);
-      } else {
-        handVideoEl.style.opacity = '1';
+        fadeAlpha = smooth.toFixed(4);
+      }
+      if (shouldShowHandVideoStrip() && handVideoEl) {
+        handVideoEl.style.opacity = fadeAlpha;
+      }
+      if (state.isLiteMode && stagePianoWrapEl) {
+        stagePianoWrapEl.style.opacity = fadeAlpha;
       }
     }
 
@@ -2264,13 +2277,15 @@ function updateStageTileSizes() {
   const rowGap = rows > 1 ? (rows >= 3 ? 16 : 20) : 0;
   const specRatio = getStageSpecRatio(rows, state.stageSpecScale); // Flush spectrogram directly beneath each video
 
-  const splitHandVideo = shouldShowHandVideoStrip();
-  const videoPosition = normalizeStageVideoPosition(state.stageVideoPosition);
+  const hasStagePianoBelow = Boolean(state.isLiteMode);
+  const splitHandVideo = hasStagePianoBelow ? true : shouldShowHandVideoStrip();
+  const videoPosition = hasStagePianoBelow ? 'below' : normalizeStageVideoPosition(state.stageVideoPosition);
   const isBelowHand = splitHandVideo && videoPosition === 'below';
   const isRightHand = splitHandVideo && !isBelowHand;
   const handWidthPct = clampStageVideoWidthPct(state.stageVideoWidthPct);
   const handHeightPct = clampStageVideoHeightPct(state.stageVideoHeightPct);
-  const splitGap = 1; // Single-pixel 1px divider between hand video and mosaic cluster
+  const stagePianoH = hasStagePianoBelow ? Math.max(50, Math.min(70, Math.round(stageH * 0.08))) : 0;
+  const splitGap = 1; // Single-pixel 1px divider between hand video / stage keyboard and mosaic cluster
   const activeTiles = threeStage?.getItemCount?.() ?? 439;
   const marginY = Math.max(12, Math.round(stageH * (rows >= 3 ? 0.024 : 0.034)));
   const betweenGap =
@@ -2295,7 +2310,9 @@ function updateStageTileSizes() {
         : 0;
   const estStripW = Math.min(availW + gap * (cols - 1), maxCap * cols + gap * (cols - 1));
   const estBelowHandH = isBelowHand
-    ? Math.min(Math.round(stageH * 0.28), Math.max(36, Math.round(estStripW * (handHeightPct / 100))))
+    ? hasStagePianoBelow
+      ? stagePianoH
+      : Math.min(Math.round(stageH * 0.28), Math.max(36, Math.round(estStripW * (handHeightPct / 100))))
     : 0;
   const baseReserveH = isBelowHand
     ? rawReserveH + (activeTiles > 0 ? splitGap : 0) + estBelowHandH
@@ -2310,16 +2327,17 @@ function updateStageTileSizes() {
   const isPortraitStage = stageH > stageW * 1.12;
   const baseSide = Math.max(68, Math.min(maxCap, Math.floor(Math.min(baseMaxSideByH, availW / cols))));
   const baseStripW = baseSide * cols + gap * (cols - 1);
-  const mosaicRefW = isBelowHand
-    ? isPortraitStage
-      ? baseStripW * 0.96
-      : baseStripW * 0.54
-    : isRightHand
-      ? baseStripW * 0.62
-      : baseStripW;
+  const mosaicRefW =
+    isBelowHand && !hasStagePianoBelow
+      ? isPortraitStage
+        ? baseStripW * 0.96
+        : baseStripW * 0.54
+      : isRightHand
+        ? baseStripW * 0.62
+        : baseStripW;
   const baseCell100 = Math.min(
     isPortraitStage ? 16.0 : 12.0,
-    Math.max(isBelowHand && !isPortraitStage ? 5.6 : 6.2, mosaicRefW / 76)
+    Math.max(isBelowHand && !hasStagePianoBelow && !isPortraitStage ? 5.6 : 6.2, mosaicRefW / 76)
   );
   const desiredCell = baseCell100 * tileScale;
 
@@ -2349,7 +2367,9 @@ function updateStageTileSizes() {
       const rawAvailMosaicH = stageH - marginY * 2 - betweenGap - candTopH;
       const candBelowHandH = isBelowHand
         ? Math.min(
-            Math.max(24, Math.round(candStripW * (handHeightPct / 100))),
+            hasStagePianoBelow
+              ? stagePianoH
+              : Math.max(24, Math.round(candStripW * (handHeightPct / 100))),
             Math.max(24, rawAvailMosaicH - splitGap - Math.max(24, Math.min(64, Math.round(rawAvailMosaicH * 0.28))))
           )
         : 0;
@@ -2365,7 +2385,7 @@ function updateStageTileSizes() {
         activeTiles,
         desiredCell,
         1,
-        splitHandVideo ? 2.5 : 3.5
+        splitHandVideo && !hasStagePianoBelow ? 2.5 : 3.2
       );
       const effectiveGain = Math.min(m.cell, desiredCell);
       if (effectiveGain > bestAchievedCell + 0.08) {
@@ -2402,7 +2422,8 @@ function updateStageTileSizes() {
     splitGap,
     videoPosition,
     handWidthPct,
-    handHeightPct
+    handHeightPct,
+    fixedBelowHeightPx: stagePianoH
   });
   const stripTop = gridLayout?.stackTopY ?? marginY;
 
@@ -2470,9 +2491,9 @@ function updateStageTileSizes() {
   stageEl.style.setProperty('--build-inst-gap-y', `${buildInstGapY}px`);
 
   const handWrapEl = document.getElementById('stageHandVideoWrap');
-  const handVideoEl = document.getElementById('stageHandVideo');
+  const stagePianoWrapEl = document.getElementById('stagePianoWrap');
   if (handWrapEl) {
-    if (splitHandVideo && gridLayout?.handRect) {
+    if (!hasStagePianoBelow && splitHandVideo && gridLayout?.handRect) {
       handWrapEl.classList.remove('hidden');
       handWrapEl.style.left = `${gridLayout.handRect.x}px`;
       handWrapEl.style.top = `${gridLayout.handRect.y}px`;
@@ -2481,6 +2502,17 @@ function updateStageTileSizes() {
       applyHandVideoFramingStyles();
     } else {
       handWrapEl.classList.add('hidden');
+    }
+  }
+  if (stagePianoWrapEl) {
+    if (hasStagePianoBelow && gridLayout?.handRect) {
+      stagePianoWrapEl.classList.remove('hidden');
+      stagePianoWrapEl.style.left = `${gridLayout.handRect.x}px`;
+      stagePianoWrapEl.style.top = `${gridLayout.handRect.y}px`;
+      stagePianoWrapEl.style.width = `${gridLayout.handRect.w}px`;
+      stagePianoWrapEl.style.height = `${gridLayout.handRect.h}px`;
+    } else {
+      stagePianoWrapEl.classList.add('hidden');
     }
   }
 
@@ -4347,10 +4379,20 @@ let wfKeyboardDragMidi = null;
 let wfKeyboardDragStartMs = 0;
 
 function computeResponsiveOctaveCount(widthPx) {
-  if (!Number.isFinite(widthPx) || widthPx <= 0) return state.visibleOctaves || 3;
+  const minOct = state.isLiteMode ? 1 : MIN_VISIBLE_OCTAVES;
+  if (!Number.isFinite(widthPx) || widthPx <= 0) {
+    return state.visibleOctaves || (state.isLiteMode ? 2 : 3);
+  }
+  if (state.isLiteMode) {
+    // Stage keyboard flush under the sample mosaic: 1 oct when compact, 2 oct default, up to 3–4 oct on wide screens
+    if (widthPx < 300) return 1;
+    if (widthPx < 640) return 2;
+    if (widthPx < 940) return 3;
+    return 4;
+  }
   // ~236px per octave keeps 2–3 generous, comfortable octaves while prioritizing transport & preset real estate
   const fit = Math.floor(widthPx / 236);
-  return Math.max(MIN_VISIBLE_OCTAVES, Math.min(MAX_VISIBLE_OCTAVES, fit));
+  return Math.max(minOct, Math.min(MAX_VISIBLE_OCTAVES, fit));
 }
 
 function shiftKeyboardOctave(deltaOctaves) {
@@ -11293,6 +11335,14 @@ async function init() {
     if (overlay) overlay.classList.remove('hidden');
     const tabTitle = document.getElementById('sessionsTabTitle');
     if (tabTitle) tabTitle.textContent = 'MIDI';
+    const keysTabTitle = document.getElementById('keysTabTitle');
+    if (keysTabTitle) keysTabTitle.textContent = 'Octave';
+    const stagePianoWrapEl = document.getElementById('stagePianoWrap');
+    const pianoKbEl = document.getElementById('pianoKeyboard');
+    if (stagePianoWrapEl && pianoKbEl && pianoKbEl.parentElement !== stagePianoWrapEl) {
+      stagePianoWrapEl.appendChild(pianoKbEl);
+      stagePianoWrapEl.style.opacity = '0';
+    }
   }
 
   const prefs = loadPrefsFromStorage();

@@ -3369,6 +3369,7 @@ body.lite-mode .lite-only-el {
 body.lite-mode .workstation-only-el,
 body.lite-mode .local-only-btn,
 body.lite-mode #presetZone,
+body.lite-mode #keyboardZone,
 body.lite-mode #midiCamToggleBtn,
 body.lite-mode #midiUndoBtn,
 body.lite-mode #bladeGroupVolWrap,
@@ -3389,6 +3390,33 @@ body.lite-mode .blade-trim-window {
 
 body.lite-mode .transport-zone {
   width: clamp(304px, 23vw, 356px);
+}
+
+body.lite-mode .keys-dock-zone:not(.is-collapsed) {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+body.lite-mode .octave-rail-zone {
+  border-left: none;
+}
+
+.stage-piano-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  z-index: 6;
+  background: #000000;
+  border: 1px solid var(--line-key);
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+}
+
+.stage-piano-wrap.hidden {
+  display: none !important;
 }
 
 .lite-start-overlay {

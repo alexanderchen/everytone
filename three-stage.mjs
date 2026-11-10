@@ -335,6 +335,8 @@ export function createThreeStage({
     const handHeightPct = Number.isFinite(rawHeightPct)
       ? Math.max(10, Math.min(45, Math.round(rawHeightPct)))
       : 23;
+    const fixedBelowHeightPx = Math.max(0, Math.round(Number(layoutSpec.fixedBelowHeightPx) || 0));
+    const isFixedBelowKeyboard = isBelowHand && fixedBelowHeightPx > 0;
     const minSideW = Math.min(48, Math.floor((fullStripW - splitGap) * 0.45));
     const handW = isRightHand
       ? Math.max(
@@ -350,7 +352,9 @@ export function createThreeStage({
     const targetW = isRightHand ? Math.max(minSideW, fullStripW - splitGap - handW) : fullStripW;
     const rawAvailH = Math.max(32, cssH - topStripH - betweenGap - marginY * 2);
     const desiredBelowHandH = isBelowHand
-      ? Math.max(24, Math.round(fullStripW * (handHeightPct / 100)))
+      ? isFixedBelowKeyboard
+        ? fixedBelowHeightPx
+        : Math.max(24, Math.round(fullStripW * (handHeightPct / 100)))
       : 0;
     const minBelowMosaicH = isBelowHand
       ? Math.max(24, Math.min(64, Math.round(rawAvailH * 0.28)))
@@ -408,21 +412,22 @@ export function createThreeStage({
 
     const isPortraitStage = cssH > cssW * 1.12;
     const tileScale = Math.max(0.6, Math.min(2.5, Number(layoutSpec.tileScale) || 1.0));
-    const mosaicRefW = isBelowHand
-      ? isPortraitStage
-        ? fullStripW * 0.96
-        : fullStripW * 0.54
-      : isRightHand
-        ? fullStripW * 0.62
-        : fullStripW;
+    const mosaicRefW =
+      isBelowHand && !isFixedBelowKeyboard
+        ? isPortraitStage
+          ? fullStripW * 0.96
+          : fullStripW * 0.54
+        : isRightHand
+          ? fullStripW * 0.62
+          : fullStripW;
     const baseIdealCellPx = Math.min(
       isPortraitStage ? 16.0 : 12.0,
-      Math.max(isBelowHand && !isPortraitStage ? 5.6 : 6.2, mosaicRefW / 76)
+      Math.max(isBelowHand && !isFixedBelowKeyboard && !isPortraitStage ? 5.6 : 6.2, mosaicRefW / 76)
     );
     const desiredCellPx =
       Number(layoutSpec.desiredCell) > 0 ? Number(layoutSpec.desiredCell) : baseIdealCellPx * tileScale;
     const maxCellPx = Math.max(14.0 * tileScale, desiredCellPx * 1.35);
-    const minCellPx = splitHandVideo ? 2.5 : 3.5;
+    const minCellPx = splitHandVideo && !isFixedBelowKeyboard ? 2.5 : 3.2;
 
     let bestCols = N;
     let bestCell = desiredCellPx;
@@ -500,9 +505,9 @@ export function createThreeStage({
           }
         : isBelowHand
           ? {
-              x: handX,
+              x: Math.round(originX),
               y: handY,
-              w: fullStripW,
+              w: Math.max(2, Math.round(gridW > 0 ? gridW : fullStripW)),
               h: Math.max(2, Math.round(belowHandH))
             }
           : null
