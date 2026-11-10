@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="everytone-static" content="true" />
+  <meta name="everytone-lite" content="true" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Everytone</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <!-- Fullscreen Pure-Black START Splash (Public Lite Mode Only) -->
+  <div id="liteStartOverlay" class="lite-start-overlay hidden" role="dialog" aria-label="Start">
+    <button id="liteStartBtn" type="button" class="lite-start-btn">START</button>
+  </div>
+
+  <!-- Unified Far Top-Left Hamburger Toggle (Collapses/Expands Sidebar + Bottom Transport Together) -->
+  <button
+    id="chromeToggleBtn"
+    type="button"
+    class="chrome-hamburger-btn"
+    aria-label="Toggle Video Sidebar and Bottom Transport"
+    title="Toggle Video Sidebar &amp; Bottom Transport"
+  >
+    <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+      <line x1="2.5" y1="4" x2="13.5" y2="4"></line>
+      <line x1="2.5" y1="8" x2="13.5" y2="8"></line>
+      <line x1="2.5" y1="12" x2="13.5" y2="12"></line>
+    </svg>
+  </button>
+
+  <!-- 1. Upper Workspace: Left Collapsible Video File Explorer + Right Three.js 3D Stage -->
+  <div class="upper-workspace">
+    <aside class="file-explorer" id="fileExplorer">
+      <div class="explorer-header">
+        <button
+          id="liteResetMutesBtn"
+          type="button"
+          class="lite-reset-btn lite-only-el"
+          disabled
+          title="Reset sample mutes and stage grid back to default"
+        >Reset</button>
+      </div>
+
+      <div class="explorer-scroll-list" id="explorerList"></div>
+
+      <!-- Tabbed Stage & Camera Config Footer (Visible Only When Sidebar Menu Is Open) -->
+      <div class="explorer-stage-config" id="explorerStageConfig">
+        <div class="stage-cfg-tabs workstation-only-el" role="tablist" aria-label="Stage settings sections">
+          <button
+            type="button"
+            class="stage-cfg-tab is-active"
+            role="tab"
+            aria-selected="true"
+            data-cfg-tab="layout"
+          >Layout</button>
+          <button
+            type="button"
+            class="stage-cfg-tab"
+            role="tab"
+            aria-selected="false"
+            data-cfg-tab="motion"
+          >Motion</button>
+          <button
+            type="button"
+            class="stage-cfg-tab"
+            role="tab"
+            aria-selected="false"
+            data-cfg-tab="camera"
+          >Camera</button>
+          <button
+            type="button"
+            class="stage-cfg-tab"
+            role="tab"
+            aria-selected="false"
+            data-cfg-tab="build"
+          >Build</button>
+        </div>
+
+        <!-- Tab 1: Layout (Grid + Tile Size + Spectrogram Size) -->
+        <div class="stage-cfg-panel" data-cfg-panel="layout">
+          <div class="stage-cfg-row">
+            <span class="stage-cfg-label">Grid</span>
+            <div class="stage-grid-pills" role="group" aria-label="Foreground stage tile grid">
+              <button type="button" class="stage-grid-pill is-active" data-grid-mode="3x1" title="Single row of 3 film tiles">3×1</button>
+              <button type="button" class="stage-grid-pill" data-grid-mode="2x2" title="2×2 grid (4 film tiles)">2×2</button>
+              <button type="button" class="stage-grid-pill" data-grid-mode="3x2" title="Double row of 3 film tiles (6 tiles)">3×2</button>
+              <button type="button" class="stage-grid-pill" data-grid-mode="4x2" title="4×2 grid (8 film tiles)">4×2</button>
+              <button type="button" class="stage-grid-pill" data-grid-mode="3x3" title="3×3 grid (9 film tiles)">3×3</button>
+            </div>
+          </div>
+          <div class="stage-cfg-row workstation-only-el">
+            <span class="stage-cfg-label">Tile size</span>
+            <div class="stage-fade-wrap" title="Bottom sample mosaic tile size (60% to 250%, snapped flush to grid width; double-click for 100%)">
+              <input
+                id="stageTileScaleSlider"
+                type="range"
+                min="60"
+                max="250"
+                step="5"
+                value="100"
+                class="stage-fade-slider"
+              />
+              <span class="stage-fade-val" id="stageTileScaleReadout">100%</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row workstation-only-el">
+            <span class="stage-cfg-label">Spectrogram</span>
+            <div class="stage-fade-wrap" title="Visual spectrogram height underneath each video (75% up to 450%, about two-thirds of video height)">
+              <input
+                id="stageSpecScaleSlider"
+                type="range"
+                min="75"
+                max="450"
+                step="5"
+                value="100"
+                class="stage-fade-slider"
+              />
+              <span class="stage-fade-val" id="stageSpecScaleReadout">100%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Motion (Fade In + Fade Out + Max Display Time) -->
+        <div class="stage-cfg-panel hidden" data-cfg-panel="motion">
+          <div class="stage-cfg-row">
+            <span class="stage-cfg-label">Fade in</span>
+            <div class="stage-fade-wrap" title="Visual fade-in / dissolve duration for new notes (Off = 0.0s hard cut, up to 1.0s)">
+              <input
+                id="stageFadeInSlider"
+                type="range"
+                min="0"
+                max="1.0"
+                step="0.05"
+                value="0"
+                class="stage-fade-slider"
+              />
+              <span class="stage-fade-val" id="stageFadeInReadout">Off</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row">
+            <span class="stage-cfg-label">Fade out</span>
+            <div class="stage-fade-wrap" title="Visual fade-out duration when releasing notes (Off = 0.0s hard cut, up to 2.0s)">
+              <input
+                id="stageFadeSlider"
+                type="range"
+                min="0"
+                max="2.0"
+                step="0.05"
+                value="0.2"
+                class="stage-fade-slider"
+              />
+              <span class="stage-fade-val" id="stageFadeReadout">0.2s</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row">
+            <span class="stage-cfg-label">Min display</span>
+            <div
+              class="stage-fade-wrap"
+              title="Minimum time a visual stays on screen before ramping down, even on fast staccato notes (0.0s Off to 2.0s; double-click to reset to 0.7s)"
+            >
+              <input
+                id="stageMinDisplaySlider"
+                type="range"
+                min="0"
+                max="2.0"
+                step="0.1"
+                value="0.7"
+                class="stage-fade-slider"
+                aria-label="Minimum visual display time (0.0s to 2.0s)"
+              />
+              <span class="stage-fade-val" id="stageMinDisplayReadout">0.7s</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row">
+            <span class="stage-cfg-label">Max display</span>
+            <div
+              class="stage-fade-wrap"
+              title="Maximum time a clip stays on stage before ramping down when a note stays held (0.2s to 6.0s; double-click to reset to 1.0s)"
+            >
+              <input
+                id="stageMaxDisplaySlider"
+                type="range"
+                min="0.2"
+                max="6.0"
+                step="0.1"
+                value="1.0"
+                class="stage-fade-slider"
+                aria-label="Maximum display time (0.2s to 6.0s)"
+              />
+              <span class="stage-fade-val" id="stageMaxDisplayReadout">1.0s</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Camera (Hand Video Visibility, Width, Brightness, Zoom, Pan X, Pan Y) -->
+        <div class="stage-cfg-panel hidden" data-cfg-panel="camera">
+          <div class="stage-cfg-row">
+            <label
+              class="stage-cfg-check-wrap"
+              for="stageShowVideoToggle"
+              title="Show or hide the B&amp;W hand video strip (live webcam or recorded session video)"
+            >
+              <input
+                id="stageShowVideoToggle"
+                type="checkbox"
+                class="stage-cfg-checkbox"
+                checked
+              />
+              <span class="stage-cfg-label">Hand video</span>
+            </label>
+            <span class="stage-fade-val" id="stageShowVideoReadout">On</span>
+          </div>
+          <div class="stage-cfg-row stage-sub-cfg-row" id="stageVideoPositionRow">
+            <span class="stage-cfg-label">Layout</span>
+            <div class="stage-grid-pills" role="group" aria-label="Hand video layout relative to sample tiles">
+              <button
+                type="button"
+                class="stage-grid-pill is-active"
+                data-video-pos="right"
+                title="Place camera to the right of the sample tiles"
+              >Right</button>
+              <button
+                type="button"
+                class="stage-grid-pill"
+                data-video-pos="below"
+                title="Stack camera full-width below the sample tiles"
+              >Below</button>
+            </div>
+          </div>
+          <div class="stage-cfg-row stage-sub-cfg-row" id="stageVideoWidthRow">
+            <span class="stage-cfg-label">Width</span>
+            <div
+              class="stage-fade-wrap"
+              title="Share of the bottom cluster width given to the hand video; tiles responsively fill the rest (double-click for 50%)"
+            >
+              <input
+                id="stageVideoWidthSlider"
+                type="range"
+                min="15"
+                max="80"
+                step="1"
+                value="50"
+                class="stage-fade-slider"
+                aria-label="Hand video width (15% to 80%)"
+              />
+              <span class="stage-fade-val" id="stageVideoWidthReadout">50%</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row stage-sub-cfg-row hidden" id="stageVideoHeightRow">
+            <span class="stage-cfg-label">Height</span>
+            <div
+              class="stage-fade-wrap"
+              title="Height of the full-width camera strip below the sample tiles (10% to 45% of strip width; double-click for 23%)"
+            >
+              <input
+                id="stageVideoHeightSlider"
+                type="range"
+                min="10"
+                max="45"
+                step="1"
+                value="23"
+                class="stage-fade-slider"
+                aria-label="Hand video height (10% to 45%)"
+              />
+              <span class="stage-fade-val" id="stageVideoHeightReadout">23%</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row stage-sub-cfg-row" id="stageVideoBrightnessRow">
+            <span class="stage-cfg-label">Brightness</span>
+            <div
+              class="stage-fade-wrap"
+              title="Dim or brighten the B&amp;W hand video overall (double-click to reset to 100%)"
+            >
+              <input
+                id="stageVideoBrightnessSlider"
+                type="range"
+                min="10"
+                max="100"
+                step="5"
+                value="100"
+                class="stage-fade-slider"
+                aria-label="Hand video brightness (10% to 100%)"
+              />
+              <span class="stage-fade-val" id="stageVideoBrightnessReadout">100%</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row stage-sub-cfg-row" id="stageVideoZoomRow">
+            <span class="stage-cfg-label">Zoom</span>
+            <div
+              class="stage-fade-wrap"
+              title="Zoom into the full-resolution hand video up to 250% (double-click to reset to 100%)"
+            >
+              <input
+                id="stageVideoZoomSlider"
+                type="range"
+                min="100"
+                max="250"
+                step="5"
+                value="100"
+                class="stage-fade-slider"
+                aria-label="Hand video zoom (100% to 250%)"
+              />
+              <span class="stage-fade-val" id="stageVideoZoomReadout">100%</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row stage-sub-cfg-row" id="stageVideoPanXRow">
+            <span class="stage-cfg-label">Pan X</span>
+            <div
+              class="stage-fade-wrap"
+              title="Slide the zoomed hand video horizontally left/right (0% = Left, 50% = Center, 100% = Right; double-click to center)"
+            >
+              <input
+                id="stageVideoPanXSlider"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value="50"
+                class="stage-fade-slider"
+                aria-label="Hand video horizontal pan (0% Left to 100% Right)"
+              />
+              <span class="stage-fade-val" id="stageVideoPanXReadout">50%</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row stage-sub-cfg-row" id="stageVideoPosSliderRow">
+            <span class="stage-cfg-label">Pan Y</span>
+            <div
+              class="stage-fade-wrap"
+              title="Slide the hand video vertically up/down inside the wide crop strip (0% = Top, 50% = Center, 100% = Bottom; double-click to center)"
+            >
+              <input
+                id="stageVideoPosSlider"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value="50"
+                class="stage-fade-slider"
+                aria-label="Hand video vertical pan (0% Top to 100% Bottom)"
+              />
+              <span class="stage-fade-val" id="stageVideoPosReadout">50%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Build (Full Intro Build Simulator + Ramp Up / Sound / Duration Controls) -->
+        <div class="stage-cfg-panel hidden" data-cfg-panel="build">
+          <div class="stage-cfg-row">
+            <button
+              id="stageBuildPlayBtn"
+              type="button"
+              class="stage-build-play-btn"
+              title="Preview the intro build animation live on the stage"
+            >
+              <span class="stage-build-play-icon" id="stageBuildPlayIcon">▶</span>
+              <span class="stage-build-play-label" id="stageBuildPlayLabel">Play build</span>
+              <span class="stage-build-play-meta" id="stageBuildPlayMeta"></span>
+            </button>
+          </div>
+          <div class="stage-cfg-row">
+            <label
+              class="stage-cfg-check-wrap"
+              for="stageBuildRampUpToggle"
+              title="When checked, starts slower and accelerates continuously toward the end; when unchecked, builds linearly at a constant speed"
+            >
+              <input
+                id="stageBuildRampUpToggle"
+                type="checkbox"
+                class="stage-cfg-checkbox"
+                checked
+              />
+              <span class="stage-cfg-label">Ramp up</span>
+            </label>
+            <span class="stage-fade-val" id="stageBuildRampUpReadout">On</span>
+          </div>
+          <div class="stage-cfg-row">
+            <span class="stage-cfg-label">Audio</span>
+            <div class="stage-grid-pills" role="group" aria-label="Build animation audio">
+              <button
+                type="button"
+                class="stage-grid-pill is-active"
+                data-build-sound="on"
+                title="Play sample audio during the build animation"
+              >Sound</button>
+              <button
+                type="button"
+                class="stage-grid-pill"
+                data-build-sound="silent"
+                title="Silent build animation (no sound played during build)"
+              >Silent</button>
+            </div>
+          </div>
+          <div class="stage-cfg-row">
+            <span class="stage-cfg-label" id="stageBuildDurationLabel">Duration</span>
+            <div
+              class="stage-fade-wrap"
+              id="stageBuildDurationWrap"
+              title="Total seconds for the full build animation (1.0s to 25.0s; double-click to reset to 5.0s)"
+            >
+              <input
+                id="stageBuildDurationSlider"
+                type="range"
+                min="1.0"
+                max="25.0"
+                step="0.5"
+                value="5.0"
+                class="stage-fade-slider"
+                aria-label="Build duration in seconds"
+              />
+              <span class="stage-fade-val" id="stageBuildDurationReadout">5.0s</span>
+            </div>
+          </div>
+          <div class="stage-cfg-row">
+            <span class="stage-cfg-label" id="stageBuildMaxFpsLabel">Max FPS</span>
+            <div
+              class="stage-fade-wrap"
+              id="stageBuildMaxFpsWrap"
+              title="Maximum showcase image flash rate during build (2 fps to 15 fps; double-click to reset to 12 fps)"
+            >
+              <input
+                id="stageBuildMaxFpsSlider"
+                type="range"
+                min="2"
+                max="15"
+                step="1"
+                value="12"
+                class="stage-fade-slider"
+                aria-label="Maximum build showcase FPS"
+              />
+              <span class="stage-fade-val" id="stageBuildMaxFpsReadout">12 fps</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Unified Flush Instrument + Sample Sidebar Blade -->
+    <section
+      class="inspector-blade hidden"
+      id="inspectorBlade"
+      aria-label="Instrument and Sample Inspector"
+    >
+      <div class="blade-header">
+        <div class="blade-header-left">
+          <span class="inspector-group-title" id="bladeGroupTitle"></span>
+        </div>
+        <div class="blade-header-right">
+          <div
+            class="blade-vol-inline blade-header-vol"
+            id="bladeGroupVolWrap"
+            title="Instrument volume (−12 dB to +12 dB; double-click slider for 0 dB)"
+          >
+            <button
+              id="bladeGroupVolDecBtn"
+              type="button"
+              class="video-gain-step-btn video-gain-dec-btn"
+              title="Decrease instrument volume by 1 dB"
+              aria-label="Decrease instrument volume by 1 dB"
+            >−</button>
+            <input
+              id="bladeGroupVolSlider"
+              type="range"
+              min="-12"
+              max="12"
+              step="1"
+              value="0"
+              class="video-gain-slider"
+              aria-label="Instrument volume in dB"
+            />
+            <button
+              id="bladeGroupVolIncBtn"
+              type="button"
+              class="video-gain-step-btn video-gain-inc-btn"
+              title="Increase instrument volume by 1 dB"
+              aria-label="Increase instrument volume by 1 dB"
+            >+</button>
+            <span class="video-gain-readout" id="bladeGroupVolReadout">0 dB</span>
+          </div>
+          <button
+            id="bladeGroupSoloBtn"
+            type="button"
+            class="blade-solo-btn"
+            aria-pressed="false"
+            title="Temporarily solo only this instrument while respecting its individual sample mutes (Alt+S)"
+          >Solo</button>
+          <button
+            id="bladeGroupSwitch"
+            type="button"
+            class="ui-switch is-on"
+            role="switch"
+            aria-checked="true"
+            title="Enable or mute this instrument"
+          ></button>
+          <button
+            id="bladeTrashGroupBtn"
+            type="button"
+            class="icon-trash-btn local-only-btn"
+            title="Move instrument to _trash/"
+            aria-label="Trash instrument"
+          >
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+              <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM8 9h8v10H8V9zm7.5-5l-1-1h-5l-1 1H5v2h14V4h-3.5z"></path>
+            </svg>
+          </button>
+          <button
+            id="bladeCloseBtn"
+            type="button"
+            class="panel-icon-btn"
+            title="Close inspector (Esc)"
+            aria-label="Close inspector"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="blade-scroll" id="bladeScroll"></div>
+    </section>
+
+    <main class="performance-canvas" id="videoStage">
+      <canvas id="threeStageCanvas" class="three-stage-bg"></canvas>
+
+      <div class="stage-hand-video-wrap hidden" id="stageHandVideoWrap">
+        <video id="stageHandVideo" class="stage-hand-video" muted playsinline></video>
+      </div>
+
+      <div class="stage-build-showcase hidden" id="stageBuildShowcase" aria-hidden="true">
+        <div class="stage-slot-video" id="stageBuildVideoBox">
+          <canvas id="stageBuildVideoCanvas" class="slot-video-canvas" width="512" height="512"></canvas>
+        </div>
+        <div class="stage-build-spec-wrap" id="stageBuildSpecWrap">
+          <canvas id="stageBuildSpecCanvas" class="slot-mini-spec" width="320" height="96"></canvas>
+          <span id="stageBuildFreqLabel" class="stage-build-freq-label">
+            <span id="stageBuildNoteDot" class="stage-build-note-dot"></span>
+            <span id="stageBuildNoteName" class="stage-build-note-name"></span>
+            <span id="stageBuildFreqVal" class="stage-build-freq-val"></span>
+          </span>
+          <span id="stageBuildInstLabel" class="stage-build-inst-label"></span>
+        </div>
+      </div>
+
+      <div class="poly-video-strip" id="polyVideoGrid">
+        <div class="stage-slot-unit" data-slot="0">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit" data-slot="1">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit" data-slot="2">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="3">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="4">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="5">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="6">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="7">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+        <div class="stage-slot-unit hidden" data-slot="8">
+          <div class="stage-slot-video"></div>
+          <canvas class="slot-mini-spec" width="320" height="96"></canvas>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 2. Collapsible Bottom Bar: Optional Note Sample Drawer + Frugal Wide Keyboard Row -->
+  <footer class="bottom-transport-dock" id="transportDock">
+    <!-- Collapsible Single-Note Sample Shelf (Collapsed by Default on Load) -->
+    <section class="note-samples-drawer collapsed" id="noteSamplesDrawer">
+      <div class="candidates-strip" id="candidatesGrid"></div>
+
+      <button
+        id="collapseNoteSamplesBtn"
+        type="button"
+        class="drawer-collapse-btn"
+        title="Collapse sample view for active note"
+      >
+        ▾ Hide
+      </button>
+    </section>
+
+    <!-- Main Frugal Row: [ MIDI Transport ] | [ Selected Note + Pencil ] | [ Wide 3–6 Oct Keyboard ] | [ Octave Switcher ] -->
+    <div class="dock-main-row">
+      <!-- Far Left: Collapsible MIDI Player, Webcam + Session Recorder & Scrubbable Play Bar -->
+      <section class="dock-zone transport-zone" id="midiTransportZone">
+        <button
+          id="sessionsCollapseBtn"
+          type="button"
+          class="dock-accordion-tab"
+          aria-expanded="true"
+          title="Collapse or expand Sessions transport"
+        >
+          <span class="dock-accordion-inner">
+            <span class="dock-accordion-caret" aria-hidden="true">▾</span>
+            <span class="dock-accordion-title" id="sessionsTabTitle">Sessions</span>
+            <span id="sessionsTabDot" class="dock-accordion-dot hidden" aria-hidden="true"></span>
+          </span>
+        </button>
+
+        <div class="dock-zone-body transport-zone-body">
+          <div class="transport-top-row">
+            <input id="midiFileInput" type="file" accept=".mid,.midi" class="hidden" />
+            <div class="midi-session-bar">
+              <button
+                id="midiBrowserToggleBtn"
+                type="button"
+                class="midi-browser-btn workstation-only-el"
+                aria-expanded="false"
+                title="Browse recorded sessions &amp; ./midi/ files, or import a .mid file"
+              >
+                <span id="midiLoadedCamBadge" class="midi-loaded-cam-badge hidden" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"></path>
+                  </svg>
+                </span>
+                <span id="midiFileLabel" class="midi-file-label">Live · Sessions</span>
+                <span class="midi-browser-caret" aria-hidden="true">▾</span>
+              </button>
+              <button
+                id="midiLiteLoadBtn"
+                type="button"
+                class="midi-browser-btn midi-lite-load-btn lite-only-el"
+                title="Load a .mid file from your computer"
+              >
+                <span id="midiLiteFileLabel" class="midi-file-label">Load .mid…</span>
+              </button>
+              <button
+                id="midiRenameBtn"
+                type="button"
+                class="midi-clear-btn midi-rename-btn hidden local-only-btn"
+                title="Rename loaded session"
+                aria-label="Rename loaded session"
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">
+                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1.003 1.003 0 0 0 0-1.42l-2.34-2.34a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 1.84-1.82z"></path>
+                </svg>
+              </button>
+              <form id="midiRenameForm" class="midi-inline-rename-form hidden">
+                <input
+                  id="midiRenameInput"
+                  type="text"
+                  maxlength="64"
+                  placeholder="Session name…"
+                  class="midi-inline-rename-input"
+                  autocomplete="off"
+                />
+                <button type="submit" class="preset-form-save-btn">Save</button>
+                <button type="button" id="midiRenameCancelBtn" class="preset-form-cancel-btn" title="Cancel">✕</button>
+              </form>
+              <button
+                id="midiClearBtn"
+                type="button"
+                class="midi-clear-btn hidden"
+                title="Clear loaded session &amp; return to Live Mode"
+                aria-label="Clear loaded session"
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path>
+                </svg>
+              </button>
+            </div>
+            <div class="midi-transpose-ctrl" title="Transpose MIDI file by whole octaves">
+              <button id="midiOctDownBtn" type="button" class="midi-oct-btn" title="Transpose MIDI down 1 octave">−</button>
+              <span id="midiOctReadout" class="midi-oct-readout">0 oct</span>
+              <button id="midiOctUpBtn" type="button" class="midi-oct-btn" title="Transpose MIDI up 1 octave">+</button>
+            </div>
+          </div>
+
+          <div class="transport-scrub-row">
+            <div class="midi-transport-btns">
+              <button
+                id="midiCamToggleBtn"
+                type="button"
+                class="midi-cam-btn"
+                aria-pressed="false"
+                title="Toggle live webcam ON/OFF for hand video capture (video-only)"
+                aria-label="Toggle live webcam"
+              >
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
+                  <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"></path>
+                </svg>
+              </button>
+
+              <button
+                id="midiRecordBtn"
+                type="button"
+                class="midi-rec-btn"
+                title="Record live session or overdub onto loaded session (R)"
+                aria-label="Record live session or overdub (R)"
+              >
+                <span class="midi-rec-glyph" id="midiRecGlyph"></span>
+              </button>
+
+              <button
+                id="midiCancelRecBtn"
+                type="button"
+                class="midi-icon-btn midi-cancel-rec-btn hidden"
+                title="Cancel &amp; discard current recording"
+                aria-label="Cancel and discard current recording"
+              >
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
+                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path>
+                </svg>
+              </button>
+
+              <button
+                id="midiUndoBtn"
+                type="button"
+                class="midi-icon-btn midi-undo-btn hidden"
+                title="Undo latest overdub pass"
+                aria-label="Undo latest overdub pass"
+              >
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
+                  <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"></path>
+                </svg>
+              </button>
+
+              <span class="midi-btn-sep" aria-hidden="true"></span>
+
+              <button
+                id="midiResetBtn"
+                type="button"
+                class="midi-icon-btn"
+                disabled
+                title="Rewind to 0:00 &amp; reset sample round-robin cycle"
+                aria-label="Rewind and reset samples"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"></path>
+                </svg>
+              </button>
+
+              <button id="midiPlayPauseBtn" type="button" class="midi-play-btn" disabled title="Play / Pause session (Space)">
+                <span id="midiPlayPauseIcon" class="midi-svg-icon-wrap">
+                  <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true">
+                    <path d="M8 5v14l11-7z"></path>
+                  </svg>
+                </span>
+              </button>
+
+              <button
+                id="midiDownloadMidBtn"
+                type="button"
+                class="midi-icon-btn midi-dl-mid-btn lite-only-el"
+                disabled
+                title="Download current recording as a .mid file"
+                aria-label="Download .mid file"
+              >.mid</button>
+
+              <button
+                id="midiExportVideoBtn"
+                type="button"
+                class="midi-icon-btn midi-export-btn"
+                disabled
+                aria-expanded="false"
+                title="Export loaded session to MP4 video right in the browser (9:16, 1:1, 4:3, 16:9)"
+                aria-label="Export session to MP4 video"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M12 3v12"></path>
+                  <path d="M7 10l5 5 5-5"></path>
+                  <path d="M5 20h14"></path>
+                </svg>
+              </button>
+            </div>
+
+            <span id="midiTimeReadout" class="midi-time-readout">Live</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Collapsible Preset Selector & Quick Save Zone (Right of MIDI Transport, Before Keyboard) -->
+      <section class="dock-zone preset-zone" id="presetZone" aria-label="Instrument and Stage Presets">
+        <button
+          id="presetsCollapseBtn"
+          type="button"
+          class="dock-accordion-tab"
+          aria-expanded="true"
+          title="Collapse or expand Presets"
+        >
+          <span class="dock-accordion-inner">
+            <span class="dock-accordion-caret" aria-hidden="true">▾</span>
+            <span class="dock-accordion-title">Presets</span>
+            <span id="presetsTabDirtyDot" class="dock-accordion-dot is-dirty hidden" aria-hidden="true"></span>
+          </span>
+        </button>
+
+        <div class="dock-zone-body preset-zone-body">
+          <div class="preset-top-row">
+            <button
+              id="presetBrowserToggleBtn"
+              type="button"
+              class="midi-browser-btn preset-browser-btn"
+              aria-expanded="false"
+              title="Switch or manage mute &amp; stage presets"
+            >
+              <span class="preset-label-wrap">
+                <span id="presetNameLabel" class="midi-file-label">Default</span>
+                <span id="presetDirtyDot" class="preset-dirty-dot hidden" title="Unsaved preset changes">•</span>
+              </span>
+              <span class="midi-browser-caret" aria-hidden="true">▾</span>
+            </button>
+          </div>
+          <div class="preset-actions-row">
+            <button
+              id="presetSaveBtn"
+              type="button"
+              class="preset-action-btn"
+              disabled
+              title="Save current mutes &amp; stage settings into active preset"
+            >Save</button>
+            <button
+              id="presetSaveAsBtn"
+              type="button"
+              class="preset-action-btn"
+              title="Save current mutes &amp; stage settings as a new named preset"
+            >Save As</button>
+            <button
+              id="presetRevertBtn"
+              type="button"
+              class="preset-revert-btn hidden"
+              title="Revert unsaved changes back to saved preset"
+              aria-label="Revert unsaved preset changes"
+            >
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+                <path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Collapsible Minimal Read-Only MIDI Roll Scrubber Zone -->
+      <section class="dock-zone roll-zone" id="midiRollZone" aria-label="MIDI Roll Scrubber">
+        <button
+          id="rollCollapseBtn"
+          type="button"
+          class="dock-accordion-tab"
+          aria-expanded="true"
+          title="Collapse or expand MIDI Roll Scrubber"
+        >
+          <span class="dock-accordion-inner">
+            <span class="dock-accordion-caret" aria-hidden="true">▾</span>
+            <span class="dock-accordion-title">Roll</span>
+            <span id="rollTabDot" class="dock-accordion-dot hidden" aria-hidden="true"></span>
+          </span>
+        </button>
+
+        <div class="dock-zone-body roll-zone-body" id="midiRollBody">
+          <canvas id="midiRollCanvas" class="midi-roll-canvas" title="Click or drag horizontally to scrub through session"></canvas>
+          <div id="midiRollEmptyHint" class="midi-roll-empty-hint">Live · Record or load session</div>
+        </div>
+      </section>
+
+      <!-- Collapsible Keyboard Keys Zone (Selected Note + Wireframe Piano Keyboard + Octave/VEL) -->
+      <section class="dock-zone keys-dock-zone" id="keysDockZone" aria-label="Piano Keyboard">
+        <button
+          id="keysCollapseBtn"
+          type="button"
+          class="dock-accordion-tab"
+          aria-expanded="true"
+          title="Collapse or expand Piano Keyboard"
+        >
+          <span class="dock-accordion-inner">
+            <span class="dock-accordion-caret" aria-hidden="true">▾</span>
+            <span class="dock-accordion-title">Keys</span>
+          </span>
+        </button>
+
+        <div class="dock-zone-body keys-dock-body">
+          <!-- Left of Keyboard: Selected Note Indicator + Pencil Edit Toggle -->
+          <section class="dock-zone selected-note-zone" id="selectedNoteZone">
+            <button
+              id="noteSamplesToggleBtn"
+              type="button"
+              class="selected-note-btn"
+              aria-expanded="false"
+              title="Edit samples for selected note"
+            >
+              <span class="sel-note-main">
+                <span class="sel-note-dot" id="selectedNoteDot"></span>
+                <span class="sel-note-name" id="selectedNoteLabel">C4</span>
+              </span>
+              <span class="sel-note-edit-row">
+                <svg class="sel-note-pencil" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M11.4 2.4a1.5 1.5 0 0 1 2.1 2.1L5.4 12.6 2 13.6l1-3.4 8.4-7.8z"></path>
+                </svg>
+              </span>
+            </button>
+          </section>
+
+          <!-- Wide Center: Full-Height Responsive Connected Wireframe Keyline Keyboard (2 to 4 Octaves) -->
+          <section class="dock-zone keyboard-zone" id="keyboardZone">
+            <div class="wireframe-keyboard-wrap">
+              <div class="wireframe-keyboard" id="pianoKeyboard"></div>
+            </div>
+          </section>
+
+          <!-- Right of Keyboard: Frugal Octave Range + Square Left/Right Buttons + Velocity Toggle -->
+          <section class="dock-zone octave-rail-zone" id="octaveRailZone">
+            <span id="octaveRangeLabel" class="oct-range-label">C2–B7</span>
+            <div class="oct-square-pair">
+              <button id="octDownBtn" type="button" class="oct-square-btn" title="Shift keyboard down 1 octave (Z)">◀</button>
+              <button id="octUpBtn" type="button" class="oct-square-btn" title="Shift keyboard up 1 octave (X)">▶</button>
+            </div>
+            <button
+              id="velocityToggleBtn"
+              type="button"
+              class="vel-toggle-btn"
+              aria-pressed="false"
+              title="MIDI velocity sensitivity OFF (fixed uniform velocity) — click to enable dynamic velocity"
+            >VEL</button>
+          </section>
+        </div>
+      </section>
+    </div>
+  </footer>
+
+  <!-- Lightweight Floating ./midi/ File Browser Popover -->
+  <div class="midi-browser-popover hidden" id="midiBrowserPopover" role="menu" aria-label="MIDI Files">
+    <div class="midi-popover-list" id="midiBrowserList"></div>
+    <div class="midi-popover-footer">
+      <button id="midiImportExternalBtn" type="button" class="midi-import-btn">+ Import .mid file…</button>
+    </div>
+  </div>
+
+  <!-- Lightweight Floating Presets Browser & Save-As Popover -->
+  <div class="midi-browser-popover preset-popover hidden" id="presetPopover" role="menu" aria-label="Presets">
+    <div class="midi-popover-list" id="presetPopoverList"></div>
+    <div class="preset-popover-footer" id="presetPopoverFooter">
+      <button id="presetPopoverNewBtn" type="button" class="midi-import-btn">+ Save as new preset…</button>
+      <form id="presetNewForm" class="preset-new-form hidden">
+        <input
+          id="presetNewNameInput"
+          type="text"
+          maxlength="48"
+          placeholder="Preset name…"
+          class="preset-name-input"
+          autocomplete="off"
+        />
+        <button type="submit" class="preset-form-save-btn">Save</button>
+        <button type="button" id="presetNewCancelBtn" class="preset-form-cancel-btn" title="Cancel">✕</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Lightweight Floating Browser Offline MP4 Video Export Popover -->
+  <div class="midi-browser-popover midi-export-popover hidden" id="midiExportPopover" role="dialog" aria-label="Export MP4 Video">
+    <div class="midi-export-header">
+      <span class="midi-export-title">Export MP4</span>
+      <span class="midi-export-res" id="midiExportResLabel">1080×1920</span>
+    </div>
+    <div class="midi-export-body">
+      <div class="stage-cfg-row">
+        <span class="stage-cfg-label">Aspect</span>
+        <div class="stage-grid-pills" role="group" aria-label="Export video aspect ratio">
+          <button type="button" class="stage-grid-pill is-active" data-export-aspect="9:16" title="Vertical 9:16 (1080×1920)">9:16</button>
+          <button type="button" class="stage-grid-pill" data-export-aspect="1:1" title="Square 1:1 (1080×1080)">1:1</button>
+          <button type="button" class="stage-grid-pill" data-export-aspect="4:3" title="Classic 4:3 (1440×1080)">4:3</button>
+          <button type="button" class="stage-grid-pill" data-export-aspect="16:9" title="Widescreen 16:9 (1920×1080)">16:9</button>
+        </div>
+      </div>
+      <div class="stage-cfg-row">
+        <label class="stage-cfg-check-wrap" for="midiExportBuildToggle" title="Prepend the intro mosaic build animation using current Build settings">
+          <input id="midiExportBuildToggle" type="checkbox" class="stage-cfg-checkbox" checked />
+          <span class="stage-cfg-label">Intro build</span>
+        </label>
+        <span class="stage-fade-val" id="midiExportBuildReadout">On</span>
+      </div>
+      <div class="midi-export-progress-wrap hidden" id="midiExportProgressWrap">
+        <div class="midi-export-progress-bar">
+          <div class="midi-export-progress-fill" id="midiExportProgressFill"></div>
+        </div>
+        <div class="midi-export-status-row">
+          <span class="midi-export-status-text" id="midiExportStatusText">Preparing…</span>
+          <span class="midi-export-pct" id="midiExportPctText">0%</span>
+        </div>
+      </div>
+      <div class="midi-export-actions">
+        <button id="midiExportStartBtn" type="button" class="midi-export-primary-btn">Render &amp; Download MP4</button>
+        <button id="midiExportCancelBtn" type="button" class="midi-export-cancel-btn hidden">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightweight Replace-Recording Confirmation Popover (Public Lite Mode) -->
+  <div class="midi-browser-popover lite-confirm-popover hidden" id="liteReplaceConfirmPopover" role="dialog" aria-label="Replace current recording">
+    <div class="lite-confirm-body">
+      <div class="lite-confirm-msg" id="liteReplaceConfirmMsg">Replace current recording?</div>
+      <div class="lite-confirm-actions">
+        <button id="liteReplaceConfirmYesBtn" type="button" class="lite-confirm-replace-btn">Replace</button>
+        <button id="liteReplaceConfirmNoBtn" type="button" class="preset-action-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

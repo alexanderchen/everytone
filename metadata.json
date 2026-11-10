@@ -1,0 +1,5 @@
+{
+  "name": "Everytone",
+  "description": "Interactive audiovisual sampler and MIDI synthesizer.",
+  "requestFramePermissions": []
+}
