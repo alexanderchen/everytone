@@ -477,14 +477,20 @@ function loadPrefsFromStorage() {
     const parsed = JSON.parse(raw);
     return {
       hasSavedPrefs: true,
-      hasSavedDisabledVideos: Array.isArray(parsed?.disabledVideoIds),
-      disabledVideoIds: Array.isArray(parsed?.disabledVideoIds)
-        ? parsed.disabledVideoIds.map(String)
-        : [],
+      catalogVersion: String(parsed?.catalogVersion || ''),
+      hasSavedDisabledVideos: !state.isLiteMode && Array.isArray(parsed?.disabledVideoIds),
+      disabledVideoIds:
+        !state.isLiteMode && Array.isArray(parsed?.disabledVideoIds)
+          ? parsed.disabledVideoIds.map(String)
+          : [],
       videoGains:
-        parsed?.videoGains && typeof parsed.videoGains === 'object' ? parsed.videoGains : {},
+        !state.isLiteMode && parsed?.videoGains && typeof parsed.videoGains === 'object'
+          ? parsed.videoGains
+          : {},
       sliceToggles:
-        parsed?.sliceToggles && typeof parsed.sliceToggles === 'object' ? parsed.sliceToggles : {},
+        !state.isLiteMode && parsed?.sliceToggles && typeof parsed.sliceToggles === 'object'
+          ? parsed.sliceToggles
+          : {},
       chromeCollapsed: Boolean(parsed?.chromeCollapsed ?? parsed?.explorerCollapsed),
       sessionsCollapsed: Boolean(parsed?.sessionsCollapsed),
       presetsCollapsed: Boolean(parsed?.presetsCollapsed),
@@ -562,9 +568,10 @@ function savePrefsToStorage() {
   if (!prefsHydrated) return;
   try {
     const payload = {
-      disabledVideoIds: Array.from(state.disabledVideoIds),
-      videoGains: state.videoGainOverrides,
-      sliceToggles: state.sliceToggleOverrides,
+      catalogVersion: String(state.catalog?.updatedAt || ''),
+      disabledVideoIds: state.isLiteMode ? [] : Array.from(state.disabledVideoIds),
+      videoGains: state.isLiteMode ? {} : state.videoGainOverrides,
+      sliceToggles: state.isLiteMode ? {} : state.sliceToggleOverrides,
       chromeCollapsed: state.chromeCollapsed,
       sessionsCollapsed: state.sessionsCollapsed,
       presetsCollapsed: state.presetsCollapsed,
@@ -11250,6 +11257,114 @@ function dismissLiteSplashAndStartBuild() {
 // ============================================================================
 // Boot
 // ============================================================================
+function stripCatalogToPublicPresetInMemory(catalog, presetsStore) {
+  if (!catalog || !presetsStore) return catalog;
+  const publicPreset = (presetsStore.presets || []).find(
+    p => String(p.name || '').trim().toLowerCase() === 'public'
+  );
+  if (!publicPreset) return catalog;
+
+  const isPublicActive = presetsStore.activePresetId === publicPreset.id;
+  const snap = publicPreset.snapshot || {};
+  const disabledVideoIds = isPublicActive
+    ? new Set(
+        (catalog.videos || [])
+          .filter(v => !v.deleted && v.enabled === false)
+          .map(v => String(v.id))
+      )
+    : new Set((snap.disabledVideoIds || []).map(String));
+  const kc = isPublicActive ? catalog.keyboardConfig || {} : snap.keyboardConfig || {};
+  const stageCfg = isPublicActive
+    ? catalog.stageConfig || snap.stageConfig || {}
+    : snap.stageConfig || catalog.stageConfig || {};
+  const versionStamp = isPublicActive
+    ? catalog.updatedAt || publicPreset.updatedAt
+    : publicPreset.updatedAt || catalog.updatedAt;
+
+  const clearedSet = new Set((kc.clearedMidis || []).map(Number));
+  const allowedSliceIds = new Set();
+
+  for (const [midiKey, entry] of Object.entries(catalog.keyboardMap || {})) {
+    const validCands = (entry.candidates || []).filter(
+      c => !disabledVideoIds.has(String(c.videoId))
+    );
+    if (validCands.length === 0) {
+      delete catalog.keyboardMap[midiKey];
+      continue;
+    }
+
+    const targetMidi = Number(midiKey);
+    const isPercKey = validCands.every(c => c.isPerc);
+    let enabledIds = kc.enabledByMidi?.[targetMidi] ?? kc.enabledByMidi?.[String(targetMidi)];
+    if (!Array.isArray(enabledIds)) {
+      if (clearedSet.has(targetMidi)) {
+        enabledIds = [];
+      } else if (isPercKey) {
+        enabledIds = validCands.map(c => c.sliceId);
+      } else {
+        const percIds = validCands.filter(c => c.isPerc).map(c => c.sliceId);
+        const tonalCands = validCands.filter(c => !c.isPerc);
+        const savedId =
+          kc.selectedByMidi?.[targetMidi] ?? kc.selectedByMidi?.[String(targetMidi)];
+        const savedTonal = tonalCands.find(c => c.sliceId === savedId) || tonalCands[0];
+        enabledIds = [...(savedTonal ? [savedTonal.sliceId] : []), ...percIds];
+      }
+    } else {
+      enabledIds = enabledIds.filter(id => validCands.some(c => c.sliceId === id));
+    }
+
+    const enabledSet = new Set(enabledIds);
+    const shippedCands = validCands.filter(c => enabledSet.has(c.sliceId));
+    if (shippedCands.length === 0) {
+      delete catalog.keyboardMap[midiKey];
+      continue;
+    }
+
+    for (const c of shippedCands) {
+      c.enabled = true;
+      allowedSliceIds.add(c.sliceId);
+    }
+
+    entry.candidates = shippedCands;
+    entry.candidateCount = shippedCands.length;
+    entry.enabledSliceIds = shippedCands.map(c => c.sliceId);
+    entry.enabledCount = shippedCands.length;
+    entry.isPercKey = shippedCands.every(c => c.isPerc);
+    entry.isCleared = false;
+    entry.primary = shippedCands[0] || null;
+    entry.activeSliceId = entry.primary ? entry.primary.sliceId : null;
+    entry.shiftCents = entry.primary ? entry.primary.shiftCents : 0;
+    entry.playbackRate = entry.primary ? entry.primary.playbackRate : 1.0;
+  }
+
+  const slimVideos = [];
+  for (const v of catalog.videos || []) {
+    if (v.deleted || disabledVideoIds.has(String(v.id))) continue;
+    const keptSlices = (v.slices || [])
+      .filter(s => !s.deleted && allowedSliceIds.has(s.id))
+      .map(s => ({ ...s, enabled: true }));
+    if (keptSlices.length === 0) continue;
+    slimVideos.push({ ...v, enabled: true, slices: keptSlices });
+  }
+
+  catalog.videos = slimVideos;
+  catalog.stageConfig = {
+    ...(catalog.stageConfig || {}),
+    ...stageCfg,
+    stageShowVideo: false,
+    stageBuildSound: true
+  };
+  if (versionStamp) catalog.updatedAt = versionStamp;
+  catalog.stats = {
+    ...(catalog.stats || {}),
+    videoCount: slimVideos.length,
+    sliceCount: allowedSliceIds.size,
+    totalVideos: slimVideos.length,
+    totalSlices: allowedSliceIds.size
+  };
+  return catalog;
+}
+
 async function init() {
   if (state.isLiteMode) {
     document.body.classList.add('lite-mode', 'lite-splash-active');
@@ -11408,9 +11523,16 @@ async function init() {
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   if (isLocalHost) {
     try {
-      const res = await fetch('./api/catalog');
+      const [res, presetsRes] = await Promise.all([
+        fetch('./api/catalog', { cache: 'no-cache' }),
+        state.isLiteMode ? fetch('./api/presets', { cache: 'no-cache' }) : Promise.resolve(null)
+      ]);
       if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
         state.catalog = await res.json();
+        if (state.isLiteMode && presetsRes && presetsRes.ok) {
+          const presetsStore = await presetsRes.json();
+          stripCatalogToPublicPresetInMemory(state.catalog, presetsStore);
+        }
         loadedFromLocalServer = true;
       }
     } catch {}
@@ -11419,10 +11541,11 @@ async function init() {
   if (!loadedFromLocalServer) {
     state.isStaticMode = true;
     document.body.classList.add('static-mode');
-    const staticRes = await fetch('./catalog.json');
+    const staticRes = await fetch(`./catalog.json?t=${Date.now()}`, { cache: 'no-cache' });
     state.catalog = await staticRes.json();
   }
   state.assetBust = Date.parse(state.catalog?.updatedAt || '') || Date.now();
+  const currentCatalogVersion = String(state.catalog?.updatedAt || '');
 
   // Hydrate curated stageConfig defaults for first-time visitors (or enforce locked visual settings in lite mode)
   if (state.catalog?.stageConfig) {
@@ -11431,7 +11554,10 @@ async function init() {
       state.defaultCatalogGridMode = normalizeStageGridMode(sc.stageGridMode);
     }
     if (state.isLiteMode) {
-      if (!prefs.hasSavedPrefs && sc.stageGridMode !== undefined) {
+      if (
+        (!prefs.hasSavedPrefs || prefs.catalogVersion !== currentCatalogVersion) &&
+        sc.stageGridMode !== undefined
+      ) {
         state.stageGridMode = normalizeStageGridMode(sc.stageGridMode);
       }
       if (sc.stageTileScale !== undefined) state.stageTileScale = clampStageTileScale(sc.stageTileScale);
@@ -11533,7 +11659,11 @@ async function init() {
   // Sync holistic per-video gainDb & groupName from catalog
   for (const v of validVideos) {
     const catGain = clampVideoGainDb(v.gainDb ?? 0);
-    if (state.isStaticMode && Object.prototype.hasOwnProperty.call(state.videoGainOverrides, v.id)) {
+    if (
+      state.isStaticMode &&
+      !state.isLiteMode &&
+      Object.prototype.hasOwnProperty.call(state.videoGainOverrides, v.id)
+    ) {
       v.gainDb = clampVideoGainDb(state.videoGainOverrides[v.id]);
     } else {
       v.gainDb = catGain;
@@ -11543,7 +11673,27 @@ async function init() {
     v.groupName = String(v.groupName || '').trim() || inferClientGroupName(v.slug);
   }
 
-  if ((state.isStaticMode || state.isLiteMode) && prefs.hasSavedDisabledVideos) {
+  if (state.isLiteMode) {
+    // Public Lite always defaults ALL culled instruments and samples to ON when opened
+    state.disabledVideoIds = new Set();
+    state.sliceToggleOverrides = {};
+    for (const v of validVideos) {
+      v.enabled = true;
+    }
+    if (state.catalog?.keyboardMap) {
+      for (const entry of Object.values(state.catalog.keyboardMap)) {
+        const cands = entry.candidates || [];
+        for (const c of cands) {
+          c.enabled = true;
+        }
+        entry.enabledSliceIds = cands.map(c => c.sliceId);
+        entry.enabledCount = cands.length;
+        entry.primary = cands[0] || null;
+        entry.activeSliceId = entry.primary ? entry.primary.sliceId : null;
+        entry.isCleared = cands.length === 0;
+      }
+    }
+  } else if (state.isStaticMode && prefs.hasSavedDisabledVideos) {
     state.disabledVideoIds = new Set(prefs.disabledVideoIds.filter(id => validIdSet.has(id)));
     for (const v of validVideos) {
       v.enabled = !state.disabledVideoIds.has(v.id);
@@ -11558,8 +11708,8 @@ async function init() {
   prefsHydrated = true;
   savePrefsToStorage();
 
-  // In static or lite mode, also restore saved per-slice toggles across reloads
-  if ((state.isStaticMode || state.isLiteMode) && state.catalog?.keyboardMap) {
+  // In non-lite static mode, also restore saved per-slice toggles across reloads
+  if (state.isStaticMode && !state.isLiteMode && state.catalog?.keyboardMap) {
     for (const entry of Object.values(state.catalog.keyboardMap)) {
       let changed = false;
       for (const c of entry.candidates || []) {
