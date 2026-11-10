@@ -3803,20 +3803,17 @@ function setRollCollapsed(nextCollapsed) {
 
 function setKeysCollapsed(nextCollapsed) {
   state.keysCollapsed = Boolean(nextCollapsed);
-  if (state.keysCollapsed && state.noteSamplesExpanded && typeof setNoteSamplesExpanded === 'function') {
-    setNoteSamplesExpanded(false);
-  }
   const zoneEl = document.getElementById('keysDockZone');
   const btnEl = document.getElementById('keysCollapseBtn');
   if (zoneEl) zoneEl.classList.toggle('is-collapsed', state.keysCollapsed);
   if (btnEl) btnEl.setAttribute('aria-expanded', state.keysCollapsed ? 'false' : 'true');
   savePrefsToStorage();
   requestAnimationFrame(() => {
-    if (!state.keysCollapsed) renderPianoKeyboard();
+    if (!state.keysCollapsed || state.isLiteMode) renderPianoKeyboard();
     drawMidiRollCanvas();
   });
   setTimeout(() => {
-    if (!state.keysCollapsed) renderPianoKeyboard();
+    if (!state.keysCollapsed || state.isLiteMode) renderPianoKeyboard();
     drawMidiRollCanvas();
   }, 200);
 }
@@ -4002,7 +3999,6 @@ function renderFileExplorer() {
       <div class="explorer-cat-left">
         <span class="explorer-cat-caret">▾</span>
         <span class="explorer-cat-name">${cat}</span>
-        <span class="explorer-cat-count">${groups.length}</span>
       </div>
       <button
         type="button"
@@ -4070,7 +4066,6 @@ function renderFileExplorer() {
       rowEl.innerHTML = `
         <span class="explorer-video-label">${grp.name}</span>
         ${isThisSoloed ? `<button type="button" class="explorer-solo-badge" title="Exit Solo for ${grp.name}">SOLO</button>` : ''}
-        <span class="explorer-video-meta">${sliceCount}</span>
         <button
           type="button"
           class="${grpSwitchClass}"
@@ -4167,7 +4162,7 @@ function syncActiveCandidateHighlightUI(scrollActive = false) {
     if (isMatch) activeCardEl = el;
   });
 
-  if (scrollActive && activeCardEl && state.noteSamplesExpanded) {
+  if (scrollActive && activeCardEl && !state.chromeCollapsed) {
     activeCardEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 }
@@ -4247,22 +4242,6 @@ function triggerDefaultCandidateGate(triggerId, midi, cand, idx = 0) {
   scheduleDefaultVoiceGate(triggerId, DEFAULT_UI_HOLD_SEC);
 }
 
-function setNoteSamplesExpanded(nextExpanded) {
-  state.noteSamplesExpanded = Boolean(nextExpanded);
-  savePrefsToStorage();
-  const drawerEl = document.getElementById('noteSamplesDrawer');
-  const toggleBtn = document.getElementById('noteSamplesToggleBtn');
-  if (drawerEl) {
-    drawerEl.classList.toggle('collapsed', !state.noteSamplesExpanded);
-  }
-  if (toggleBtn) {
-    toggleBtn.classList.toggle('is-open', state.noteSamplesExpanded);
-    toggleBtn.setAttribute('aria-expanded', state.noteSamplesExpanded ? 'true' : 'false');
-  }
-  requestAnimationFrame(() => updateStageTileSizes());
-  setTimeout(() => updateStageTileSizes(), 220);
-}
-
 function updateSelectedNoteChipUI() {
   const midi = state.selectedMidi;
   const noteName = midiToName(midi);
@@ -4270,15 +4249,11 @@ function updateSelectedNoteChipUI() {
 
   const selDot = document.getElementById('selectedNoteDot');
   const selLabel = document.getElementById('selectedNoteLabel');
-  const selBtn = document.getElementById('noteSamplesToggleBtn');
+  const selChip = document.getElementById('selectedNoteChip');
 
   if (selDot) selDot.style.background = noteColor;
   if (selLabel) selLabel.textContent = noteName;
-  if (selBtn) {
-    selBtn.title = state.noteSamplesExpanded
-      ? `Collapse samples for ${noteName}`
-      : `Edit samples for ${noteName}`;
-  }
+  if (selChip) selChip.title = `Samples mapped to ${noteName}`;
 }
 
 function setSelectionFocus(target, sliceId = null) {
@@ -4560,31 +4535,9 @@ function renderSelectedKeyDeck() {
         <img src="${withBust(cand.thumbUrl)}" alt="${readableGroup}" loading="lazy" />
       </div>
       <div class="cand-slug-title" title="${readableGroup}">${readableGroup}</div>
-      <button
-        class="ui-switch${isEnabled ? ' is-on' : ''}"
-        type="button"
-        role="switch"
-        aria-checked="${isEnabled ? 'true' : 'false'}"
-        title="${isEnabled ? `Mute sample (${readableGroup})` : `Enable sample (${readableGroup})`}"
-      ></button>
     `;
 
-    const switchBtn = card.querySelector('.ui-switch');
-    switchBtn.addEventListener('click', async e => {
-      e.stopPropagation();
-      const nextEnabled = !isEnabled;
-      if (nextEnabled) {
-        triggerDefaultCandidateGate(`ui_cand_${cand.sliceId}`, midi, cand, idx);
-      }
-      await apiPost('/api/keyboard/toggle', {
-        midi,
-        sliceId: cand.sliceId,
-        enabled: nextEnabled
-      });
-    });
-
-    card.addEventListener('click', e => {
-      if (e.target.closest('.ui-switch')) return;
+    card.addEventListener('click', () => {
       state.auditionIndex = idx;
       if (isEnabled) {
         lastPlayedSliceByMidi.set(midi, cand.sliceId);
@@ -6709,10 +6662,6 @@ function updatePresetDockUi() {
   if (dirtyDot) {
     dirtyDot.classList.toggle('hidden', !dirty);
   }
-  const tabDirtyDot = document.getElementById('presetsTabDirtyDot');
-  if (tabDirtyDot) {
-    tabDirtyDot.classList.toggle('hidden', !dirty);
-  }
   if (saveBtn) {
     saveBtn.disabled = !dirty || presetState.busy || state.isStaticMode;
     saveBtn.title = `Save changes into "${activeName}"`;
@@ -8068,8 +8017,6 @@ function updateMidiTransportUi() {
   const recBtn = document.getElementById('midiRecordBtn');
   const cancelRecBtn = document.getElementById('midiCancelRecBtn');
   const undoBtn = document.getElementById('midiUndoBtn');
-  const sessionsTabDot = document.getElementById('sessionsTabDot');
-  const rollTabDot = document.getElementById('rollTabDot');
   const rollCanvas = document.getElementById('midiRollCanvas');
   const timeReadout = document.getElementById('midiTimeReadout');
   const octDownBtn = document.getElementById('midiOctDownBtn');
@@ -8179,16 +8126,6 @@ function updateMidiTransportUi() {
     cancelRecBtn.title = isOverdub
       ? 'Cancel & discard current overdub pass (Esc)'
       : 'Cancel & discard current recording (Esc)';
-  }
-  if (sessionsTabDot) {
-    const showDot = isRecording || isArmed || midiPlayer.playing;
-    sessionsTabDot.classList.toggle('hidden', !showDot);
-    sessionsTabDot.classList.toggle('is-rec', isRecording || isArmed);
-  }
-  if (rollTabDot) {
-    const showRollDot = state.rollCollapsed && (hasMidi || isRecording || isArmed);
-    rollTabDot.classList.toggle('hidden', !showRollDot);
-    rollTabDot.classList.toggle('is-rec', isRecording || isArmed);
   }
   if (undoBtn) {
     const canUndo = Boolean(hasMidi && midiRecorder.undoSnapshot && !isRecording && !isArmed && !midiRecorder.saving);
@@ -10043,21 +9980,6 @@ function setupEventListeners() {
     });
   }
 
-  // Collapsible Per-Note Sample Drawer Toggle (Left of Keyboard + Drawer Hide Button)
-  const noteSamplesToggleBtn = document.getElementById('noteSamplesToggleBtn');
-  if (noteSamplesToggleBtn) {
-    noteSamplesToggleBtn.addEventListener('click', () => {
-      setSelectionFocus('keyboard');
-      setNoteSamplesExpanded(!state.noteSamplesExpanded);
-    });
-  }
-  const collapseNoteSamplesBtn = document.getElementById('collapseNoteSamplesBtn');
-  if (collapseNoteSamplesBtn) {
-    collapseNoteSamplesBtn.addEventListener('click', () => {
-      setNoteSamplesExpanded(false);
-    });
-  }
-
   // Wireframe Keyboard Octave Step Buttons + Click/Drag Glissando
   const octDownBtn = document.getElementById('octDownBtn');
   if (octDownBtn) {
@@ -11392,7 +11314,6 @@ async function init() {
   setSessionsCollapsed(state.sessionsCollapsed);
   setPresetsCollapsed(state.presetsCollapsed);
   setRollCollapsed(state.rollCollapsed);
-  setNoteSamplesExpanded(state.noteSamplesExpanded);
   setKeysCollapsed(state.keysCollapsed);
   syncVelocityToggleUI();
   updateMidiTransportUi();

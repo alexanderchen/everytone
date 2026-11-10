@@ -588,23 +588,18 @@
     </main>
   </div>
 
-  <!-- 2. Collapsible Bottom Bar: Optional Note Sample Drawer + Frugal Wide Keyboard Row -->
+  <!-- 2. Collapsible Bottom Bar: Always-Visible Compact Note Sample Strip + Frugal Main Dock Row -->
   <footer class="bottom-transport-dock" id="transportDock">
-    <!-- Collapsible Single-Note Sample Shelf (Collapsed by Default on Load) -->
-    <section class="note-samples-drawer collapsed" id="noteSamplesDrawer">
+    <!-- Compact Always-Visible Single-Note Sample Strip -->
+    <section class="note-samples-drawer" id="noteSamplesDrawer" aria-label="Samples for selected note">
+      <div class="sel-note-chip" id="selectedNoteChip" title="Selected note">
+        <span class="sel-note-dot" id="selectedNoteDot"></span>
+        <span class="sel-note-name" id="selectedNoteLabel">C4</span>
+      </div>
       <div class="candidates-strip" id="candidatesGrid"></div>
-
-      <button
-        id="collapseNoteSamplesBtn"
-        type="button"
-        class="drawer-collapse-btn"
-        title="Collapse sample view for active note"
-      >
-        ▾ Hide
-      </button>
     </section>
 
-    <!-- Main Frugal Row: [ MIDI Transport ] | [ Selected Note + Pencil ] | [ Wide 3–6 Oct Keyboard ] | [ Octave Switcher ] -->
+    <!-- Main Frugal Row: [ MIDI Transport ] | [ Presets ] | [ Roll ] | [ Keys / Octave ] -->
     <div class="dock-main-row">
       <!-- Far Left: Collapsible MIDI Player, Webcam + Session Recorder & Scrubbable Play Bar -->
       <section class="dock-zone transport-zone" id="midiTransportZone">
@@ -618,7 +613,6 @@
           <span class="dock-accordion-inner">
             <span class="dock-accordion-caret" aria-hidden="true">▾</span>
             <span class="dock-accordion-title" id="sessionsTabTitle">Sessions</span>
-            <span id="sessionsTabDot" class="dock-accordion-dot hidden" aria-hidden="true"></span>
           </span>
         </button>
 
@@ -806,7 +800,6 @@
           <span class="dock-accordion-inner">
             <span class="dock-accordion-caret" aria-hidden="true">▾</span>
             <span class="dock-accordion-title">Presets</span>
-            <span id="presetsTabDirtyDot" class="dock-accordion-dot is-dirty hidden" aria-hidden="true"></span>
           </span>
         </button>
 
@@ -867,7 +860,6 @@
           <span class="dock-accordion-inner">
             <span class="dock-accordion-caret" aria-hidden="true">▾</span>
             <span class="dock-accordion-title">Roll</span>
-            <span id="rollTabDot" class="dock-accordion-dot hidden" aria-hidden="true"></span>
           </span>
         </button>
 
@@ -893,27 +885,6 @@
         </button>
 
         <div class="dock-zone-body keys-dock-body">
-          <!-- Left of Keyboard: Selected Note Indicator + Pencil Edit Toggle -->
-          <section class="dock-zone selected-note-zone" id="selectedNoteZone">
-            <button
-              id="noteSamplesToggleBtn"
-              type="button"
-              class="selected-note-btn"
-              aria-expanded="false"
-              title="Edit samples for selected note"
-            >
-              <span class="sel-note-main">
-                <span class="sel-note-dot" id="selectedNoteDot"></span>
-                <span class="sel-note-name" id="selectedNoteLabel">C4</span>
-              </span>
-              <span class="sel-note-edit-row">
-                <svg class="sel-note-pencil" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M11.4 2.4a1.5 1.5 0 0 1 2.1 2.1L5.4 12.6 2 13.6l1-3.4 8.4-7.8z"></path>
-                </svg>
-              </span>
-            </button>
-          </section>
-
           <!-- Wide Center: Full-Height Responsive Connected Wireframe Keyline Keyboard (2 to 4 Octaves) -->
           <section class="dock-zone keyboard-zone" id="keyboardZone">
             <div class="wireframe-keyboard-wrap">
