@@ -36,25 +36,20 @@ const CHROMATIC_COLORS = [
 ];
 const PERC_NOTE_COLOR = '#8a8a8a';
 
-const STAGE_GRID_SPECS = {
-  '3x1': { cols: 3, rows: 1, slots: 3 },
-  '2x2': { cols: 2, rows: 2, slots: 4 },
-  '3x2': { cols: 3, rows: 2, slots: 6 },
-  '4x2': { cols: 4, rows: 2, slots: 8 },
-  '3x3': { cols: 3, rows: 3, slots: 9 }
-};
+const MIN_STAGE_GRID_DIM = 1;
+const MAX_STAGE_GRID_DIM = 8;
 const MIN_STAGE_FADE_IN_SEC = 0.0;
 const MAX_STAGE_FADE_IN_SEC = 1.0;
 const MIN_STAGE_FADE_SEC = 0.0;
 const MAX_STAGE_FADE_SEC = 2.0;
 const MIN_STAGE_MIN_DISPLAY_SEC = 0.0;
 const MAX_STAGE_MIN_DISPLAY_SEC = 2.0;
-const MIN_STAGE_MAX_DISPLAY_SEC = 0.2;
-const MAX_STAGE_MAX_DISPLAY_SEC = 6.0;
 const MIN_STAGE_TILE_SCALE = 0.6;
 const MAX_STAGE_TILE_SCALE = 2.5;
 const MIN_STAGE_SPEC_SCALE = 0.75;
 const MAX_STAGE_SPEC_SCALE = 4.5;
+const LOCKED_STAGE_TILE_SCALE = 1.1;
+const LOCKED_STAGE_SPEC_SCALE = 3.35;
 
 const ACCIDENTAL_SEMITONES = new Set([1, 3, 6, 8, 10]);
 const TOUCH_LEFT_ACCIDENTALS = new Set([3, 8, 10]); // D#, G#, A# touch C#, F#, G#
@@ -126,13 +121,12 @@ const state = {
   rollCollapsed: false,
   keysCollapsed: false,
   noteSamplesExpanded: false, // Collapsed by default on load so playing is uncluttered
-  stageGridMode: '3x1', // '3x1' | '2x2' | '3x2' | '4x2' | '3x3'
-  stageTileScale: 1.0, // Bottom sample mosaic tile scale (1.0 = 100% up to 2.5 = 250%)
-  stageSpecScale: 1.0, // Visual spectrogram height scale (0.75 = 75% up to 4.5 = 450%, ~2/3 of video height)
+  stageGridMode: '3x1', // 'cols x rows' from 1x1 up to 8x8
+  stageTileScale: LOCKED_STAGE_TILE_SCALE, // Locked mosaic tile scale
+  stageSpecScale: LOCKED_STAGE_SPEC_SCALE, // Locked spectrogram-to-tile height scale
   stageFadeInSec: 0.0, // Optional visual fade-in / dissolve duration (0.0s = Off hard cut, up to 1.0s)
   stageFadeSec: 0.20, // Configurable visual fade-out duration (0.0s = Off hard cut, up to 2.0s)
   stageMinDisplaySec: 0.70, // Minimum visual display duration before ramp-down begins (0.0s Off to 2.0s)
-  stageMaxDisplaySec: 1.00, // Always-on maximum visual display duration before ramp-down begins (0.2s to 2.5s)
   stageSettingsTab: 'layout', // Active settings tab: 'layout' | 'motion' | 'camera' | 'build'
   stageShowVideo: true, // Show/hide B&W hand video strip (live webcam or session MP4)
   stageVideoPosition: 'right', // 'right' (right of sample tiles) | 'below' (full-width below sample tiles)
@@ -151,6 +145,7 @@ const state = {
   baseOctaveMidi: 48, // Leftmost visible octave of the bottom keyboard (e.g. C3 for C3–B5)
   qwertyOctaveMidi: 60, // Laptop QWERTY A..; octave root (defaults to middle C4)
   disabledVideoIds: new Set(),
+  soloTargets: new Set(),
   soloGroupKey: null,
   soloVideoIds: new Set(),
   collapsedCategories: new Set(),
@@ -203,9 +198,22 @@ function clampVideoGainDb(raw) {
   return Math.max(-12, Math.min(12, Math.round(n)));
 }
 
+function parseStageGridMode(raw, fallback = '3x1') {
+  const parsePair = str => {
+    const m = String(str || '')
+      .trim()
+      .toLowerCase()
+      .match(/^(\d+)\s*[x×]\s*(\d+)$/);
+    if (!m) return null;
+    const cols = Math.max(MIN_STAGE_GRID_DIM, Math.min(MAX_STAGE_GRID_DIM, parseInt(m[1], 10) || 3));
+    const rows = Math.max(MIN_STAGE_GRID_DIM, Math.min(MAX_STAGE_GRID_DIM, parseInt(m[2], 10) || 1));
+    return { key: `${cols}x${rows}`, cols, rows, slots: cols * rows };
+  };
+  return parsePair(raw) || parsePair(fallback) || { key: '3x1', cols: 3, rows: 1, slots: 3 };
+}
+
 function normalizeStageGridMode(raw) {
-  const key = String(raw || '').toLowerCase();
-  return Object.prototype.hasOwnProperty.call(STAGE_GRID_SPECS, key) ? key : '3x1';
+  return parseStageGridMode(raw, '3x1').key;
 }
 
 function clampStageFadeInSec(raw) {
@@ -244,13 +252,6 @@ function clampStageMinDisplaySec(raw) {
 function formatMinDisplayReadout(sec) {
   if (!Number.isFinite(sec) || sec <= 0.001) return 'Off';
   return `${sec.toFixed(1)}s`;
-}
-
-function clampStageMaxDisplaySec(raw) {
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return 1.0;
-  const stepped = Math.round(n * 10) / 10;
-  return Math.max(MIN_STAGE_MAX_DISPLAY_SEC, Math.min(MAX_STAGE_MAX_DISPLAY_SEC, stepped));
 }
 
 function normalizeStageSettingsTab(raw) {
@@ -302,20 +303,12 @@ function clampStageVideoBrightness(raw) {
   return Math.max(0.1, Math.min(1.0, stepped));
 }
 
-function clampStageTileScale(raw) {
-  let n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return MIN_STAGE_TILE_SCALE;
-  if (n > 10) n = n / 100;
-  const stepped = Math.round(n * 20) / 20;
-  return Math.max(MIN_STAGE_TILE_SCALE, Math.min(MAX_STAGE_TILE_SCALE, stepped));
+function clampStageTileScale() {
+  return LOCKED_STAGE_TILE_SCALE;
 }
 
-function clampStageSpecScale(raw) {
-  let n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return 1.0;
-  if (n > 10) n = n / 100;
-  const stepped = Math.round(n * 20) / 20;
-  return Math.max(MIN_STAGE_SPEC_SCALE, Math.min(MAX_STAGE_SPEC_SCALE, stepped));
+function clampStageSpecScale() {
+  return LOCKED_STAGE_SPEC_SCALE;
 }
 
 function getStageSpecRatio(rows, rawSpecScale = state.stageSpecScale) {
@@ -405,7 +398,6 @@ function syncStageConfigToServer() {
         stageFadeInSec: state.stageFadeInSec,
         stageFadeSec: state.stageFadeSec,
         stageMinDisplaySec: clampStageMinDisplaySec(state.stageMinDisplaySec),
-        stageMaxDisplaySec: clampStageMaxDisplaySec(state.stageMaxDisplaySec),
         stageShowVideo: state.stageShowVideo,
         stageVideoPosition: normalizeStageVideoPosition(state.stageVideoPosition),
         stageVideoWidthPct: clampStageVideoWidthPct(state.stageVideoWidthPct),
@@ -418,7 +410,6 @@ function syncStageConfigToServer() {
         stageBuildFullSec: clampBuildFullSec(state.stageBuildFullSec),
         stageBuildMaxFps: clampBuildMaxFps(state.stageBuildMaxFps),
         stageBuildSound: normalizeBuildSound(state.stageBuildSound),
-        velocitySensitive: Boolean(state.velocitySensitive),
         midiTransposeOctaves: clampMidiTransposeOctaves(midiPlayer.transposeOctaves)
       })
     }).catch(() => {});
@@ -449,12 +440,11 @@ function loadPrefsFromStorage() {
         noteSamplesExpanded: false,
         stageSettingsTab: 'layout',
         stageGridMode: '3x1',
-        stageTileScale: 1.0,
-        stageSpecScale: 1.0,
+        stageTileScale: LOCKED_STAGE_TILE_SCALE,
+        stageSpecScale: LOCKED_STAGE_SPEC_SCALE,
         stageFadeInSec: 0.0,
         stageFadeSec: 0.2,
         stageMinDisplaySec: 0.7,
-        stageMaxDisplaySec: 1.0,
         stageShowVideo: true,
         stageVideoPosition: 'right',
         stageVideoWidthPct: 50,
@@ -467,7 +457,6 @@ function loadPrefsFromStorage() {
         stageBuildFullSec: 5.0,
         stageBuildMaxFps: 12,
         stageBuildSound: true,
-        velocitySensitive: false,
         midiTransposeOctaves: 0,
         hasCustomKeyboardOctave: false,
         baseOctaveMidi: 36,
@@ -499,12 +488,11 @@ function loadPrefsFromStorage() {
       noteSamplesExpanded: Boolean(parsed?.noteSamplesExpanded),
       stageSettingsTab: normalizeStageSettingsTab(parsed?.stageSettingsTab),
       stageGridMode: normalizeStageGridMode(parsed?.stageGridMode),
-      stageTileScale: clampStageTileScale(parsed?.stageTileScale ?? 1.0),
-      stageSpecScale: clampStageSpecScale(parsed?.stageSpecScale ?? 1.0),
+      stageTileScale: LOCKED_STAGE_TILE_SCALE,
+      stageSpecScale: LOCKED_STAGE_SPEC_SCALE,
       stageFadeInSec: clampStageFadeInSec(parsed?.stageFadeInSec ?? 0.0),
       stageFadeSec: clampStageFadeSec(parsed?.stageFadeSec ?? 0.2),
       stageMinDisplaySec: clampStageMinDisplaySec(parsed?.stageMinDisplaySec ?? 0.7),
-      stageMaxDisplaySec: clampStageMaxDisplaySec(parsed?.stageMaxDisplaySec ?? 1.0),
       stageShowVideo: parsed?.stageShowVideo !== undefined ? Boolean(parsed.stageShowVideo) : true,
       stageVideoPosition: normalizeStageVideoPosition(parsed?.stageVideoPosition ?? 'right'),
       stageVideoWidthPct: clampStageVideoWidthPct(parsed?.stageVideoWidthPct ?? 50),
@@ -517,7 +505,6 @@ function loadPrefsFromStorage() {
       stageBuildFullSec: clampBuildFullSec(parsed?.stageBuildFullSec ?? 5.0),
       stageBuildMaxFps: clampBuildMaxFps(parsed?.stageBuildMaxFps ?? 12),
       stageBuildSound: normalizeBuildSound(parsed?.stageBuildSound ?? true),
-      velocitySensitive: Boolean(parsed?.velocitySensitive ?? false),
       midiTransposeOctaves: clampMidiTransposeOctaves(parsed?.midiTransposeOctaves ?? 0),
       hasCustomKeyboardOctave: Boolean(parsed?.hasCustomKeyboardOctave),
       baseOctaveMidi: Number(parsed?.baseOctaveMidi ?? 36),
@@ -538,12 +525,11 @@ function loadPrefsFromStorage() {
       noteSamplesExpanded: false,
       stageSettingsTab: 'layout',
       stageGridMode: '3x1',
-      stageTileScale: 1.0,
-      stageSpecScale: 1.0,
+      stageTileScale: LOCKED_STAGE_TILE_SCALE,
+      stageSpecScale: LOCKED_STAGE_SPEC_SCALE,
       stageFadeInSec: 0.0,
       stageFadeSec: 0.2,
       stageMinDisplaySec: 0.7,
-      stageMaxDisplaySec: 1.0,
       stageShowVideo: true,
       stageVideoPosition: 'right',
       stageVideoWidthPct: 50,
@@ -580,12 +566,11 @@ function savePrefsToStorage() {
       noteSamplesExpanded: state.noteSamplesExpanded,
       stageSettingsTab: normalizeStageSettingsTab(state.stageSettingsTab),
       stageGridMode: state.stageGridMode,
-      stageTileScale: state.stageTileScale,
-      stageSpecScale: state.stageSpecScale,
+      stageTileScale: LOCKED_STAGE_TILE_SCALE,
+      stageSpecScale: LOCKED_STAGE_SPEC_SCALE,
       stageFadeInSec: state.stageFadeInSec,
       stageFadeSec: state.stageFadeSec,
       stageMinDisplaySec: clampStageMinDisplaySec(state.stageMinDisplaySec),
-      stageMaxDisplaySec: clampStageMaxDisplaySec(state.stageMaxDisplaySec),
       stageShowVideo: state.stageShowVideo,
       stageVideoPosition: normalizeStageVideoPosition(state.stageVideoPosition),
       stageVideoWidthPct: clampStageVideoWidthPct(state.stageVideoWidthPct),
@@ -598,7 +583,6 @@ function savePrefsToStorage() {
       stageBuildFullSec: clampBuildFullSec(state.stageBuildFullSec),
       stageBuildMaxFps: clampBuildMaxFps(state.stageBuildMaxFps),
       stageBuildSound: normalizeBuildSound(state.stageBuildSound),
-      velocitySensitive: Boolean(state.velocitySensitive),
       midiTransposeOctaves: clampMidiTransposeOctaves(midiPlayer.transposeOctaves),
       hasCustomKeyboardOctave: state.hasCustomKeyboardOctave,
       baseOctaveMidi: state.baseOctaveMidi,
@@ -640,6 +624,7 @@ function syncLiteResetButtonUI() {
 function resetLiteUserCustomizations() {
   if (!state.isLiteMode || !state.catalog) return;
   state.disabledVideoIds.clear();
+  state.soloTargets.clear();
   state.soloGroupKey = null;
   state.soloVideoIds.clear();
   state.sliceToggleOverrides = {};
@@ -661,24 +646,16 @@ function resetLiteUserCustomizations() {
   }
 
   state.stageGridMode = normalizeStageGridMode(state.defaultCatalogGridMode);
+  if (state.soloTargets.size > 0) {
+    recomputeSoloVideoIdsFromTargets();
+  }
+
   savePrefsToStorage();
   refreshAllUI();
 }
 
-function resolveEffectiveVelocity(rawVelocity = DEFAULT_UNIFORM_VELOCITY) {
-  if (!state.velocitySensitive) return DEFAULT_UNIFORM_VELOCITY;
-  return Math.max(0.02, Math.min(1, Number(rawVelocity ?? DEFAULT_UNIFORM_VELOCITY)));
-}
-
-function syncVelocityToggleUI() {
-  const btn = document.getElementById('velocityToggleBtn');
-  if (!btn) return;
-  const isOn = Boolean(state.velocitySensitive);
-  btn.classList.toggle('is-active', isOn);
-  btn.setAttribute('aria-pressed', isOn ? 'true' : 'false');
-  btn.title = isOn
-    ? 'MIDI velocity sensitivity ON — click to ignore MIDI velocity and use fixed uniform velocity'
-    : 'MIDI velocity sensitivity OFF (fixed uniform velocity) — click to enable dynamic velocity';
+function resolveEffectiveVelocity() {
+  return DEFAULT_UNIFORM_VELOCITY;
 }
 
 function isVideoMutedUnderlying(videoId) {
@@ -693,30 +670,100 @@ function isVideoDisabled(videoId) {
   return state.disabledVideoIds.has(videoId);
 }
 
-function setInstrumentSolo(groupKey = null, videoIds = []) {
-  if (!groupKey || !Array.isArray(videoIds) || videoIds.length === 0) {
-    if (state.soloVideoIds.size === 0 && !state.soloGroupKey) return;
+function recomputeSoloVideoIdsFromTargets() {
+  if (!state.soloTargets || state.soloTargets.size === 0) {
     state.soloGroupKey = null;
     state.soloVideoIds.clear();
-    refreshAllUI();
     return;
   }
-  state.soloGroupKey = String(groupKey);
-  state.soloVideoIds = new Set(videoIds.map(String));
+
+  const activeVideos = (state.catalog?.videos || []).filter(v => !v.deleted);
+  const nextSoloIds = new Set();
+
+  for (const target of state.soloTargets) {
+    if (target.startsWith('cat::')) {
+      const targetCat = target.slice(5);
+      const catVids = activeVideos.filter(
+        v => String(v.category || 'other').toLowerCase() === targetCat
+      );
+      const unmutedCatVids = catVids.filter(v => !isVideoMutedUnderlying(v.id));
+      const chosen = unmutedCatVids.length > 0 ? unmutedCatVids : catVids;
+      for (const v of chosen) nextSoloIds.add(String(v.id));
+    } else {
+      for (const v of activeVideos) {
+        if (getVideoGroupKey(v) === target) {
+          nextSoloIds.add(String(v.id));
+        }
+      }
+    }
+  }
+
+  if (nextSoloIds.size === 0) {
+    state.soloTargets.clear();
+    state.soloGroupKey = null;
+    state.soloVideoIds.clear();
+    return;
+  }
+
+  state.soloVideoIds = nextSoloIds;
+  state.soloGroupKey =
+    state.soloTargets.size === 1 ? Array.from(state.soloTargets)[0] : null;
+
   for (const [trigId, voice] of Array.from(activeVoices.entries())) {
     if (voice.slice?.videoId && !state.soloVideoIds.has(voice.slice.videoId)) {
       releaseHeldVoice(trigId, 0.08);
     }
   }
+}
+
+function setInstrumentSolo(groupKey = null, videoIds = []) {
+  if (!groupKey || (Array.isArray(videoIds) && videoIds.length === 0 && !String(groupKey).startsWith('cat::'))) {
+    if (state.soloVideoIds.size === 0 && state.soloTargets.size === 0 && !state.soloGroupKey) return;
+    state.soloTargets.clear();
+    state.soloGroupKey = null;
+    state.soloVideoIds.clear();
+    savePrefsToStorage();
+    refreshAllUI();
+    return;
+  }
+  state.soloTargets = new Set([String(groupKey)]);
+  recomputeSoloVideoIdsFromTargets();
+  if (state.soloTargets.size > 0) {
+    recomputeSoloVideoIdsFromTargets();
+  }
+
+  savePrefsToStorage();
   refreshAllUI();
 }
 
-function toggleInstrumentSolo(groupKey, videoIds) {
-  if (state.soloGroupKey && state.soloGroupKey === groupKey) {
+function toggleSoloTarget(targetKey, additive = false) {
+  const key = String(targetKey || '');
+  if (!key) {
     setInstrumentSolo(null, []);
-  } else {
-    setInstrumentSolo(groupKey, videoIds);
+    return;
   }
+  if (additive) {
+    if (state.soloTargets.has(key)) {
+      state.soloTargets.delete(key);
+    } else {
+      state.soloTargets.add(key);
+    }
+  } else if (state.soloTargets.size === 1 && state.soloTargets.has(key)) {
+    state.soloTargets.clear();
+  } else {
+    state.soloTargets = new Set([key]);
+  }
+  recomputeSoloVideoIdsFromTargets();
+  if (state.soloTargets.size > 0) {
+    recomputeSoloVideoIdsFromTargets();
+  }
+
+  savePrefsToStorage();
+  refreshAllUI();
+}
+
+function toggleInstrumentSolo(groupKey, _videoIds = [], additive = false) {
+  toggleSoloTarget(groupKey, additive);
 }
 
 function getVideoGainDb(videoId) {
@@ -944,9 +991,9 @@ function getCachedOrWarmVideoSrc(url) {
 }
 
 // ============================================================================
-// Three.js 3D Stage + Configurable Foreground Grid (3×1, 2×2, 3×2, 3×3) + Fade-Out
+// Three.js 3D Stage + Configurable Foreground Grid (1×1 up to 8×8) + Fade-Out
 // ============================================================================
-const MAX_STAGE_SLOTS = 9;
+const MAX_STAGE_SLOTS = MAX_STAGE_GRID_DIM * MAX_STAGE_GRID_DIM;
 
 // Blade expanded spectrogram covers full A0..C8 (26..4800 Hz); flush stage mini-spectrograms crop < 130 Hz rumble
 const SPEC_MIN_FREQ = 26;
@@ -1022,46 +1069,61 @@ function createEmptyStageSlot(prev = null) {
 
 const stageSlots = Array.from({ length: MAX_STAGE_SLOTS }, () => createEmptyStageSlot());
 
+function ensureStageSlotDomElements() {
+  const grid = document.getElementById('polyVideoGrid');
+  if (!grid) return;
+  for (let i = 0; i < MAX_STAGE_SLOTS; i++) {
+    if (grid.querySelector(`.stage-slot-unit[data-slot="${i}"]`)) continue;
+    const unitEl = document.createElement('div');
+    unitEl.className = 'stage-slot-unit hidden';
+    unitEl.dataset.slot = String(i);
+    unitEl.innerHTML =
+      '<div class="stage-slot-video"></div><canvas class="slot-mini-spec" width="320" height="96"></canvas>';
+    grid.appendChild(unitEl);
+  }
+}
+
 function getActiveStageGridSpec() {
-  return STAGE_GRID_SPECS[state.stageGridMode] || STAGE_GRID_SPECS['3x1'];
+  return parseStageGridMode(state.stageGridMode, '3x1');
 }
 
 function getActiveStageSlotCount() {
   return getActiveStageGridSpec().slots;
 }
 
+function stepStageGridDim(axis, delta, persist = true) {
+  const cur = getActiveStageGridSpec();
+  const nextRows =
+    axis === 'rows'
+      ? Math.max(MIN_STAGE_GRID_DIM, Math.min(MAX_STAGE_GRID_DIM, cur.rows + delta))
+      : cur.rows;
+  const nextCols =
+    axis === 'cols'
+      ? Math.max(MIN_STAGE_GRID_DIM, Math.min(MAX_STAGE_GRID_DIM, cur.cols + delta))
+      : cur.cols;
+  if (nextRows === cur.rows && nextCols === cur.cols) return;
+  setStageGridMode(`${nextCols}x${nextRows}`, persist);
+}
+
 function syncStageConfigUI() {
-  const mode = normalizeStageGridMode(state.stageGridMode);
-  const tileScale = clampStageTileScale(state.stageTileScale);
-  const specScale = clampStageSpecScale(state.stageSpecScale);
+  const gridSpec = parseStageGridMode(state.stageGridMode, '3x1');
   const fadeInSec = clampStageFadeInSec(state.stageFadeInSec);
   const fadeSec = clampStageFadeSec(state.stageFadeSec);
   const minSec = clampStageMinDisplaySec(state.stageMinDisplaySec);
-  const maxSec = clampStageMaxDisplaySec(state.stageMaxDisplaySec);
 
-  document.querySelectorAll('.stage-grid-pill[data-grid-mode]').forEach(btn => {
-    btn.classList.toggle('is-active', btn.dataset.gridMode === mode);
-  });
+  const rowReadout = document.getElementById('stageGridRowReadout');
+  if (rowReadout) rowReadout.textContent = String(gridSpec.rows);
+  const rowDecBtn = document.getElementById('stageGridRowDecBtn');
+  if (rowDecBtn) rowDecBtn.disabled = gridSpec.rows <= MIN_STAGE_GRID_DIM;
+  const rowIncBtn = document.getElementById('stageGridRowIncBtn');
+  if (rowIncBtn) rowIncBtn.disabled = gridSpec.rows >= MAX_STAGE_GRID_DIM;
 
-  const tileScalePct = Math.round(tileScale * 100);
-  const tileScaleSlider = document.getElementById('stageTileScaleSlider');
-  if (tileScaleSlider && document.activeElement !== tileScaleSlider) {
-    tileScaleSlider.value = String(tileScalePct);
-  }
-  const tileScaleReadout = document.getElementById('stageTileScaleReadout');
-  if (tileScaleReadout) {
-    tileScaleReadout.textContent = `${tileScalePct}%`;
-  }
-
-  const specScalePct = Math.round(specScale * 100);
-  const specScaleSlider = document.getElementById('stageSpecScaleSlider');
-  if (specScaleSlider && document.activeElement !== specScaleSlider) {
-    specScaleSlider.value = String(specScalePct);
-  }
-  const specScaleReadout = document.getElementById('stageSpecScaleReadout');
-  if (specScaleReadout) {
-    specScaleReadout.textContent = `${specScalePct}%`;
-  }
+  const colReadout = document.getElementById('stageGridColReadout');
+  if (colReadout) colReadout.textContent = String(gridSpec.cols);
+  const colDecBtn = document.getElementById('stageGridColDecBtn');
+  if (colDecBtn) colDecBtn.disabled = gridSpec.cols <= MIN_STAGE_GRID_DIM;
+  const colIncBtn = document.getElementById('stageGridColIncBtn');
+  if (colIncBtn) colIncBtn.disabled = gridSpec.cols >= MAX_STAGE_GRID_DIM;
 
   const fadeInSlider = document.getElementById('stageFadeInSlider');
   if (fadeInSlider && document.activeElement !== fadeInSlider) {
@@ -1088,15 +1150,6 @@ function syncStageConfigUI() {
   const minReadout = document.getElementById('stageMinDisplayReadout');
   if (minReadout) {
     minReadout.textContent = formatMinDisplayReadout(minSec);
-  }
-
-  const maxSlider = document.getElementById('stageMaxDisplaySlider');
-  if (maxSlider && document.activeElement !== maxSlider) {
-    maxSlider.value = maxSec.toFixed(1);
-  }
-  const maxReadout = document.getElementById('stageMaxDisplayReadout');
-  if (maxReadout) {
-    maxReadout.textContent = `${maxSec.toFixed(1)}s`;
   }
 
   const activeTab = normalizeStageSettingsTab(state.stageSettingsTab);
@@ -1282,6 +1335,7 @@ function syncStageConfigUI() {
 function setStageGridMode(nextMode, persist = true) {
   const normalized = normalizeStageGridMode(nextMode);
   state.stageGridMode = normalized;
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
   replanCurrentMidiTimeline();
@@ -1291,6 +1345,7 @@ function setStageGridMode(nextMode, persist = true) {
 function setStageTileScale(nextScale, persist = true) {
   const clamped = clampStageTileScale(nextScale);
   state.stageTileScale = clamped;
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
   if (persist) savePrefsToStorage();
@@ -1299,6 +1354,7 @@ function setStageTileScale(nextScale, persist = true) {
 function setStageSpecScale(nextScale, persist = true) {
   const clamped = clampStageSpecScale(nextScale);
   state.stageSpecScale = clamped;
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
   if (persist) savePrefsToStorage();
@@ -1350,13 +1406,13 @@ function scheduleVoiceVisualDisplayTimer(voice) {
     return;
   }
   const minSec = clampStageMinDisplaySec(state.stageMinDisplaySec);
-  const maxSec = Math.max(minSec, clampStageMaxDisplaySec(state.stageMaxDisplaySec));
+  const clipDurSec = Math.max(0.08, Math.min(MAX_CLIP_DUR, Number(voice.naturalDur) || 1.0));
   const nowPerfMs = performance.now();
   const startPerfMs = voice.visualStartPerfMs ?? nowPerfMs;
-  const maxCutoffMs = startPerfMs + maxSec * 1000;
+  const clipEndCutoffMs = startPerfMs + clipDurSec * 1000;
   const targetFadeMs = voice.released
-    ? Math.min(maxCutoffMs, Math.max(voice.releasedPerfMs ?? nowPerfMs, startPerfMs + minSec * 1000))
-    : maxCutoffMs;
+    ? Math.min(clipEndCutoffMs, Math.max(voice.releasedPerfMs ?? nowPerfMs, startPerfMs + minSec * 1000))
+    : clipEndCutoffMs;
   const remainMs = Math.round(targetFadeMs - nowPerfMs);
   if (remainMs <= 0) {
     expireVoiceVisualDisplay(voice);
@@ -1382,14 +1438,6 @@ function rescheduleActiveVoiceDisplayTimers() {
 
 function setStageMinDisplaySec(nextSec, persist = true) {
   state.stageMinDisplaySec = clampStageMinDisplaySec(nextSec);
-  syncStageConfigUI();
-  rescheduleActiveVoiceDisplayTimers();
-  replanCurrentMidiTimeline();
-  if (persist) savePrefsToStorage();
-}
-
-function setStageMaxDisplaySec(nextSec, persist = true) {
-  state.stageMaxDisplaySec = clampStageMaxDisplaySec(nextSec);
   syncStageConfigUI();
   rescheduleActiveVoiceDisplayTimers();
   replanCurrentMidiTimeline();
@@ -1427,6 +1475,7 @@ function setStageShowVideo(enabled, persist = true) {
 
 function setStageVideoPosition(nextPos, persist = true) {
   state.stageVideoPosition = normalizeStageVideoPosition(nextPos);
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
   if (persist) savePrefsToStorage();
@@ -1434,6 +1483,7 @@ function setStageVideoPosition(nextPos, persist = true) {
 
 function setStageVideoWidthPct(nextPct, persist = true) {
   state.stageVideoWidthPct = clampStageVideoWidthPct(nextPct);
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
   if (persist) savePrefsToStorage();
@@ -1441,6 +1491,7 @@ function setStageVideoWidthPct(nextPct, persist = true) {
 
 function setStageVideoHeightPct(nextPct, persist = true) {
   state.stageVideoHeightPct = clampStageVideoHeightPct(nextPct);
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
   if (persist) savePrefsToStorage();
@@ -2277,11 +2328,25 @@ function updateStageTileSizes() {
   if (!stageEl || !grid) return;
 
   const { cols, rows } = getActiveStageGridSpec();
+  const maxGridDim = Math.max(cols, rows);
   const tileScale = clampStageTileScale(state.stageTileScale);
   const stageW = Math.max(320, stageEl.clientWidth);
   const stageH = Math.max(240, stageEl.clientHeight);
-  const gap = stageW < 920 ? 12 : rows >= 3 ? 14 : rows === 2 ? 16 : 20;
-  const rowGap = rows > 1 ? (rows >= 3 ? 16 : 20) : 0;
+  const gap =
+    maxGridDim >= 7
+      ? 6
+      : maxGridDim >= 5
+        ? 8
+        : stageW < 920
+          ? 12
+          : rows >= 3 || cols >= 4
+            ? 14
+            : rows === 2
+              ? 16
+              : 20;
+  const rowGap = rows <= 1 ? 0 : rows >= 7 ? 6 : rows >= 5 ? 9 : rows >= 3 ? 14 : 20;
+  const minTileFloor = maxGridDim >= 4 ? 22 : 48;
+  const minSpecFloor = rows >= 5 ? 6 : 12;
   const specRatio = getStageSpecRatio(rows, state.stageSpecScale); // Flush spectrogram directly beneath each video
 
   const hasStagePianoBelow = Boolean(state.isLiteMode);
@@ -2332,7 +2397,10 @@ function updateStageTileSizes() {
   const baseMaxSideByH = Math.floor(baseAvailTopH / (rows * (1 + specRatio)));
 
   const isPortraitStage = stageH > stageW * 1.12;
-  const baseSide = Math.max(68, Math.min(maxCap, Math.floor(Math.min(baseMaxSideByH, availW / cols))));
+  const baseSide = Math.max(
+    minTileFloor,
+    Math.min(maxCap, Math.floor(Math.min(baseMaxSideByH, availW / cols)))
+  );
   const baseStripW = baseSide * cols + gap * (cols - 1);
   const mosaicRefW =
     isBelowHand && !hasStagePianoBelow
@@ -2352,10 +2420,13 @@ function updateStageTileSizes() {
   // if scaling tiles up or split hand-video mode achieves larger flush mosaic squares without overlap.
   let side = baseSide;
   if (activeTiles > 0 && (tileScale > 1.01 || splitHandVideo)) {
-    const minAllowedSide = Math.max(68, Math.round(baseSide * (splitHandVideo ? 0.84 : 0.68)));
+    const minAllowedSide = Math.max(
+      minTileFloor,
+      Math.round(baseSide * (splitHandVideo ? 0.84 : 0.68))
+    );
     let bestAchievedCell = -1;
     for (let s = baseSide; s >= minAllowedSide; s -= 2) {
-      const candSpecH = Math.max(14, Math.round(s * specRatio));
+      const candSpecH = Math.max(minSpecFloor, Math.round(s * specRatio));
       const candStripW = s * cols + gap * (cols - 1);
       const minSideW = Math.min(48, Math.floor((candStripW - splitGap) * 0.45));
       const candHandW = isRightHand
@@ -2403,7 +2474,7 @@ function updateStageTileSizes() {
     }
   }
 
-  const specH = Math.max(14, Math.round(side * specRatio));
+  const specH = Math.max(minSpecFloor, Math.round(side * specRatio));
   const stripW = side * cols + gap * (cols - 1);
   const topStripH = rows * (side + specH) + (rows - 1) * rowGap;
 
@@ -3367,14 +3438,17 @@ async function startHeldVoice({
       voice.naturalTimer = setTimeout(() => {
         voice.naturalTimer = null;
         detachedRingingVoices.delete(voice);
+        const vid = voice.tileObj?.videoEl;
+        if (vid) {
+          try {
+            vid.pause();
+          } catch {}
+        }
+        if (!voice.visualTimedOut) {
+          expireVoiceVisualDisplay(voice);
+        }
         if (!voice.audioFadeStarted) {
           voice.audioCompleted = true;
-          const vid = voice.tileObj?.videoEl;
-          if (vid) {
-            try {
-              vid.pause();
-            } catch {}
-          }
           if (voice.tileObj && audioCtx) {
             drawSlotMiniSpecFrame(voice.tileObj.slotIdx, audioCtx.currentTime);
           }
@@ -3748,7 +3822,7 @@ function setChromeCollapsed(nextCollapsed) {
 }
 
 function setSessionsCollapsed(nextCollapsed) {
-  state.sessionsCollapsed = Boolean(nextCollapsed);
+  state.sessionsCollapsed = state.isLiteMode ? false : Boolean(nextCollapsed);
   if (state.sessionsCollapsed && typeof closeMidiBrowserPopover === 'function') {
     closeMidiBrowserPopover();
   }
@@ -3791,7 +3865,7 @@ function setPresetsCollapsed(nextCollapsed) {
 }
 
 function setRollCollapsed(nextCollapsed) {
-  state.rollCollapsed = Boolean(nextCollapsed);
+  state.rollCollapsed = state.isLiteMode ? false : Boolean(nextCollapsed);
   const zoneEl = document.getElementById('midiRollZone');
   const btnEl = document.getElementById('rollCollapseBtn');
   if (zoneEl) zoneEl.classList.toggle('is-collapsed', state.rollCollapsed);
@@ -3809,7 +3883,7 @@ function setRollCollapsed(nextCollapsed) {
 }
 
 function setKeysCollapsed(nextCollapsed) {
-  state.keysCollapsed = Boolean(nextCollapsed);
+  state.keysCollapsed = state.isLiteMode ? false : Boolean(nextCollapsed);
   const zoneEl = document.getElementById('keysDockZone');
   const btnEl = document.getElementById('keysCollapseBtn');
   if (zoneEl) zoneEl.classList.toggle('is-collapsed', state.keysCollapsed);
@@ -3848,6 +3922,10 @@ function setVideosEnabled(videoIds, enabled) {
         releaseHeldVoice(trigId, 0.08);
       }
     }
+  }
+
+  if (state.soloTargets.size > 0) {
+    recomputeSoloVideoIdsFromTargets();
   }
 
   savePrefsToStorage();
@@ -3989,35 +4067,61 @@ function renderFileExplorer() {
 
   listEl.innerHTML = '';
 
+  const hasAnySolo = state.soloVideoIds.size > 0;
+
   for (const { cat, groups, videos: catVideos } of categories) {
-    const enabledVidsInCat = catVideos.filter(v => !isVideoDisabled(v.id)).length;
+    const underlyingCatEnabledCount = catVideos.filter(v => !isVideoMutedUnderlying(v.id)).length;
     const isCollapsed = state.collapsedCategories.has(cat);
+    const catSoloKey = `cat::${cat}`;
+    const isCatSoloed = state.soloTargets.has(catSoloKey);
+    const hasChildSolo =
+      !isCatSoloed &&
+      Array.from(state.soloTargets).some(t => t.startsWith(`${cat}::`));
+    const catHasAudibleSoloVid =
+      hasAnySolo && catVideos.some(v => state.soloVideoIds.has(v.id));
 
     const groupEl = document.createElement('div');
     groupEl.className = `explorer-cat-group${isCollapsed ? ' is-collapsed' : ''}`;
     groupEl.dataset.category = cat;
 
     const headerEl = document.createElement('div');
-    headerEl.className = 'explorer-cat-header';
+    headerEl.className = `explorer-cat-header${
+      hasAnySolo && !catHasAudibleSoloVid ? ' is-unsoloed-dim' : ''
+    }`;
 
-    const catSwitchClass = enabledVidsInCat > 0 ? 'ui-switch is-on' : 'ui-switch';
+    const catSwitchClass = underlyingCatEnabledCount > 0 ? 'ui-switch is-on' : 'ui-switch';
+    const catSoloBtnClass = [
+      'explorer-solo-btn',
+      isCatSoloed ? 'is-active' : '',
+      hasChildSolo ? 'has-child-solo' : ''
+    ]
+      .filter(Boolean)
+      .join(' ');
 
     headerEl.innerHTML = `
       <div class="explorer-cat-left">
         <span class="explorer-cat-caret">▾</span>
         <span class="explorer-cat-name">${cat}</span>
       </div>
-      <button
-        type="button"
-        class="${catSwitchClass}"
-        role="switch"
-        aria-checked="${enabledVidsInCat > 0 ? 'true' : 'false'}"
-        title="${enabledVidsInCat > 0 ? `Mute all ${cat} groups` : `Enable all ${cat} groups`}"
-      ></button>
+      <div class="explorer-row-controls">
+        <button
+          type="button"
+          class="${catSoloBtnClass}"
+          aria-pressed="${isCatSoloed ? 'true' : 'false'}"
+          title="${isCatSoloed ? `Exit Solo for ${cat} (Shift/Cmd+click to multi-solo)` : `Solo ${cat} category (Shift/Cmd+click to multi-solo)`}"
+        >S</button>
+        <button
+          type="button"
+          class="${catSwitchClass}"
+          role="switch"
+          aria-checked="${underlyingCatEnabledCount > 0 ? 'true' : 'false'}"
+          title="${underlyingCatEnabledCount > 0 ? `Mute all ${cat} groups` : `Enable all ${cat} groups`}"
+        ></button>
+      </div>
     `;
 
     headerEl.addEventListener('click', e => {
-      if (e.target.closest('.ui-switch')) return;
+      if (e.target.closest('.ui-switch') || e.target.closest('.explorer-solo-btn')) return;
       const willCollapse = !state.collapsedCategories.has(cat);
       if (willCollapse) state.collapsedCategories.add(cat);
       else state.collapsedCategories.delete(cat);
@@ -4029,10 +4133,16 @@ function renderFileExplorer() {
       setSelectionFocus('explorer');
     });
 
+    const catSoloBtn = headerEl.querySelector('.explorer-solo-btn');
+    catSoloBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleSoloTarget(catSoloKey, Boolean(e.shiftKey || e.metaKey || e.ctrlKey));
+    });
+
     const catSwitchBtn = headerEl.querySelector('.ui-switch');
     catSwitchBtn.addEventListener('click', e => {
       e.stopPropagation();
-      const nextEnabled = enabledVidsInCat === 0;
+      const nextEnabled = underlyingCatEnabledCount === 0;
       setVideosEnabled(
         catVideos.map(v => v.id),
         nextEnabled
@@ -4046,15 +4156,17 @@ function renderFileExplorer() {
       const grpVideos = grp.videos;
       const underlyingEnabledCount = grpVideos.filter(v => !isVideoMutedUnderlying(v.id)).length;
       const allMuted = underlyingEnabledCount === 0;
-      const hasAnySolo = state.soloVideoIds.size > 0;
-      const isThisSoloed = Boolean(hasAnySolo && state.soloGroupKey === grp.key);
-      const isUnsoloedDim = Boolean(hasAnySolo && !isThisSoloed);
+      const isThisSoloed = state.soloTargets.has(grp.key);
+      const isAudibleUnderSolo =
+        hasAnySolo && grpVideos.some(v => state.soloVideoIds.has(v.id));
+      const isUnsoloedDim = Boolean(hasAnySolo && !isAudibleUnderSolo);
       const sliceCount = grpVideos.reduce(
         (sum, v) => sum + (v.slices || []).filter(s => !s.deleted).length,
         0
       );
 
       const grpSwitchClass = underlyingEnabledCount > 0 ? 'ui-switch is-on' : 'ui-switch';
+      const grpSoloClass = isThisSoloed ? 'explorer-solo-btn is-active' : 'explorer-solo-btn';
 
       const rowEl = document.createElement('div');
       rowEl.className = [
@@ -4072,23 +4184,28 @@ function renderFileExplorer() {
 
       rowEl.innerHTML = `
         <span class="explorer-video-label">${grp.name}</span>
-        ${isThisSoloed ? `<button type="button" class="explorer-solo-badge" title="Exit Solo for ${grp.name}">SOLO</button>` : ''}
-        <button
-          type="button"
-          class="${grpSwitchClass}"
-          role="switch"
-          aria-checked="${underlyingEnabledCount > 0 ? 'true' : 'false'}"
-          title="${underlyingEnabledCount > 0 ? `Mute ${grp.name}` : `Enable ${grp.name}`}"
-        ></button>
+        <div class="explorer-row-controls">
+          <button
+            type="button"
+            class="${grpSoloClass}"
+            aria-pressed="${isThisSoloed ? 'true' : 'false'}"
+            title="${isThisSoloed ? `Exit Solo for ${grp.name} (Shift/Cmd+click to multi-solo)` : `Solo ${grp.name} (Shift/Cmd+click to multi-solo)`}"
+          >S</button>
+          <button
+            type="button"
+            class="${grpSwitchClass}"
+            role="switch"
+            aria-checked="${underlyingEnabledCount > 0 ? 'true' : 'false'}"
+            title="${underlyingEnabledCount > 0 ? `Mute ${grp.name}` : `Enable ${grp.name}`}"
+          ></button>
+        </div>
       `;
 
-      const soloBadgeBtn = rowEl.querySelector('.explorer-solo-badge');
-      if (soloBadgeBtn) {
-        soloBadgeBtn.addEventListener('click', e => {
-          e.stopPropagation();
-          setInstrumentSolo(null, []);
-        });
-      }
+      const soloBtn = rowEl.querySelector('.explorer-solo-btn');
+      soloBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        toggleSoloTarget(grp.key, Boolean(e.shiftKey || e.metaKey || e.ctrlKey));
+      });
 
       const switchBtn = rowEl.querySelector('.ui-switch');
       switchBtn.addEventListener('click', e => {
@@ -4100,7 +4217,7 @@ function renderFileExplorer() {
       });
 
       rowEl.addEventListener('click', e => {
-        if (e.target.closest('.ui-switch') || e.target.closest('.explorer-solo-badge')) return;
+        if (e.target.closest('.ui-switch') || e.target.closest('.explorer-solo-btn')) return;
         e.stopPropagation();
         bladeState.explorerFocus = {
           type: 'group',
@@ -4267,14 +4384,14 @@ function setSelectionFocus(target, sliceId = null) {
   const validTargets = new Set(['keyboard', 'tile', 'explorer', 'blade']);
   state.selectionTarget = validTargets.has(target) ? target : 'keyboard';
   state.selectedTileSliceId =
-    state.selectionTarget === 'tile' && sliceId ? String(sliceId) : null;
+    !state.isLiteMode && state.selectionTarget === 'tile' && sliceId ? String(sliceId) : null;
   threeStage?.setSelectedSliceId?.(state.selectedTileSliceId);
 
   document.querySelectorAll('.wf-key').forEach(el => {
     const m = Number(el.dataset.midi);
     el.classList.toggle(
       'selected-key',
-      state.selectionTarget === 'keyboard' && m === state.selectedMidi
+      !state.isLiteMode && state.selectionTarget === 'keyboard' && m === state.selectedMidi
     );
   });
   syncExplorerHighlightClasses();
@@ -4308,6 +4425,13 @@ function stepTileSelection(dCol, dRow) {
 }
 
 function selectKeyForConfig(midi, shouldTapPreview = false, keepTileFocus = false) {
+  if (state.isLiteMode) {
+    if (shouldTapPreview) {
+      const clamped = Math.max(MIN_MIDI, Math.min(MAX_MIDI, midi));
+      triggerDefaultPianoGate('arrow_preview', clamped, 0.9, false);
+    }
+    return;
+  }
   const clamped = Math.max(MIN_MIDI, Math.min(MAX_MIDI, midi));
   state.selectedMidi = clamped;
   if (!keepTileFocus) {
@@ -4341,7 +4465,7 @@ function selectKeyForConfig(midi, shouldTapPreview = false, keepTileFocus = fals
       const m = Number(el.dataset.midi);
       el.classList.toggle(
         'selected-key',
-        state.selectionTarget === 'keyboard' && m === clamped
+        !state.isLiteMode && state.selectionTarget === 'keyboard' && m === clamped
       );
     });
   }
@@ -4459,7 +4583,9 @@ function renderPianoKeyboard() {
       isAccidental ? 'accidental' : 'natural',
       isAccidental && TOUCH_LEFT_ACCIDENTALS.has(pc) ? 'touch-left' : '',
       isFirstNatural ? 'first-natural' : '',
-      state.selectionTarget === 'keyboard' && midi === state.selectedMidi ? 'selected-key' : '',
+      !state.isLiteMode && state.selectionTarget === 'keyboard' && midi === state.selectedMidi
+        ? 'selected-key'
+        : '',
       isMidiStillHeld(midi) ? 'active-play' : ''
     ]
       .filter(Boolean)
@@ -4499,6 +4625,7 @@ function getCandidatesForSelectedKey() {
 }
 
 function renderSelectedKeyDeck() {
+  if (state.isLiteMode) return;
   updateSelectedNoteChipUI();
 
   const midi = state.selectedMidi;
@@ -6462,6 +6589,7 @@ function refreshAllUI() {
   renderSelectedKeyDeck();
   refreshBladeIfOpen();
   threeStage?.syncCatalog(state.catalog);
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
   replanCurrentMidiTimeline();
@@ -6541,7 +6669,6 @@ function captureCurrentPresetSnapshot() {
     stageFadeInSec: clampStageFadeInSec(state.stageFadeInSec),
     stageFadeSec: clampStageFadeSec(state.stageFadeSec),
     stageMinDisplaySec: clampStageMinDisplaySec(state.stageMinDisplaySec),
-    stageMaxDisplaySec: clampStageMaxDisplaySec(state.stageMaxDisplaySec),
     stageShowVideo: Boolean(state.stageShowVideo),
     stageVideoPosition: normalizeStageVideoPosition(state.stageVideoPosition),
     stageVideoWidthPct: clampStageVideoWidthPct(state.stageVideoWidthPct),
@@ -6610,7 +6737,6 @@ function canonicalizePresetSnapshotForCompare(snap) {
     stageFadeInSec: clampStageFadeInSec(sc.stageFadeInSec ?? 0.0),
     stageFadeSec: clampStageFadeSec(sc.stageFadeSec ?? 0.2),
     stageMinDisplaySec: clampStageMinDisplaySec(sc.stageMinDisplaySec ?? 0.7),
-    stageMaxDisplaySec: clampStageMaxDisplaySec(sc.stageMaxDisplaySec ?? 1.0),
     stageShowVideo: sc.stageShowVideo !== undefined ? Boolean(sc.stageShowVideo) : true,
     stageVideoPosition: normalizeStageVideoPosition(sc.stageVideoPosition ?? 'right'),
     stageVideoWidthPct: clampStageVideoWidthPct(sc.stageVideoWidthPct ?? 50),
@@ -6717,9 +6843,6 @@ function hydrateClientFromPresetCatalog(nextCatalog) {
   if (sc.stageMinDisplaySec !== undefined) {
     state.stageMinDisplaySec = clampStageMinDisplaySec(sc.stageMinDisplaySec);
   }
-  if (sc.stageMaxDisplaySec !== undefined) {
-    state.stageMaxDisplaySec = clampStageMaxDisplaySec(sc.stageMaxDisplaySec);
-  }
   if (sc.stageShowVideo !== undefined) state.stageShowVideo = Boolean(sc.stageShowVideo);
   if (sc.stageVideoPosition !== undefined) {
     state.stageVideoPosition = normalizeStageVideoPosition(sc.stageVideoPosition);
@@ -6753,6 +6876,10 @@ function hydrateClientFromPresetCatalog(nextCatalog) {
   }
   if (sc.stageBuildSound !== undefined) {
     state.stageBuildSound = normalizeBuildSound(sc.stageBuildSound);
+  }
+
+  if (state.soloTargets.size > 0) {
+    recomputeSoloVideoIdsFromTargets();
   }
 
   savePrefsToStorage();
@@ -7788,6 +7915,17 @@ function chooseRollGridStepSec(viewDurSec, usableW) {
   return 120;
 }
 
+function mixRollHexWithBlack(hex, factor = 1.0) {
+  const clean = String(hex || '#ffffff').replace('#', '');
+  const n = parseInt(clean, 16);
+  if (!Number.isFinite(n)) return '#ffffff';
+  const f = Math.max(0, Math.min(1, factor));
+  const r = Math.round(((n >> 16) & 255) * f);
+  const g = Math.round(((n >> 8) & 255) * f);
+  const b = Math.round((n & 255) * f);
+  return `rgb(${r},${g},${b})`;
+}
+
 function drawMidiRollCanvas() {
   if (state.rollCollapsed) return;
   const canvas = document.getElementById('midiRollCanvas');
@@ -7799,27 +7937,32 @@ function drawMidiRollCanvas() {
   const cssH = Math.max(1, Math.round(rect?.height || canvas.clientHeight || 1));
   if (cssW <= 2 || cssH <= 2) return;
 
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const targetW = Math.round(cssW * dpr);
-  const targetH = Math.round(cssH * dpr);
-  if (canvas.width !== targetW || canvas.height !== targetH) {
-    canvas.width = targetW;
-    canvas.height = targetH;
+  const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+  const W = Math.max(1, Math.round(cssW * dpr));
+  const H = Math.max(1, Math.round(cssH * dpr));
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W;
+    canvas.height = H;
   }
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false });
   if (!ctx) return;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Draw directly in exact integer physical device pixels so bars, gridlines, and playhead never blur
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#000000';
-  ctx.fillRect(0, 0, cssW, cssH);
+  ctx.fillRect(0, 0, W, H);
 
   const isArmed = midiRecorder.state === 'armed';
   const isRecording = midiRecorder.state === 'recording';
   const isOverdub = (isArmed || isRecording) && midiRecorder.mode === 'overdub';
   const hasMidi = Boolean(midiPlayer.parsed);
 
-  const usableW = Math.max(1, cssW - MIDI_ROLL_PAD_X * 2);
-  const usableH = Math.max(1, cssH - MIDI_ROLL_PAD_Y * 2);
+  const padXPx = Math.round(MIDI_ROLL_PAD_X * dpr);
+  const padYPx = Math.round(MIDI_ROLL_PAD_Y * dpr);
+  const usableWPx = Math.max(1, W - padXPx * 2);
+  const usableHPx = Math.max(1, H - padYPx * 2);
+  const usableCssW = Math.max(1, cssW - MIDI_ROLL_PAD_X * 2);
 
   // Empty / Armed-fresh state (before first note is struck)
   if (!hasMidi && !isRecording) {
@@ -7831,13 +7974,8 @@ function drawMidiRollCanvas() {
           ? 'Record or load a .mid file'
           : 'No session loaded';
     }
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.06)';
-    ctx.lineWidth = 1;
-    const midY = Math.round(cssH * 0.5) + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(MIDI_ROLL_PAD_X, midY);
-    ctx.lineTo(cssW - MIDI_ROLL_PAD_X, midY);
-    ctx.stroke();
+    ctx.fillStyle = '#121212';
+    ctx.fillRect(padXPx, Math.round(H * 0.5), usableWPx, 1);
     return;
   }
 
@@ -7867,16 +8005,12 @@ function drawMidiRollCanvas() {
     }
   }
 
-  // Subtle vertical time gridlines
-  const stepSec = chooseRollGridStepSec(viewDur, usableW);
-  ctx.lineWidth = 1;
+  // Crisp 1-device-pixel vertical time gridlines
+  const stepSec = chooseRollGridStepSec(viewDur, usableCssW);
   for (let t = stepSec, idx = 1; t < viewDur - 1e-4; t += stepSec, idx++) {
-    const gx = Math.round(MIDI_ROLL_PAD_X + (t / viewDur) * usableW) + 0.5;
-    ctx.strokeStyle = idx % 4 === 0 ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.055)';
-    ctx.beginPath();
-    ctx.moveTo(gx, 0);
-    ctx.lineTo(gx, cssH);
-    ctx.stroke();
+    const gx = Math.round(padXPx + (t / viewDur) * usableWPx);
+    ctx.fillStyle = idx % 4 === 0 ? '#212121' : '#121212';
+    ctx.fillRect(gx, 0, 1, H);
   }
 
   // Auto-fitted vertical pitch bounds (minimum 14-semitone window so sparse phrases stay balanced)
@@ -7898,50 +8032,52 @@ function drawMidiRollCanvas() {
     }
 
     const pitchSpan = Math.max(1, maxM - minM + 1);
-    const barH = Math.max(2.4, Math.min(6.0, (usableH / pitchSpan) * 0.84));
-    const yTravel = Math.max(0, usableH - barH);
+    const minBarHPx = Math.max(2, Math.round(1.75 * dpr));
+    const maxBarHPx = Math.max(minBarHPx, Math.round(3.5 * dpr));
+    const barHPx = Math.max(
+      minBarHPx,
+      Math.min(maxBarHPx, Math.floor((usableHPx / pitchSpan) * 0.68))
+    );
+    const yTravelPx = Math.max(0, usableHPx - barHPx);
+    const minBarWPx = Math.max(2, Math.round(1.5 * dpr));
+    const cutGapPx = Math.max(1, Math.round(dpr * 0.75));
     const highlightActive = midiPlayer.playing || midiPlayer.scrubbing || isRecording;
 
-    ctx.save();
-    for (let i = 0; i < spans.length; i++) {
+    // Group next-onset pixel per MIDI pitch so consecutive notes leave a crisp 1px cut
+    const byMidiNextX = new Map();
+    for (let i = spans.length - 1; i >= 0; i--) {
       const sp = spans[i];
-      const x0 = MIDI_ROLL_PAD_X + (sp.startSec / viewDur) * usableW;
-      const x1 = MIDI_ROLL_PAD_X + (Math.min(viewDur, sp.endSec) / viewDur) * usableW;
-      const w = Math.max(2.0, x1 - x0);
+      const px0 = Math.round(padXPx + (sp.startSec / viewDur) * usableWPx);
+      let px1 = Math.round(padXPx + (Math.min(viewDur, sp.endSec) / viewDur) * usableWPx);
+      const nextSamePitchX = byMidiNextX.get(sp.midi);
+      if (nextSamePitchX !== undefined && px1 > nextSamePitchX - cutGapPx) {
+        px1 = Math.max(px0 + minBarWPx, nextSamePitchX - cutGapPx);
+      }
+      byMidiNextX.set(sp.midi, px0);
+
+      const pw = Math.max(minBarWPx, px1 - px0);
       const normPitch = maxM > minM ? (sp.midi - minM) / (maxM - minM) : 0.5;
-      const y = MIDI_ROLL_PAD_Y + (1 - normPitch) * yTravel;
+      const py = Math.round(padYPx + (1 - normPitch) * yTravelPx);
 
       const isCrossed =
         highlightActive && curSec >= sp.startSec - 0.015 && curSec <= sp.endSec + 0.03;
 
-      ctx.globalAlpha = isCrossed ? 1.0 : 0.46;
-      ctx.fillStyle = sp.color;
-      ctx.fillRect(x0, y, w, barH);
-
-      if (isCrossed && barH >= 3.2) {
-        ctx.globalAlpha = 0.32;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(x0, y, w, 1);
-      }
+      ctx.fillStyle = isCrossed ? sp.color : mixRollHexWithBlack(sp.color, 0.64);
+      ctx.fillRect(px0, py, pw, barHPx);
     }
-    ctx.restore();
   }
 
-  // Crisp playhead line + subtle top/bottom scrubber ticks
-  const phX = MIDI_ROLL_PAD_X + Math.max(0, Math.min(1, curSec / viewDur)) * usableW;
-  const phColor = isRecording ? '#f87171' : '#ffffff';
-  ctx.save();
-  ctx.strokeStyle = phColor;
-  ctx.fillStyle = phColor;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(phX, 0);
-  ctx.lineTo(phX, cssH);
-  ctx.stroke();
+  // Crisp integer-aligned playhead line + top/bottom scrubber ticks
+  const phW = Math.max(1, Math.round(dpr));
+  const phCenterPx = Math.round(padXPx + Math.max(0, Math.min(1, curSec / viewDur)) * usableWPx);
+  const phLeftPx = phCenterPx - Math.floor(phW * 0.5);
+  ctx.fillStyle = isRecording ? '#f87171' : '#ffffff';
+  ctx.fillRect(phLeftPx, 0, phW, H);
 
-  ctx.fillRect(phX - 2.5, 0, 5, 2.5);
-  ctx.fillRect(phX - 2.5, cssH - 2.5, 5, 2.5);
-  ctx.restore();
+  const tickHalfW = Math.max(2, Math.round(2 * dpr));
+  const tickH = Math.max(2, Math.round(2 * dpr));
+  ctx.fillRect(phCenterPx - tickHalfW, 0, tickHalfW * 2 + (phW % 2), tickH);
+  ctx.fillRect(phCenterPx - tickHalfW, H - tickH, tickHalfW * 2 + (phW % 2), tickH);
 }
 
 function replanCurrentMidiTimeline() {
@@ -7960,9 +8096,7 @@ function replanCurrentMidiTimeline() {
     fadeInSec: clampStageFadeInSec(state.stageFadeInSec),
     fadeOutSec: clampStageFadeSec(state.stageFadeSec),
     minDisplaySec: clampStageMinDisplaySec(state.stageMinDisplaySec),
-    maxDisplaySec: clampStageMaxDisplaySec(state.stageMaxDisplaySec),
     transposeOctaves: Math.round(midiPlayer.transposeOctaves || 0),
-    velocitySensitive: Boolean(state.velocitySensitive),
     releaseSec: state.releaseSec
   });
   ensureMidiRollSpans();
@@ -9083,9 +9217,7 @@ async function runBrowserMp4Export() {
       fadeInSec: clampStageFadeInSec(state.stageFadeInSec),
       fadeOutSec: clampStageFadeSec(state.stageFadeSec),
       minDisplaySec: clampStageMinDisplaySec(state.stageMinDisplaySec),
-      maxDisplaySec: clampStageMaxDisplaySec(state.stageMaxDisplaySec),
       transposeOctaves: Math.round(midiPlayer.transposeOctaves || 0),
-      velocitySensitive: Boolean(state.velocitySensitive),
       showHandVideo: Boolean(state.stageShowVideo && midiPlayer.hasVideo && midiPlayer.videoUrl),
       handVideoUrl: midiPlayer.hasVideo ? midiPlayer.videoUrl : '',
       handVideoLeadOffsetSec: Number(midiPlayer.videoLeadOffsetSec || 0),
@@ -9791,33 +9923,22 @@ function setupEventListeners() {
     });
   });
 
-  // Discreet Stage Grid Mode (3×1, 2×2, 3×2, 4×2, 3×3), Mosaic Tile Size (100%–250%) & Visual Fade-Out
-  document.querySelectorAll('.stage-grid-pill[data-grid-mode]').forEach(pill => {
-    pill.addEventListener('click', () => {
-      const mode = pill.dataset.gridMode;
-      if (mode) setStageGridMode(mode, true);
-    });
-  });
-  const stageTileScaleSlider = document.getElementById('stageTileScaleSlider');
-  if (stageTileScaleSlider) {
-    stageTileScaleSlider.addEventListener('input', () => {
-      setStageTileScale(Number(stageTileScaleSlider.value) / 100, true);
-    });
-    stageTileScaleSlider.addEventListener('change', () => {
-      setStageTileScale(Number(stageTileScaleSlider.value) / 100, true);
-    });
-    stageTileScaleSlider.addEventListener('dblclick', () => {
-      setStageTileScale(1.0, true);
-    });
+  // Stage Grid Row & Col Steppers (1×1 up to 8×8)
+  const stageGridRowDecBtn = document.getElementById('stageGridRowDecBtn');
+  const stageGridRowIncBtn = document.getElementById('stageGridRowIncBtn');
+  const stageGridColDecBtn = document.getElementById('stageGridColDecBtn');
+  const stageGridColIncBtn = document.getElementById('stageGridColIncBtn');
+  if (stageGridRowDecBtn) {
+    stageGridRowDecBtn.addEventListener('click', () => stepStageGridDim('rows', -1, true));
   }
-  const stageSpecScaleSlider = document.getElementById('stageSpecScaleSlider');
-  if (stageSpecScaleSlider) {
-    stageSpecScaleSlider.addEventListener('input', () => {
-      setStageSpecScale(Number(stageSpecScaleSlider.value) / 100, true);
-    });
-    stageSpecScaleSlider.addEventListener('change', () => {
-      setStageSpecScale(Number(stageSpecScaleSlider.value) / 100, true);
-    });
+  if (stageGridRowIncBtn) {
+    stageGridRowIncBtn.addEventListener('click', () => stepStageGridDim('rows', 1, true));
+  }
+  if (stageGridColDecBtn) {
+    stageGridColDecBtn.addEventListener('click', () => stepStageGridDim('cols', -1, true));
+  }
+  if (stageGridColIncBtn) {
+    stageGridColIncBtn.addEventListener('click', () => stepStageGridDim('cols', 1, true));
   }
   const stageFadeInSlider = document.getElementById('stageFadeInSlider');
   if (stageFadeInSlider) {
@@ -9847,18 +9968,6 @@ function setupEventListeners() {
     });
     stageMinDisplaySlider.addEventListener('dblclick', () => {
       setStageMinDisplaySec(0.7, true);
-    });
-  }
-  const stageMaxDisplaySlider = document.getElementById('stageMaxDisplaySlider');
-  if (stageMaxDisplaySlider) {
-    stageMaxDisplaySlider.addEventListener('input', () => {
-      setStageMaxDisplaySec(Number(stageMaxDisplaySlider.value), true);
-    });
-    stageMaxDisplaySlider.addEventListener('change', () => {
-      setStageMaxDisplaySec(Number(stageMaxDisplaySlider.value), true);
-    });
-    stageMaxDisplaySlider.addEventListener('dblclick', () => {
-      setStageMaxDisplaySec(1.0, true);
     });
   }
   const stageShowVideoToggle = document.getElementById('stageShowVideoToggle');
@@ -9995,15 +10104,6 @@ function setupEventListeners() {
   const octUpBtn = document.getElementById('octUpBtn');
   if (octUpBtn) {
     octUpBtn.addEventListener('click', () => shiftKeyboardOctave(1));
-  }
-  const velocityToggleBtn = document.getElementById('velocityToggleBtn');
-  if (velocityToggleBtn) {
-    velocityToggleBtn.addEventListener('click', () => {
-      state.velocitySensitive = !state.velocitySensitive;
-      syncVelocityToggleUI();
-      replanCurrentMidiTimeline();
-      savePrefsToStorage();
-    });
   }
 
   const pianoKeyboardEl = document.getElementById('pianoKeyboard');
@@ -10824,11 +10924,19 @@ function setupEventListeners() {
 
     if (e.code === 'KeyS' && e.altKey && !e.metaKey && !e.ctrlKey && !e.repeat) {
       e.preventDefault();
-      if (bladeState.open && bladeState.groupKey && bladeState.groupVideos?.length) {
-        toggleInstrumentSolo(
-          bladeState.groupKey,
-          bladeState.groupVideos.map(v => v.id)
-        );
+      if (state.selectionTarget === 'explorer' && bladeState.explorerFocus) {
+        const foc = bladeState.explorerFocus;
+        if (foc.type === 'cat' && foc.cat) {
+          toggleSoloTarget(`cat::${foc.cat}`, Boolean(e.shiftKey));
+          return;
+        }
+        if (foc.type === 'group' && foc.groupKey) {
+          toggleSoloTarget(foc.groupKey, Boolean(e.shiftKey));
+          return;
+        }
+      }
+      if (bladeState.open && bladeState.groupKey) {
+        toggleSoloTarget(bladeState.groupKey, Boolean(e.shiftKey));
       } else if (state.soloVideoIds.size > 0) {
         setInstrumentSolo(null, []);
       }
@@ -11069,6 +11177,7 @@ function setupEventListeners() {
     }
 
     if (e.key === 'ArrowLeft') {
+      if (state.isLiteMode) return;
       e.preventDefault();
       if (state.selectionTarget === 'tile') {
         stepTileSelection(-1, 0);
@@ -11080,6 +11189,7 @@ function setupEventListeners() {
       return;
     }
     if (e.key === 'ArrowRight') {
+      if (state.isLiteMode) return;
       e.preventDefault();
       if (state.selectionTarget === 'tile') {
         stepTileSelection(1, 0);
@@ -11091,20 +11201,21 @@ function setupEventListeners() {
       return;
     }
     if (e.key === 'ArrowUp') {
-      if (state.selectionTarget === 'tile') {
+      if (!state.isLiteMode && state.selectionTarget === 'tile') {
         e.preventDefault();
         stepTileSelection(0, -1);
       }
       return;
     }
     if (e.key === 'ArrowDown') {
-      if (state.selectionTarget === 'tile') {
+      if (!state.isLiteMode && state.selectionTarget === 'tile') {
         e.preventDefault();
         stepTileSelection(0, 1);
       }
       return;
     }
     if (e.key === 'Enter') {
+      if (state.isLiteMode) return;
       const cands = getCandidatesForSelectedKey();
       const chosen = cands[state.auditionIndex];
       if (chosen) {
@@ -11136,6 +11247,7 @@ function setupEventListeners() {
     }
 
     if (e.code === 'KeyT' && !e.altKey && !e.shiftKey) {
+      if (state.isLiteMode) return;
       e.preventDefault();
       triggerContextualTestTone();
       return;
@@ -11384,21 +11496,20 @@ async function init() {
 
   const prefs = loadPrefsFromStorage();
   state.chromeCollapsed = state.isLiteMode ? true : Boolean(prefs.chromeCollapsed);
-  state.sessionsCollapsed = Boolean(prefs.sessionsCollapsed);
+  state.sessionsCollapsed = state.isLiteMode ? false : Boolean(prefs.sessionsCollapsed);
   state.presetsCollapsed = Boolean(prefs.presetsCollapsed);
-  state.rollCollapsed = Boolean(prefs.rollCollapsed);
-  state.keysCollapsed = Boolean(prefs.keysCollapsed);
+  state.rollCollapsed = state.isLiteMode ? false : Boolean(prefs.rollCollapsed);
+  state.keysCollapsed = state.isLiteMode ? false : Boolean(prefs.keysCollapsed);
   state.noteSamplesExpanded = Boolean(prefs.noteSamplesExpanded);
   state.selectionTarget = 'keyboard';
   state.selectedTileSliceId = null;
   state.stageSettingsTab = normalizeStageSettingsTab(prefs.stageSettingsTab);
   state.stageGridMode = normalizeStageGridMode(prefs.stageGridMode);
-  state.stageTileScale = clampStageTileScale(prefs.stageTileScale ?? 1.0);
-  state.stageSpecScale = clampStageSpecScale(prefs.stageSpecScale ?? 1.0);
+  state.stageTileScale = LOCKED_STAGE_TILE_SCALE;
+  state.stageSpecScale = LOCKED_STAGE_SPEC_SCALE;
   state.stageFadeInSec = clampStageFadeInSec(prefs.stageFadeInSec ?? 0.0);
   state.stageFadeSec = clampStageFadeSec(prefs.stageFadeSec ?? 0.2);
   state.stageMinDisplaySec = clampStageMinDisplaySec(prefs.stageMinDisplaySec ?? 0.7);
-  state.stageMaxDisplaySec = clampStageMaxDisplaySec(prefs.stageMaxDisplaySec ?? 1.0);
   state.stageShowVideo = prefs.stageShowVideo !== undefined ? Boolean(prefs.stageShowVideo) : true;
   state.stageVideoPosition = normalizeStageVideoPosition(prefs.stageVideoPosition ?? 'right');
   state.stageVideoWidthPct = clampStageVideoWidthPct(prefs.stageVideoWidthPct ?? 50);
@@ -11411,7 +11522,6 @@ async function init() {
   state.stageBuildFullSec = clampBuildFullSec(prefs.stageBuildFullSec ?? 5.0);
   state.stageBuildMaxFps = clampBuildMaxFps(prefs.stageBuildMaxFps ?? 12);
   state.stageBuildSound = normalizeBuildSound(prefs.stageBuildSound ?? true);
-  state.velocitySensitive = Boolean(prefs.velocitySensitive ?? false);
   midiPlayer.transposeOctaves = clampMidiTransposeOctaves(prefs.midiTransposeOctaves ?? 0);
   if (prefs.hasSavedDisabledVideos) {
     state.disabledVideoIds = new Set(prefs.disabledVideoIds);
@@ -11430,7 +11540,6 @@ async function init() {
   setPresetsCollapsed(state.presetsCollapsed);
   setRollCollapsed(state.rollCollapsed);
   setKeysCollapsed(state.keysCollapsed);
-  syncVelocityToggleUI();
   updateMidiTransportUi();
   prefsHydrated = true;
 
@@ -11444,7 +11553,9 @@ async function init() {
       formatTooltip: item =>
         `${getVideoGroupName(item.videoId) || item.videoSlug} · ${midiToName(item.midi ?? 60)}`,
       onSliceEnter: item => {
-        setSelectionFocus('tile', item.sliceId);
+        if (!state.isLiteMode) {
+          setSelectionFocus('tile', item.sliceId);
+        }
         const cand = resolvePlayableSliceById(item.sliceId);
         if (!cand) return;
         state.lastPlayedVideoId = cand.videoId;
@@ -11452,10 +11563,15 @@ async function init() {
         if (cand.enabled) {
           lastPlayedSliceByMidi.set(cand.midi, cand.sliceId);
         }
-        if (cand.midi >= MIN_MIDI && cand.midi <= MAX_MIDI && state.selectedMidi !== cand.midi) {
+        if (
+          !state.isLiteMode &&
+          cand.midi >= MIN_MIDI &&
+          cand.midi <= MAX_MIDI &&
+          state.selectedMidi !== cand.midi
+        ) {
           selectKeyForConfig(cand.midi, false, true);
         }
-        if (cand.midi === state.selectedMidi) {
+        if (!state.isLiteMode && cand.midi === state.selectedMidi) {
           syncActiveCandidateHighlightUI(true);
         }
         startHeldVoice({
@@ -11478,6 +11594,7 @@ async function init() {
     });
   }
 
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
   const stageEl = document.getElementById('videoStage');
@@ -11560,15 +11677,12 @@ async function init() {
       ) {
         state.stageGridMode = normalizeStageGridMode(sc.stageGridMode);
       }
-      if (sc.stageTileScale !== undefined) state.stageTileScale = clampStageTileScale(sc.stageTileScale);
-      if (sc.stageSpecScale !== undefined) state.stageSpecScale = clampStageSpecScale(sc.stageSpecScale);
+      state.stageTileScale = LOCKED_STAGE_TILE_SCALE;
+      state.stageSpecScale = LOCKED_STAGE_SPEC_SCALE;
       if (sc.stageFadeInSec !== undefined) state.stageFadeInSec = clampStageFadeInSec(sc.stageFadeInSec);
       if (sc.stageFadeSec !== undefined) state.stageFadeSec = clampStageFadeSec(sc.stageFadeSec);
       if (sc.stageMinDisplaySec !== undefined) {
         state.stageMinDisplaySec = clampStageMinDisplaySec(sc.stageMinDisplaySec);
-      }
-      if (sc.stageMaxDisplaySec !== undefined) {
-        state.stageMaxDisplaySec = clampStageMaxDisplaySec(sc.stageMaxDisplaySec);
       }
       state.stageShowVideo = false;
       if (sc.stageBuildRampUp !== undefined) {
@@ -11587,15 +11701,12 @@ async function init() {
       updateMidiTransportUi();
     } else if (!prefs.hasSavedPrefs) {
       if (sc.stageGridMode !== undefined) state.stageGridMode = normalizeStageGridMode(sc.stageGridMode);
-      if (sc.stageTileScale !== undefined) state.stageTileScale = clampStageTileScale(sc.stageTileScale);
-      if (sc.stageSpecScale !== undefined) state.stageSpecScale = clampStageSpecScale(sc.stageSpecScale);
+      state.stageTileScale = LOCKED_STAGE_TILE_SCALE;
+      state.stageSpecScale = LOCKED_STAGE_SPEC_SCALE;
       if (sc.stageFadeInSec !== undefined) state.stageFadeInSec = clampStageFadeInSec(sc.stageFadeInSec);
       if (sc.stageFadeSec !== undefined) state.stageFadeSec = clampStageFadeSec(sc.stageFadeSec);
       if (sc.stageMinDisplaySec !== undefined) {
         state.stageMinDisplaySec = clampStageMinDisplaySec(sc.stageMinDisplaySec);
-      }
-      if (sc.stageMaxDisplaySec !== undefined) {
-        state.stageMaxDisplaySec = clampStageMaxDisplaySec(sc.stageMaxDisplaySec);
       }
       if (sc.stageShowVideo !== undefined) {
         state.stageShowVideo = Boolean(sc.stageShowVideo);
@@ -11740,6 +11851,7 @@ async function init() {
     await fetchPresetsFromServer();
   }
   refreshAllUI();
+  ensureStageSlotDomElements();
   syncStageConfigUI();
   updateStageTileSizes();
 

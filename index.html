@@ -80,51 +80,29 @@
           >Build</button>
         </div>
 
-        <!-- Tab 1: Layout (Grid + Tile Size + Spectrogram Size) -->
+        <!-- Tab 1: Layout (Grid Row/Col Steppers + Tile Size + Spectrogram Size) -->
         <div class="stage-cfg-panel" data-cfg-panel="layout">
-          <div class="stage-cfg-row">
-            <span class="stage-cfg-label">Grid</span>
-            <div class="stage-grid-pills" role="group" aria-label="Foreground stage tile grid">
-              <button type="button" class="stage-grid-pill is-active" data-grid-mode="3x1" title="Single row of 3 film tiles">3×1</button>
-              <button type="button" class="stage-grid-pill" data-grid-mode="2x2" title="2×2 grid (4 film tiles)">2×2</button>
-              <button type="button" class="stage-grid-pill" data-grid-mode="3x2" title="Double row of 3 film tiles (6 tiles)">3×2</button>
-              <button type="button" class="stage-grid-pill" data-grid-mode="4x2" title="4×2 grid (8 film tiles)">4×2</button>
-              <button type="button" class="stage-grid-pill" data-grid-mode="3x3" title="3×3 grid (9 film tiles)">3×3</button>
+          <div class="stage-cfg-row stage-grid-stepper-row" role="group" aria-label="Foreground stage tile grid rows and columns">
+            <div class="stage-grid-axis-ctrl">
+              <span class="stage-cfg-label">Row</span>
+              <div class="midi-transpose-ctrl stage-grid-stepper">
+                <button id="stageGridRowDecBtn" type="button" class="midi-oct-btn" title="Fewer rows (min 1)" aria-label="Decrease grid rows">−</button>
+                <span id="stageGridRowReadout" class="stage-grid-axis-val">1</span>
+                <button id="stageGridRowIncBtn" type="button" class="midi-oct-btn" title="More rows (max 8)" aria-label="Increase grid rows">+</button>
+              </div>
             </div>
-          </div>
-          <div class="stage-cfg-row workstation-only-el">
-            <span class="stage-cfg-label">Tile size</span>
-            <div class="stage-fade-wrap" title="Bottom sample mosaic tile size (60% to 250%, snapped flush to grid width; double-click for 100%)">
-              <input
-                id="stageTileScaleSlider"
-                type="range"
-                min="60"
-                max="250"
-                step="5"
-                value="100"
-                class="stage-fade-slider"
-              />
-              <span class="stage-fade-val" id="stageTileScaleReadout">100%</span>
-            </div>
-          </div>
-          <div class="stage-cfg-row workstation-only-el">
-            <span class="stage-cfg-label">Spectrogram</span>
-            <div class="stage-fade-wrap" title="Visual spectrogram height underneath each video (75% up to 450%, about two-thirds of video height)">
-              <input
-                id="stageSpecScaleSlider"
-                type="range"
-                min="75"
-                max="450"
-                step="5"
-                value="100"
-                class="stage-fade-slider"
-              />
-              <span class="stage-fade-val" id="stageSpecScaleReadout">100%</span>
+            <div class="stage-grid-axis-ctrl">
+              <span class="stage-cfg-label">Col</span>
+              <div class="midi-transpose-ctrl stage-grid-stepper">
+                <button id="stageGridColDecBtn" type="button" class="midi-oct-btn" title="Fewer columns (min 1)" aria-label="Decrease grid columns">−</button>
+                <span id="stageGridColReadout" class="stage-grid-axis-val">3</span>
+                <button id="stageGridColIncBtn" type="button" class="midi-oct-btn" title="More columns (max 8)" aria-label="Increase grid columns">+</button>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Tab 2: Motion (Fade In + Fade Out + Max Display Time) -->
+        <!-- Tab 2: Motion (Fade In + Fade Out + Min Display Time) -->
         <div class="stage-cfg-panel hidden" data-cfg-panel="motion">
           <div class="stage-cfg-row">
             <span class="stage-cfg-label">Fade in</span>
@@ -173,25 +151,6 @@
                 aria-label="Minimum visual display time (0.0s to 2.0s)"
               />
               <span class="stage-fade-val" id="stageMinDisplayReadout">0.7s</span>
-            </div>
-          </div>
-          <div class="stage-cfg-row">
-            <span class="stage-cfg-label">Max display</span>
-            <div
-              class="stage-fade-wrap"
-              title="Maximum time a clip stays on stage before ramping down when a note stays held (0.2s to 6.0s; double-click to reset to 1.0s)"
-            >
-              <input
-                id="stageMaxDisplaySlider"
-                type="range"
-                min="0.2"
-                max="6.0"
-                step="0.1"
-                value="1.0"
-                class="stage-fade-slider"
-                aria-label="Maximum display time (0.2s to 6.0s)"
-              />
-              <span class="stage-fade-val" id="stageMaxDisplayReadout">1.0s</span>
             </div>
           </div>
         </div>
@@ -480,21 +439,6 @@
             >+</button>
             <span class="video-gain-readout" id="bladeGroupVolReadout">0 dB</span>
           </div>
-          <button
-            id="bladeGroupSoloBtn"
-            type="button"
-            class="blade-solo-btn"
-            aria-pressed="false"
-            title="Temporarily solo only this instrument while respecting its individual sample mutes (Alt+S)"
-          >Solo</button>
-          <button
-            id="bladeGroupSwitch"
-            type="button"
-            class="ui-switch is-on"
-            role="switch"
-            aria-checked="true"
-            title="Enable or mute this instrument"
-          ></button>
           <button
             id="bladeTrashGroupBtn"
             type="button"
@@ -892,20 +836,13 @@
             </div>
           </section>
 
-          <!-- Right of Keyboard: Frugal Octave Range + Square Left/Right Buttons + Velocity Toggle -->
+          <!-- Right of Keyboard: Frugal Octave Range + Square Left/Right Buttons -->
           <section class="dock-zone octave-rail-zone" id="octaveRailZone">
             <span id="octaveRangeLabel" class="oct-range-label">C2–B7</span>
             <div class="oct-square-pair">
               <button id="octDownBtn" type="button" class="oct-square-btn" title="Shift keyboard down 1 octave (Z)">◀</button>
               <button id="octUpBtn" type="button" class="oct-square-btn" title="Shift keyboard up 1 octave (X)">▶</button>
             </div>
-            <button
-              id="velocityToggleBtn"
-              type="button"
-              class="vel-toggle-btn"
-              aria-pressed="false"
-              title="MIDI velocity sensitivity OFF (fixed uniform velocity) — click to enable dynamic velocity"
-            >VEL</button>
           </section>
         </div>
       </section>

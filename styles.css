@@ -256,6 +256,37 @@ body.static-mode .local-only-btn {
   gap: 3px;
 }
 
+.stage-grid-stepper-row {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stage-grid-axis-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stage-grid-stepper {
+  height: 20px;
+}
+
+.stage-grid-stepper .midi-oct-btn {
+  width: 19px;
+  height: 18px;
+  font-size: 11px;
+}
+
+.stage-grid-axis-val {
+  min-width: 18px;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  user-select: none;
+}
+
 .stage-grid-pill {
   height: 20px;
   padding: 0 6px;
@@ -1044,7 +1075,9 @@ body.static-mode .local-only-btn {
 }
 
 .transport-zone-body {
-  padding: 10px 14px;
+  padding: 8px 14px;
+  justify-content: center;
+  gap: 7px;
 }
 
 .preset-zone {
@@ -2275,33 +2308,6 @@ body.static-mode .local-only-btn {
   gap: 5px;
 }
 
-.vel-toggle-btn {
-  width: 57px;
-  height: 19px;
-  padding: 0;
-  border-radius: 4px;
-  border: 1px solid var(--line-dim);
-  background: #000000;
-  color: rgba(255, 255, 255, 0.38);
-  font-family: var(--sans);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
-}
-
-.vel-toggle-btn:hover {
-  border-color: rgba(255, 255, 255, 0.36);
-  color: rgba(255, 255, 255, 0.78);
-}
-
-.vel-toggle-btn.is-active {
-  border-color: rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
-}
-
 .oct-square-btn {
   width: 28px;
   height: 28px;
@@ -2535,26 +2541,66 @@ body.static-mode .local-only-btn {
   color: #000000;
 }
 
-.explorer-solo-badge {
-  height: 17px;
-  padding: 0 6px;
-  border-radius: 999px;
-  border: 1px solid #fbbf24;
-  background: #f59e0b;
-  color: #000000;
-  font-family: var(--sans);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  cursor: pointer;
+.explorer-row-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   flex-shrink: 0;
 }
 
-.explorer-solo-badge:hover {
-  background: #fbbf24;
+.explorer-solo-btn {
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.34);
+  font-family: var(--sans);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
 }
 
-.explorer-video-row.is-unsoloed-dim {
+.explorer-cat-header:hover .explorer-solo-btn:not(.is-active):not(.has-child-solo),
+.explorer-video-row:hover .explorer-solo-btn:not(.is-active):not(.has-child-solo) {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.explorer-solo-btn:hover:not(.is-active) {
+  border-color: rgba(251, 191, 36, 0.65);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+}
+
+.explorer-solo-btn.has-child-solo {
+  border-color: rgba(251, 191, 36, 0.78);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+}
+
+.explorer-solo-btn.is-active {
+  border-color: #fbbf24;
+  background: #f59e0b;
+  color: #000000;
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.38);
+}
+
+.explorer-solo-btn.is-active:hover {
+  background: #fbbf24;
+  border-color: #fde68a;
+  color: #000000;
+}
+
+.explorer-cat-header.is-unsoloed-dim .explorer-cat-left,
+.explorer-video-row.is-unsoloed-dim .explorer-video-label {
   opacity: 0.36;
 }
 
@@ -3331,6 +3377,8 @@ body.lite-mode .workstation-only-el,
 body.lite-mode .local-only-btn,
 body.lite-mode #presetZone,
 body.lite-mode #keyboardZone,
+body.lite-mode #noteSamplesDrawer,
+body.lite-mode .bottom-transport-dock .dock-accordion-tab,
 body.lite-mode #midiCamToggleBtn,
 body.lite-mode #midiUndoBtn,
 body.lite-mode #bladeGroupVolWrap,
@@ -3338,6 +3386,10 @@ body.lite-mode .blade-exp-controls,
 body.lite-mode .blade-trim-handle,
 body.lite-mode .stage-cfg-panel:not([data-cfg-panel="layout"]) {
   display: none !important;
+}
+
+body.lite-mode .wf-key.selected-key {
+  box-shadow: none !important;
 }
 
 body.lite-mode .stage-cfg-panel[data-cfg-panel="layout"] {
@@ -3350,10 +3402,16 @@ body.lite-mode .blade-trim-window {
 }
 
 body.lite-mode .transport-zone {
-  width: clamp(304px, 23vw, 356px);
+  width: auto;
+  min-width: 316px;
+  flex: 0 0 auto;
 }
 
-body.lite-mode .keys-dock-zone:not(.is-collapsed) {
+body.lite-mode .transport-scrub-row {
+  gap: 12px;
+}
+
+body.lite-mode .keys-dock-zone {
   flex: 0 0 auto;
   min-width: 0;
 }

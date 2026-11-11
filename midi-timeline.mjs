@@ -258,9 +258,7 @@ export function planMidiTimeline({
   fadeInSec = 0.0,
   fadeOutSec = 0.20,
   minDisplaySec = 0.70,
-  maxDisplaySec = 1.00,
   transposeOctaves = 0,
-  velocitySensitive = false,
   releaseSec = DEFAULT_RELEASE_SEC
 }) {
   const events = parsed?.events || [];
@@ -280,12 +278,6 @@ export function planMidiTimeline({
     minDisplaySec !== null && minDisplaySec !== undefined && Number.isFinite(Number(minDisplaySec))
       ? Math.max(0, Number(minDisplaySec))
       : 0.70;
-  const rawMaxDisplaySec =
-    maxDisplaySec !== null && maxDisplaySec !== undefined && Number(maxDisplaySec) > 0
-      ? Number(maxDisplaySec)
-      : null;
-  const effMaxDisplaySec =
-    rawMaxDisplaySec !== null ? Math.max(effMinDisplaySec, rawMaxDisplaySec) : null;
 
   const occurrenceByMidi = new Map();
   const enabledCacheByMidi = new Map();
@@ -365,7 +357,8 @@ export function planMidiTimeline({
 
   function triggerNoteRelease(voice, t) {
     if (!voice) return;
-    const visualFadeTime = Math.max(t, voice.startSec + effMinDisplaySec);
+    const clipEndTime = voice.startSec + voice.naturalDur;
+    const visualFadeTime = Math.min(clipEndTime, Math.max(t, voice.startSec + effMinDisplaySec));
     if (voice.fadeStartSec === null || visualFadeTime < voice.fadeStartSec) {
       const startOutAlpha = evalFadeInCurve(
         Math.max(0, visualFadeTime - voice.startSec),
@@ -473,10 +466,7 @@ export function planMidiTimeline({
       const forcedRelStart = Math.max(0.012, playDur - forcedRelDur);
 
       const gainLinear = resolveCachedGainLinear(cand.videoId);
-      const effVelocity = velocitySensitive
-        ? (ev.velocity || DEFAULT_UNIFORM_VELOCITY)
-        : DEFAULT_UNIFORM_VELOCITY;
-      const peakGain = Math.min(1.85, 0.86 * effVelocity * gainLinear);
+      const peakGain = Math.min(1.85, 0.86 * DEFAULT_UNIFORM_VELOCITY * gainLinear);
 
       const groupKey = resolveCachedGroupKey(cand);
       const slotIdx = allocateSlotAt(t, cand.sliceId, groupKey);
@@ -506,9 +496,9 @@ export function planMidiTimeline({
 
       const isPerc = Boolean(cand.isPerc);
       const f0Hz = isPerc ? null : 440 * Math.pow(2, (playedMidi - 69) / 12);
-      const maxDisplayCutoff = effMaxDisplaySec !== null ? t + effMaxDisplaySec : null;
-      const maxDisplayStartOutAlpha =
-        maxDisplayCutoff !== null ? evalFadeInCurve(effMaxDisplaySec, effFadeInSec) : 1;
+      // Sample length itself is the max display cutoff: hitting the end trim point automatically starts fading out
+      const maxDisplayCutoff = t + playDur;
+      const maxDisplayStartOutAlpha = evalFadeInCurve(playDur, effFadeInSec);
       const maxDisplayOutDur =
         effFadeOutSec <= 0.002 || maxDisplayStartOutAlpha <= 0.003
           ? 0

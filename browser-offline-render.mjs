@@ -29,13 +29,19 @@ export const BROWSER_ASPECT_SPECS = {
   '16:9': { key: '16:9', slug: '16x9', label: '16:9', width: 1920, height: 1080 }
 };
 
-const STAGE_GRID_SPECS = {
-  '3x1': { cols: 3, rows: 1, slots: 3 },
-  '2x2': { cols: 2, rows: 2, slots: 4 },
-  '3x2': { cols: 3, rows: 2, slots: 6 },
-  '4x2': { cols: 4, rows: 2, slots: 8 },
-  '3x3': { cols: 3, rows: 3, slots: 9 }
-};
+function parseBrowserStageGridMode(raw, fallback = '3x2') {
+  const parsePair = str => {
+    const m = String(str || '')
+      .trim()
+      .toLowerCase()
+      .match(/^(\d+)\s*[x×]\s*(\d+)$/);
+    if (!m) return null;
+    const cols = Math.max(1, Math.min(8, parseInt(m[1], 10) || 3));
+    const rows = Math.max(1, Math.min(8, parseInt(m[2], 10) || 2));
+    return { key: `${cols}x${rows}`, cols, rows, slots: cols * rows };
+  };
+  return parsePair(raw) || parsePair(fallback) || { key: '3x2', cols: 3, rows: 2, slots: 6 };
+}
 
 const CHROMATIC_HEX = [
   '#e33059', // C
@@ -237,9 +243,28 @@ function computeStageGeometry(
   const isBelowHand = Boolean(splitHandVideo && videoPosition === 'below');
   const isRightHand = Boolean(splitHandVideo && !isBelowHand);
 
-  const baseColGap = W < 920 * uiScale ? 12 : rows >= 3 ? 14 : rows === 2 ? 16 : 20;
-  const colGap = Math.max(4, Math.round(baseColGap * uiScale));
-  const rowGap = rows > 1 ? Math.max(8, Math.round((rows >= 3 ? 18 : 22) * uiScale)) : 0;
+  const maxGridDim = Math.max(cols, rows);
+  const baseColGap =
+    maxGridDim >= 7
+      ? 6
+      : maxGridDim >= 5
+        ? 8
+        : W < 920 * uiScale
+          ? 12
+          : rows >= 3 || cols >= 4
+            ? 14
+            : rows === 2
+              ? 16
+              : 20;
+  const colGap = Math.max(3, Math.round(baseColGap * uiScale));
+  const rowGap =
+    rows <= 1
+      ? 0
+      : Math.max(
+          4,
+          Math.round((rows >= 7 ? 7 : rows >= 5 ? 10 : rows >= 3 ? 18 : 22) * uiScale)
+        );
+  const minTileFloor = Math.round((maxGridDim >= 4 ? 22 : 48) * uiScale);
   const specRatio = getStageSpecRatio(rows, rawSpecScale);
 
   const marginY = Math.max(
@@ -299,10 +324,10 @@ function computeStageGeometry(
   const baseMaxSideByH = Math.floor(baseAvailTopH / (rows * (1 + specRatio)));
 
   const baseRawSide = Math.max(
-    Math.round(68 * uiScale),
+    minTileFloor,
     Math.min(maxCap, Math.floor(Math.min(baseMaxSideByH, availW / cols)))
   );
-  const baseTileSize = Math.max(32, Math.floor(baseRawSide / 2) * 2);
+  const baseTileSize = Math.max(20, Math.floor(baseRawSide / 2) * 2);
   const baseStripW = baseTileSize * cols + colGap * (cols - 1);
   const mosaicRefW = isBelowHand
     ? isPortrait
@@ -328,12 +353,9 @@ function computeStageGeometry(
   let tileSize = baseTileSize;
   if (tileCount > 0 && (tileScale > 1.01 || splitHandVideo)) {
     const minAllowedSide = Math.max(
-      32,
+      20,
       Math.floor(
-        Math.max(
-          Math.round(68 * uiScale),
-          Math.round(baseTileSize * (splitHandVideo ? 0.84 : 0.68))
-        ) / 2
+        Math.max(minTileFloor, Math.round(baseTileSize * (splitHandVideo ? 0.84 : 0.68))) / 2
       ) * 2
     );
     let bestAchievedCell = -1;
@@ -1396,14 +1418,12 @@ export async function renderMidiSessionInBrowserToMp4({
   atlasManifest = null,
   atlasImage = null,
   gridMode = '3x2',
-  tileScale = 1.0,
-  specScale = 1.0,
+  tileScale = 1.1,
+  specScale = 3.35,
   fadeInSec = 0.0,
   fadeOutSec = 0.2,
   minDisplaySec = 0.7,
-  maxDisplaySec = 1.0,
   transposeOctaves = 0,
-  velocitySensitive = false,
   showHandVideo = true,
   handVideoUrl = '',
   handVideoLeadOffsetSec = 0,
@@ -1447,8 +1467,7 @@ export async function renderMidiSessionInBrowserToMp4({
   const aspectSpec = BROWSER_ASPECT_SPECS[normAspect];
   const W = aspectSpec.width;
   const H = aspectSpec.height;
-  const gridKey = Object.prototype.hasOwnProperty.call(STAGE_GRID_SPECS, gridMode) ? gridMode : '3x2';
-  const gridSpec = STAGE_GRID_SPECS[gridKey];
+  const gridSpec = parseBrowserStageGridMode(gridMode, '3x2');
   const stageSlotCount = gridSpec.slots;
 
   report(`Planning ${aspectSpec.label} timeline…`, 2);
@@ -1558,9 +1577,7 @@ export async function renderMidiSessionInBrowserToMp4({
     fadeInSec,
     fadeOutSec,
     minDisplaySec,
-    maxDisplaySec,
     transposeOctaves,
-    velocitySensitive,
     releaseSec: RELEASE_SEC
   });
 
