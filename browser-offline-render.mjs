@@ -1433,7 +1433,7 @@ export async function renderMidiSessionInBrowserToMp4({
   videoCropX = 50,
   videoCropY = 50,
   videoZoom = 1.0,
-  videoBrightness = 1.0,
+  videoBrightness = 0.55,
   includeBuild = true,
   buildFullSec = 5.0,
   buildMaxFps = 12,

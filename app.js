@@ -50,6 +50,7 @@ const MIN_STAGE_SPEC_SCALE = 0.75;
 const MAX_STAGE_SPEC_SCALE = 4.5;
 const LOCKED_STAGE_TILE_SCALE = 1.1;
 const LOCKED_STAGE_SPEC_SCALE = 3.35;
+const LOCKED_STAGE_VIDEO_BRIGHTNESS = 0.55;
 
 const ACCIDENTAL_SEMITONES = new Set([1, 3, 6, 8, 10]);
 const TOUCH_LEFT_ACCIDENTALS = new Set([3, 8, 10]); // D#, G#, A# touch C#, F#, G#
@@ -135,7 +136,7 @@ const state = {
   stageVideoCropX: 50, // Horizontal pan position 0% (Left) .. 50% (Center) .. 100% (Right)
   stageVideoCropY: 50, // Vertical pan position 0% (Top) .. 50% (Center) .. 100% (Bottom)
   stageVideoZoom: 1.0, // Hand video zoom scale (1.00 = 100% .. 2.50 = 250%)
-  stageVideoBrightness: 1.0, // Overall B&W hand video brightness/dimmer (0.10 = 10% .. 100%)
+  stageVideoBrightness: LOCKED_STAGE_VIDEO_BRIGHTNESS, // Locked 55% B&W hand video brightness
   stageBuildRampUp: true, // When true, starts slower and ramps up; when false, builds linearly at constant speed
   stageBuildFullSec: 5.0, // Fixed total seconds for the whole build (1.0s .. 25.0s)
   stageBuildMaxFps: 12, // Max showcase image flash rate during build (2 .. 15 fps)
@@ -145,6 +146,7 @@ const state = {
   baseOctaveMidi: 48, // Leftmost visible octave of the bottom keyboard (e.g. C3 for C3–B5)
   qwertyOctaveMidi: 60, // Laptop QWERTY A..; octave root (defaults to middle C4)
   disabledVideoIds: new Set(),
+  mutedCategories: new Set(),
   soloTargets: new Set(),
   soloGroupKey: null,
   soloVideoIds: new Set(),
@@ -295,12 +297,8 @@ function clampStageVideoZoom(raw) {
   return Math.max(1.0, Math.min(2.5, stepped));
 }
 
-function clampStageVideoBrightness(raw) {
-  let n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) return 1.0;
-  if (n > 2.5) n = n / 100;
-  const stepped = Math.round(n * 20) / 20;
-  return Math.max(0.1, Math.min(1.0, stepped));
+function clampStageVideoBrightness() {
+  return LOCKED_STAGE_VIDEO_BRIGHTNESS;
 }
 
 function clampStageTileScale() {
@@ -383,6 +381,17 @@ function getVideosInSameGroup(video) {
 let prefsHydrated = false;
 let stageConfigSyncTimer = null;
 
+function normalizeMutedCategories(raw) {
+  if (!Array.isArray(raw)) return [];
+  return Array.from(
+    new Set(
+      raw
+        .map(c => String(c || '').trim().toLowerCase())
+        .filter(Boolean)
+    )
+  ).sort();
+}
+
 function syncStageConfigToServer() {
   if (!prefsHydrated || state.isStaticMode || state.isLiteMode || !state.catalog) return;
   if (stageConfigSyncTimer) clearTimeout(stageConfigSyncTimer);
@@ -410,6 +419,7 @@ function syncStageConfigToServer() {
         stageBuildFullSec: clampBuildFullSec(state.stageBuildFullSec),
         stageBuildMaxFps: clampBuildMaxFps(state.stageBuildMaxFps),
         stageBuildSound: normalizeBuildSound(state.stageBuildSound),
+        mutedCategories: Array.from(state.mutedCategories).sort(),
         midiTransposeOctaves: clampMidiTransposeOctaves(midiPlayer.transposeOctaves)
       })
     }).catch(() => {});
@@ -425,11 +435,13 @@ function loadPrefsFromStorage() {
   const storageKey = state.isLiteMode ? LITE_PREFS_STORAGE_KEY : PREFS_STORAGE_KEY;
   try {
     const raw = window.localStorage.getItem(storageKey);
-    if (!raw) {
+      if (!raw) {
       return {
         hasSavedPrefs: false,
         hasSavedDisabledVideos: false,
         disabledVideoIds: [],
+        hasSavedMutedCategories: false,
+        mutedCategories: [],
         videoGains: {},
         sliceToggles: {},
         chromeCollapsed: false,
@@ -471,6 +483,11 @@ function loadPrefsFromStorage() {
       disabledVideoIds:
         !state.isLiteMode && Array.isArray(parsed?.disabledVideoIds)
           ? parsed.disabledVideoIds.map(String)
+          : [],
+      hasSavedMutedCategories: !state.isLiteMode && Array.isArray(parsed?.mutedCategories),
+      mutedCategories:
+        !state.isLiteMode && Array.isArray(parsed?.mutedCategories)
+          ? normalizeMutedCategories(parsed.mutedCategories)
           : [],
       videoGains:
         !state.isLiteMode && parsed?.videoGains && typeof parsed.videoGains === 'object'
@@ -515,6 +532,8 @@ function loadPrefsFromStorage() {
       hasSavedPrefs: false,
       hasSavedDisabledVideos: false,
       disabledVideoIds: [],
+      hasSavedMutedCategories: false,
+      mutedCategories: [],
       videoGains: {},
       sliceToggles: {},
       chromeCollapsed: false,
@@ -556,6 +575,7 @@ function savePrefsToStorage() {
     const payload = {
       catalogVersion: String(state.catalog?.updatedAt || ''),
       disabledVideoIds: state.isLiteMode ? [] : Array.from(state.disabledVideoIds),
+      mutedCategories: state.isLiteMode ? [] : Array.from(state.mutedCategories).sort(),
       videoGains: state.isLiteMode ? {} : state.videoGainOverrides,
       sliceToggles: state.isLiteMode ? {} : state.sliceToggleOverrides,
       chromeCollapsed: state.chromeCollapsed,
@@ -601,6 +621,7 @@ function savePrefsToStorage() {
 function hasLiteUserCustomizations() {
   if (!state.isLiteMode || !state.catalog) return false;
   if (state.disabledVideoIds.size > 0) return true;
+  if (state.mutedCategories.size > 0) return true;
   if (state.soloVideoIds.size > 0) return true;
   for (const val of Object.values(state.sliceToggleOverrides || {})) {
     if (val === false) return true;
@@ -624,6 +645,7 @@ function syncLiteResetButtonUI() {
 function resetLiteUserCustomizations() {
   if (!state.isLiteMode || !state.catalog) return;
   state.disabledVideoIds.clear();
+  state.mutedCategories.clear();
   state.soloTargets.clear();
   state.soloGroupKey = null;
   state.soloVideoIds.clear();
@@ -658,6 +680,27 @@ function resolveEffectiveVelocity() {
   return DEFAULT_UNIFORM_VELOCITY;
 }
 
+let cachedCatLookupRef = null;
+let cachedCatLookupVidsLen = -1;
+let cachedVideoCatMap = new Map();
+
+function getVideoCategoryById(videoId) {
+  if (!videoId || !state.catalog) return 'other';
+  const vids = state.catalog.videos || [];
+  if (cachedCatLookupRef !== state.catalog || cachedCatLookupVidsLen !== vids.length) {
+    cachedCatLookupRef = state.catalog;
+    cachedCatLookupVidsLen = vids.length;
+    const nextMap = new Map();
+    for (const v of vids) {
+      if (v && v.id) {
+        nextMap.set(String(v.id), String(v.category || 'other').toLowerCase());
+      }
+    }
+    cachedVideoCatMap = nextMap;
+  }
+  return cachedVideoCatMap.get(String(videoId)) || 'other';
+}
+
 function isVideoMutedUnderlying(videoId) {
   return Boolean(videoId && state.disabledVideoIds.has(videoId));
 }
@@ -667,7 +710,11 @@ function isVideoDisabled(videoId) {
   if (state.soloVideoIds.size > 0) {
     return !state.soloVideoIds.has(videoId);
   }
-  return state.disabledVideoIds.has(videoId);
+  if (state.disabledVideoIds.has(videoId)) return true;
+  if (state.mutedCategories.size > 0) {
+    return state.mutedCategories.has(getVideoCategoryById(videoId));
+  }
+  return false;
 }
 
 function recomputeSoloVideoIdsFromTargets() {
@@ -1044,7 +1091,7 @@ function createEmptyStageSlot(prev = null) {
     createdMs: 0,
     trimIn: 0,
     trimOut: MAX_CLIP_DUR,
-    hasTrimOutCap: false,
+    safeStopTime: MAX_CLIP_DUR,
     canPaintVideoFrame: false,
     hasPaintedVideoFrame: false,
     firstFrameMs: null,
@@ -1062,6 +1109,9 @@ function createEmptyStageSlot(prev = null) {
     lastVideoId: prev?.videoId || prev?.lastVideoId || null,
     lastVideoSlug: prev?.videoSlug || prev?.lastVideoSlug || null,
     videoEl: null,
+    retiringVideoEl: null,
+    holdPrevAlpha: 0,
+    prevFadeState: null,
     voice: null,
     miniBitmap: null
   };
@@ -1170,8 +1220,6 @@ function syncStageConfigUI() {
   const cropY = clampStageVideoCropY(state.stageVideoCropY);
   const vidZoom = clampStageVideoZoom(state.stageVideoZoom);
   const vidZoomPct = Math.round(vidZoom * 100);
-  const vidBright = clampStageVideoBrightness(state.stageVideoBrightness);
-  const vidBrightPct = Math.round(vidBright * 100);
   const showVideoToggle = document.getElementById('stageShowVideoToggle');
   if (showVideoToggle) {
     showVideoToggle.checked = showVideo;
@@ -1212,18 +1260,6 @@ function syncStageConfigUI() {
   const videoHeightReadout = document.getElementById('stageVideoHeightReadout');
   if (videoHeightReadout) {
     videoHeightReadout.textContent = `${vidHeightPct}%`;
-  }
-  const videoBrightnessRow = document.getElementById('stageVideoBrightnessRow');
-  if (videoBrightnessRow) {
-    videoBrightnessRow.classList.toggle('hidden', !showVideo);
-  }
-  const videoBrightnessSlider = document.getElementById('stageVideoBrightnessSlider');
-  if (videoBrightnessSlider && document.activeElement !== videoBrightnessSlider) {
-    videoBrightnessSlider.value = String(vidBrightPct);
-  }
-  const videoBrightnessReadout = document.getElementById('stageVideoBrightnessReadout');
-  if (videoBrightnessReadout) {
-    videoBrightnessReadout.textContent = `${vidBrightPct}%`;
   }
   const videoZoomRow = document.getElementById('stageVideoZoomRow');
   if (videoZoomRow) {
@@ -1387,6 +1423,12 @@ function expireVoiceVisualDisplay(voice) {
 
   let actualVisualFadeSec = clampStageFadeSec(state.stageFadeSec);
   if (voice.tileObj) {
+    // If expiring because the sample reached its end trim point while held, freeze cleanly before fading out
+    if (!voice.released && voice.tileObj.videoEl) {
+      try {
+        voice.tileObj.videoEl.pause();
+      } catch {}
+    }
     const tileToFade = voice.tileObj;
     voice.tileObj = null;
     actualVisualFadeSec = fadeOutStageTile(tileToFade);
@@ -2820,20 +2862,58 @@ function createStageSquareTile(slice, playbackRate = 1.0, forcedSlotIdx = null) 
     displaceStageSlotVoice(prevSlot.voice, isSameClip);
   }
 
-  disposeFeederVideo(prevSlot.videoEl);
-  videoWrap.querySelectorAll('video').forEach(v => disposeFeederVideo(v));
-  clearSlotMiniSpec(slotIdx);
+  const fadeInSec = clampStageFadeInSec(state.stageFadeInSec);
+  // Find whichever video element is visibly painted on screen right now (even across rapid back-to-back steals)
+  const prevVisibleVideoEl = prevSlot.hasPaintedVideoFrame
+    ? prevSlot.videoEl
+    : prevSlot.retiringVideoEl || null;
+  const prevHeldAlpha = prevSlot.hasPaintedVideoFrame
+    ? prevSlot.alpha
+    : prevSlot.holdPrevAlpha || 0;
+  const prevFadeState = prevSlot.hasPaintedVideoFrame
+    ? prevSlot.fadingOut
+      ? {
+          fromAlpha: prevSlot.fadeOutFromAlpha,
+          startMs: prevSlot.fadeOutStartMs,
+          durMs: prevSlot.fadeOutDurMs
+        }
+      : null
+    : prevSlot.prevFadeState || null;
+  const isHardCutSteal = Boolean(
+    fadeInSec <= 0.002 &&
+      prevSlot.occupied &&
+      prevVisibleVideoEl &&
+      prevHeldAlpha > 0.02
+  );
 
-  // Strict 1-clip-per-slot: deterministically reset opacity to 0 until first frame is ready
-  unitEl.style.opacity = '0';
+  let retiringVideoEl = null;
+  if (isHardCutSteal) {
+    // Keep the currently visible video & spectrogram uninterrupted underneath until the new video's first frame decodes
+    retiringVideoEl = prevVisibleVideoEl;
+    retiringVideoEl.dataset.retiring = '1';
+    retiringVideoEl.style.zIndex = '1';
+    retiringVideoEl.style.opacity = '1';
+    videoWrap.querySelectorAll('video').forEach(v => {
+      if (v !== retiringVideoEl) disposeFeederVideo(v);
+    });
+    unitEl.style.opacity = String(prevHeldAlpha);
+  } else {
+    disposeFeederVideo(prevSlot.videoEl);
+    disposeFeederVideo(prevSlot.retiringVideoEl);
+    videoWrap.querySelectorAll('video').forEach(v => disposeFeederVideo(v));
+    clearSlotMiniSpec(slotIdx);
+    unitEl.style.opacity = '0';
+  }
 
   const token = Symbol(`slot_${slotIdx}`);
   stageSlotSeq += 1;
 
+  const effRate = Math.max(0.5, Math.min(2.0, playbackRate));
   const trimIn = Math.max(0, Number(slice.trimIn ?? 0));
   const rawLimit = Math.min(MAX_CLIP_DUR, Number(slice.rawDurSec ?? slice.durSec ?? MAX_CLIP_DUR));
   const trimOut = Math.max(trimIn + 0.08, Math.min(rawLimit, Number(slice.trimOut ?? rawLimit)));
-  const hasTrimOutCap = trimOut < rawLimit - 0.02;
+  // Always pause ~1 video frame before trimOut / raw EOF so trailing camera-cut or EOF boundary frames never flash
+  const safeStopTime = Math.max(trimIn + 0.03, trimOut - Math.max(0.036, 0.034 * effRate));
   const needsTrimSeek = trimIn > 0.005;
 
   const videoEl = document.createElement('video');
@@ -2841,6 +2921,10 @@ function createStageSquareTile(slice, playbackRate = 1.0, forcedSlotIdx = null) 
   videoEl.muted = true;
   videoEl.playsInline = true;
   videoEl.preload = 'auto';
+  if (isHardCutSteal) {
+    videoEl.style.opacity = '0';
+    videoEl.style.zIndex = '2';
+  }
   videoEl.src = getCachedOrWarmVideoSrc(slice.videoUrl);
   videoEl.addEventListener('ended', () => {
     try {
@@ -2852,12 +2936,12 @@ function createStageSquareTile(slice, playbackRate = 1.0, forcedSlotIdx = null) 
   const slotRecord = {
     occupied: true,
     fadingOut: false,
-    alpha: 0,
-    appliedOpacity: 0,
+    alpha: isHardCutSteal ? prevHeldAlpha : 0,
+    appliedOpacity: isHardCutSteal ? prevHeldAlpha : 0,
     createdMs: performance.now(),
     trimIn,
     trimOut,
-    hasTrimOutCap,
+    safeStopTime,
     canPaintVideoFrame: !needsTrimSeek,
     hasPaintedVideoFrame: false,
     firstFrameMs: null,
@@ -2875,17 +2959,48 @@ function createStageSquareTile(slice, playbackRate = 1.0, forcedSlotIdx = null) 
     lastVideoId: slice?.videoId || prevSlot.videoId || prevSlot.lastVideoId || null,
     lastVideoSlug: slice?.videoSlug || prevSlot.videoSlug || prevSlot.lastVideoSlug || null,
     videoEl,
+    retiringVideoEl,
+    holdPrevAlpha: isHardCutSteal ? prevHeldAlpha : 0,
+    prevFadeState: isHardCutSteal ? prevFadeState : null,
     voice: null,
     miniBitmap: null
   };
   stageSlots[slotIdx] = slotRecord;
 
-  videoEl.playbackRate = Math.max(0.5, Math.min(2.0, playbackRate));
+  videoEl.playbackRate = effRate;
 
-  const wakeStageLoop = () => {
+  const tryCommitImmediateHardCut = () => {
     if (stageSlots[slotIdx] !== slotRecord) return;
+    if (
+      !slotRecord.hasPaintedVideoFrame &&
+      slotRecord.canPaintVideoFrame &&
+      slotRecord.videoEl &&
+      videoEl.readyState >= 2 &&
+      videoEl.videoWidth > 0 &&
+      !videoEl.seeking
+    ) {
+      commitSlotPaintedFirstFrame(slotIdx, slotRecord, performance.now());
+    }
     ensureMiniSpecAnimLoop();
   };
+
+  if (typeof videoEl.requestVideoFrameCallback === 'function') {
+    const watchFrameBoundary = (_now, meta) => {
+      if (stageSlots[slotIdx] !== slotRecord || slotRecord.videoEl !== videoEl) return;
+      tryCommitImmediateHardCut();
+      if (!videoEl.paused) {
+        const mediaT = Number.isFinite(meta?.mediaTime) ? meta.mediaTime : videoEl.currentTime;
+        if (mediaT >= safeStopTime) {
+          try {
+            videoEl.pause();
+          } catch {}
+          return;
+        }
+        videoEl.requestVideoFrameCallback(watchFrameBoundary);
+      }
+    };
+    videoEl.requestVideoFrameCallback(watchFrameBoundary);
+  }
 
   if (needsTrimSeek) {
     const startTrimSeek = () => {
@@ -2896,7 +3011,7 @@ function createStageSquareTile(slice, playbackRate = 1.0, forcedSlotIdx = null) 
           if (stageSlots[slotIdx] !== slotRecord) return;
           slotRecord.canPaintVideoFrame = true;
           videoEl.play().catch(() => {});
-          wakeStageLoop();
+          tryCommitImmediateHardCut();
         },
         { once: true }
       );
@@ -2905,7 +3020,7 @@ function createStageSquareTile(slice, playbackRate = 1.0, forcedSlotIdx = null) 
       } catch {
         slotRecord.canPaintVideoFrame = true;
         videoEl.play().catch(() => {});
-        wakeStageLoop();
+        tryCommitImmediateHardCut();
       }
     };
     if (videoEl.readyState >= 1) {
@@ -2917,11 +3032,8 @@ function createStageSquareTile(slice, playbackRate = 1.0, forcedSlotIdx = null) 
     videoEl.play().catch(() => {});
   }
 
-  videoEl.addEventListener('loadeddata', wakeStageLoop, { once: true });
-  videoEl.addEventListener('playing', wakeStageLoop, { once: true });
-  if (typeof videoEl.requestVideoFrameCallback === 'function') {
-    videoEl.requestVideoFrameCallback(() => wakeStageLoop());
-  }
+  videoEl.addEventListener('loadeddata', tryCommitImmediateHardCut, { once: true });
+  videoEl.addEventListener('playing', tryCommitImmediateHardCut, { once: true });
 
   threeStage?.notifyActivity();
   ensureMiniSpecAnimLoop();
@@ -2946,16 +3058,33 @@ function fadeOutStageTile(tileObj) {
   const fullFadeMs = Math.max(50, fadeOutSec * 1000);
 
   if (!slotState.hasPaintedVideoFrame) {
-    if (fadeInSec > 0.002) {
+    if (slotState.retiringVideoEl) {
+      // Never pop in an unpainted new video once fade-out has already begun; smoothly finish fading the visible clip
+      disposeFeederVideo(slotState.videoEl);
+      slotState.videoEl = slotState.retiringVideoEl;
+      slotState.retiringVideoEl = null;
+      slotState.prevFadeState = null;
+      slotState.hasPaintedVideoFrame = true;
+      const startAlpha = Math.max(0, Math.min(1, slotState.alpha));
+      if (startAlpha <= 0.003) {
+        removeStageTile(tileObj);
+        return 0;
+      }
+      slotState.fadingOut = true;
+      slotState.fadeOutFromAlpha = startAlpha;
+      slotState.fadeOutStartMs = performance.now();
+      slotState.fadeOutDurMs = Math.max(60, fullFadeMs * Math.sqrt(startAlpha));
+    } else if (fadeInSec > 0.002) {
       // Released before even starting fade-in above 0: remove silently with zero flash
       removeStageTile(tileObj);
       return 0;
+    } else {
+      // Fade in is Off (0.0s) on a very short staccato hit whose first frame arrives within ~40ms
+      slotState.fadingOut = true;
+      slotState.fadeOutFromAlpha = 1.0;
+      slotState.fadeOutStartMs = performance.now();
+      slotState.fadeOutDurMs = fullFadeMs;
     }
-    // Fade in is Off (0.0s) on a very short staccato hit whose first frame arrives in a few ms
-    slotState.fadingOut = true;
-    slotState.fadeOutFromAlpha = 1.0;
-    slotState.fadeOutStartMs = performance.now();
-    slotState.fadeOutDurMs = fullFadeMs;
   } else {
     const startAlpha = slotState.alpha;
     if (startAlpha <= 0.003) {
@@ -2973,6 +3102,44 @@ function fadeOutStageTile(tileObj) {
   return slotState.fadeOutDurMs / 1000;
 }
 
+function commitSlotPaintedFirstFrame(slotIdx, slotRecord, nowPerfMs = performance.now()) {
+  if (!slotRecord || slotRecord.hasPaintedVideoFrame) return;
+  if (
+    slotRecord.fadingOut &&
+    slotRecord.fadeOutStartMs !== null &&
+    nowPerfMs - slotRecord.fadeOutStartMs > 45
+  ) {
+    // Dropped late decode on an already-fading empty slot so it never flashes a single ghost frame
+    removeStageTile({ slotIdx, token: slotRecord.token, videoEl: slotRecord.videoEl });
+    return;
+  }
+  slotRecord.hasPaintedVideoFrame = true;
+  slotRecord.firstFrameMs = nowPerfMs;
+  slotRecord.prevFadeState = null;
+  if (slotRecord.videoEl) {
+    slotRecord.videoEl.style.opacity = '1';
+  }
+  if (slotRecord.retiringVideoEl) {
+    disposeFeederVideo(slotRecord.retiringVideoEl);
+    slotRecord.retiringVideoEl = null;
+    slotRecord.holdPrevAlpha = 0;
+    const grid = document.getElementById('polyVideoGrid');
+    const videoWrap = grid?.querySelector(
+      `.stage-slot-unit[data-slot="${slotIdx}"] .stage-slot-video`
+    );
+    videoWrap?.querySelectorAll('video[data-retiring="1"]').forEach(v => disposeFeederVideo(v));
+    if (slotRecord.voice && slotRecord.miniBitmap && audioCtx) {
+      drawSlotMiniSpecFrame(slotIdx, audioCtx.currentTime, true);
+    } else {
+      clearSlotMiniSpec(slotIdx);
+    }
+  }
+  const fadeInSec = clampStageFadeInSec(state.stageFadeInSec);
+  if (!slotRecord.fadingOut && fadeInSec <= 0.002) {
+    applySlotUnitOpacity(slotIdx, slotRecord, 1.0);
+  }
+}
+
 function removeStageTile(tileObj) {
   if (!tileObj || tileObj.slotIdx === undefined) return;
   const { slotIdx, token } = tileObj;
@@ -2980,10 +3147,12 @@ function removeStageTile(tileObj) {
   if (!slotState || slotState.token !== token) return;
 
   disposeFeederVideo(slotState.videoEl || tileObj.videoEl);
+  disposeFeederVideo(slotState.retiringVideoEl);
 
   const grid = document.getElementById('polyVideoGrid');
   const unitEl = grid?.querySelector(`.stage-slot-unit[data-slot="${slotIdx}"]`);
   if (unitEl) {
+    unitEl.querySelectorAll('video').forEach(v => disposeFeederVideo(v));
     unitEl.style.opacity = '0';
   }
   clearSlotMiniSpec(slotIdx);
@@ -3160,7 +3329,7 @@ function attachSlotMiniSpectrogram(tileObj, slice, buffer, voice) {
   slotState.miniBitmap = bmp;
   slotState.lastDrawnStripeAlpha = -1;
 
-  if (audioCtx) {
+  if (audioCtx && (!slotState.retiringVideoEl || slotState.hasPaintedVideoFrame)) {
     drawSlotMiniSpecFrame(tileObj.slotIdx, audioCtx.currentTime, true);
   }
   ensureMiniSpecAnimLoop();
@@ -3185,9 +3354,8 @@ function ensureMiniSpecAnimLoop() {
       if (
         vid &&
         !vid.paused &&
-        slot.hasTrimOutCap &&
-        Number.isFinite(slot.trimOut) &&
-        vid.currentTime >= slot.trimOut - 0.015
+        Number.isFinite(slot.safeStopTime) &&
+        vid.currentTime >= slot.safeStopTime
       ) {
         try {
           vid.pause();
@@ -3202,23 +3370,43 @@ function ensureMiniSpecAnimLoop() {
         vid.videoWidth > 0 &&
         !vid.seeking
       ) {
-        slot.hasPaintedVideoFrame = true;
-        slot.firstFrameMs = nowPerfMs;
+        commitSlotPaintedFirstFrame(i, slot, nowPerfMs);
+        if (!stageSlots[i]?.occupied) {
+          continue;
+        }
       }
 
-      if (slot.voice && slot.miniBitmap && audioCtx) {
+      if (slot.voice && slot.miniBitmap && audioCtx && (!slot.retiringVideoEl || slot.hasPaintedVideoFrame)) {
         drawSlotMiniSpecFrame(i, audioNow);
       }
 
       if (!slot.hasPaintedVideoFrame) {
-        applySlotUnitOpacity(i, slot, 0);
+        if (slot.retiringVideoEl) {
+          let holdAlpha = slot.holdPrevAlpha || 1.0;
+          if (slot.prevFadeState && slot.prevFadeState.startMs !== null) {
+            const uPrev = Math.max(
+              0,
+              Math.min(
+                1,
+                (nowPerfMs - slot.prevFadeState.startMs) /
+                  Math.max(40, slot.prevFadeState.durMs || 200)
+              )
+            );
+            holdAlpha = slot.prevFadeState.fromAlpha * Math.pow(1 - uPrev, 1.5);
+          }
+          applySlotUnitOpacity(i, slot, holdAlpha);
+        } else {
+          applySlotUnitOpacity(i, slot, 0);
+        }
         if (nowPerfMs - slot.createdMs > 280) {
           if (slot.fadingOut) {
             removeStageTile({ slotIdx: i, token: slot.token, videoEl: slot.videoEl });
             continue;
           }
-          slot.hasPaintedVideoFrame = true;
-          slot.firstFrameMs = nowPerfMs;
+          commitSlotPaintedFirstFrame(i, slot, nowPerfMs);
+          if (!stageSlots[i]?.occupied) {
+            continue;
+          }
         } else {
           anyActive = true;
           continue;
@@ -3253,7 +3441,7 @@ function ensureMiniSpecAnimLoop() {
 
       const stripeAnimating =
         Boolean(slot.voice && !slot.voice.isPerc && slot.voice.audioFadeStarted && !slot.voice.audioCompleted);
-      const waitingOnTrimCap = Boolean(vid && !vid.paused && slot.hasTrimOutCap);
+      const waitingOnTrimCap = Boolean(vid && !vid.paused);
       if (stripeAnimating || waitingOnTrimCap) {
         anyActive = true;
       }
@@ -3899,6 +4087,45 @@ function setKeysCollapsed(nextCollapsed) {
   }, 200);
 }
 
+function setCategoryMuted(cat, muted) {
+  const normCat = String(cat || '').trim().toLowerCase();
+  if (!normCat) return;
+  const shouldMute = Boolean(muted);
+  const activeVideos = (state.catalog?.videos || []).filter(
+    v => !v.deleted && String(v.category || 'other').toLowerCase() === normCat
+  );
+
+  if (shouldMute) {
+    state.mutedCategories.add(normCat);
+    const catVidIds = new Set(activeVideos.map(v => String(v.id)));
+    for (const [trigId, voice] of Array.from(activeVoices.entries())) {
+      if (
+        voice.slice?.videoId &&
+        catVidIds.has(String(voice.slice.videoId)) &&
+        isVideoDisabled(voice.slice.videoId)
+      ) {
+        releaseHeldVoice(trigId, 0.08);
+      }
+    }
+    savePrefsToStorage();
+    refreshAllUI();
+    return;
+  }
+
+  state.mutedCategories.delete(normCat);
+  const hasAnyUnderlyingEnabled = activeVideos.some(v => !isVideoMutedUnderlying(v.id));
+  if (!hasAnyUnderlyingEnabled && activeVideos.length > 0) {
+    setVideosEnabled(
+      activeVideos.map(v => v.id),
+      true
+    );
+    return;
+  }
+
+  savePrefsToStorage();
+  refreshAllUI();
+}
+
 function setVideosEnabled(videoIds, enabled) {
   if (!Array.isArray(videoIds) || videoIds.length === 0) return;
   const isEn = Boolean(enabled);
@@ -4071,6 +4298,8 @@ function renderFileExplorer() {
 
   for (const { cat, groups, videos: catVideos } of categories) {
     const underlyingCatEnabledCount = catVideos.filter(v => !isVideoMutedUnderlying(v.id)).length;
+    const isCatMuted = state.mutedCategories.has(cat);
+    const isCatSwitchOn = !isCatMuted && underlyingCatEnabledCount > 0;
     const isCollapsed = state.collapsedCategories.has(cat);
     const catSoloKey = `cat::${cat}`;
     const isCatSoloed = state.soloTargets.has(catSoloKey);
@@ -4079,17 +4308,23 @@ function renderFileExplorer() {
       Array.from(state.soloTargets).some(t => t.startsWith(`${cat}::`));
     const catHasAudibleSoloVid =
       hasAnySolo && catVideos.some(v => state.soloVideoIds.has(v.id));
+    const isPartialSoloCat = Boolean(hasAnySolo && !isCatSoloed && catHasAudibleSoloVid);
 
     const groupEl = document.createElement('div');
     groupEl.className = `explorer-cat-group${isCollapsed ? ' is-collapsed' : ''}`;
     groupEl.dataset.category = cat;
 
     const headerEl = document.createElement('div');
-    headerEl.className = `explorer-cat-header${
-      hasAnySolo && !catHasAudibleSoloVid ? ' is-unsoloed-dim' : ''
-    }`;
+    headerEl.className = [
+      'explorer-cat-header',
+      hasAnySolo && !catHasAudibleSoloVid ? 'is-unsoloed-dim' : '',
+      isPartialSoloCat ? 'is-partial-solo-cat' : '',
+      !hasAnySolo && (isCatMuted || underlyingCatEnabledCount === 0) ? 'is-cat-muted' : ''
+    ]
+      .filter(Boolean)
+      .join(' ');
 
-    const catSwitchClass = underlyingCatEnabledCount > 0 ? 'ui-switch is-on' : 'ui-switch';
+    const catSwitchClass = isCatSwitchOn ? 'ui-switch is-on' : 'ui-switch';
     const catSoloBtnClass = [
       'explorer-solo-btn',
       isCatSoloed ? 'is-active' : '',
@@ -4097,6 +4332,12 @@ function renderFileExplorer() {
     ]
       .filter(Boolean)
       .join(' ');
+
+    const catSwitchTitle = isCatSwitchOn
+      ? `Mute ${cat} category (preserves sub-instrument states)`
+      : isCatMuted && underlyingCatEnabledCount > 0
+        ? `Unmute ${cat} category (restores sub-instrument states)`
+        : `Enable all ${cat} groups`;
 
     headerEl.innerHTML = `
       <div class="explorer-cat-left">
@@ -4114,8 +4355,8 @@ function renderFileExplorer() {
           type="button"
           class="${catSwitchClass}"
           role="switch"
-          aria-checked="${underlyingCatEnabledCount > 0 ? 'true' : 'false'}"
-          title="${underlyingCatEnabledCount > 0 ? `Mute all ${cat} groups` : `Enable all ${cat} groups`}"
+          aria-checked="${isCatSwitchOn ? 'true' : 'false'}"
+          title="${catSwitchTitle}"
         ></button>
       </div>
     `;
@@ -4142,11 +4383,7 @@ function renderFileExplorer() {
     const catSwitchBtn = headerEl.querySelector('.ui-switch');
     catSwitchBtn.addEventListener('click', e => {
       e.stopPropagation();
-      const nextEnabled = underlyingCatEnabledCount === 0;
-      setVideosEnabled(
-        catVideos.map(v => v.id),
-        nextEnabled
-      );
+      setCategoryMuted(cat, isCatSwitchOn);
     });
 
     const itemsEl = document.createElement('div');
@@ -4160,6 +4397,7 @@ function renderFileExplorer() {
       const isAudibleUnderSolo =
         hasAnySolo && grpVideos.some(v => state.soloVideoIds.has(v.id));
       const isUnsoloedDim = Boolean(hasAnySolo && !isAudibleUnderSolo);
+      const isCatMutedRow = Boolean(isCatMuted && !isThisSoloed && !isAudibleUnderSolo);
       const sliceCount = grpVideos.reduce(
         (sum, v) => sum + (v.slices || []).filter(s => !s.deleted).length,
         0
@@ -4171,7 +4409,8 @@ function renderFileExplorer() {
       const rowEl = document.createElement('div');
       rowEl.className = [
         'explorer-video-row',
-        allMuted && !isThisSoloed ? 'is-muted' : '',
+        allMuted && !isThisSoloed && !isAudibleUnderSolo ? 'is-muted' : '',
+        isCatMutedRow ? 'is-cat-muted' : '',
         isUnsoloedDim ? 'is-unsoloed-dim' : ''
       ]
         .filter(Boolean)
@@ -6680,7 +6919,8 @@ function captureCurrentPresetSnapshot() {
     stageBuildRampUp: normalizeBuildRampUp(state.stageBuildRampUp),
     stageBuildFullSec: clampBuildFullSec(state.stageBuildFullSec),
     stageBuildMaxFps: clampBuildMaxFps(state.stageBuildMaxFps),
-    stageBuildSound: normalizeBuildSound(state.stageBuildSound)
+    stageBuildSound: normalizeBuildSound(state.stageBuildSound),
+    mutedCategories: Array.from(state.mutedCategories).sort()
   };
 
   return {
@@ -6748,7 +6988,8 @@ function canonicalizePresetSnapshotForCompare(snap) {
     stageBuildRampUp: normalizeBuildRampUp(sc.stageBuildRampUp ?? true),
     stageBuildFullSec: clampBuildFullSec(sc.stageBuildFullSec ?? 5.0),
     stageBuildMaxFps: clampBuildMaxFps(sc.stageBuildMaxFps ?? 12),
-    stageBuildSound: normalizeBuildSound(sc.stageBuildSound ?? true)
+    stageBuildSound: normalizeBuildSound(sc.stageBuildSound ?? true),
+    mutedCategories: normalizeMutedCategories(sc.mutedCategories)
   };
 
   return JSON.stringify({ dis, enMap, normSc });
@@ -6877,6 +7118,7 @@ function hydrateClientFromPresetCatalog(nextCatalog) {
   if (sc.stageBuildSound !== undefined) {
     state.stageBuildSound = normalizeBuildSound(sc.stageBuildSound);
   }
+  state.mutedCategories = new Set(normalizeMutedCategories(sc.mutedCategories));
 
   if (state.soloTargets.size > 0) {
     recomputeSoloVideoIdsFromTargets();
@@ -10006,18 +10248,6 @@ function setupEventListeners() {
       setStageVideoHeightPct(23, true);
     });
   }
-  const stageVideoBrightnessSlider = document.getElementById('stageVideoBrightnessSlider');
-  if (stageVideoBrightnessSlider) {
-    stageVideoBrightnessSlider.addEventListener('input', () => {
-      setStageVideoBrightness(Number(stageVideoBrightnessSlider.value), true);
-    });
-    stageVideoBrightnessSlider.addEventListener('change', () => {
-      setStageVideoBrightness(Number(stageVideoBrightnessSlider.value), true);
-    });
-    stageVideoBrightnessSlider.addEventListener('dblclick', () => {
-      setStageVideoBrightness(1.0, true);
-    });
-  }
   const stageVideoZoomSlider = document.getElementById('stageVideoZoomSlider');
   if (stageVideoZoomSlider) {
     stageVideoZoomSlider.addEventListener('input', () => {
@@ -11070,8 +11300,14 @@ function setupEventListeners() {
 
         if (e.key === 'Enter' && !e.repeat) {
           e.preventDefault();
-          const anyEnabled = curItem.videoIds.some(id => !isVideoDisabled(id));
-          setVideosEnabled(curItem.videoIds, !anyEnabled);
+          if (curItem.type === 'cat') {
+            const anyUnderlying = curItem.videoIds.some(id => !isVideoMutedUnderlying(id));
+            const isCatSwitchOn = !state.mutedCategories.has(curItem.cat) && anyUnderlying;
+            setCategoryMuted(curItem.cat, isCatSwitchOn);
+          } else {
+            const anyUnderlying = curItem.videoIds.some(id => !isVideoMutedUnderlying(id));
+            setVideosEnabled(curItem.videoIds, !anyUnderlying);
+          }
           return;
         }
       }
@@ -11389,6 +11625,14 @@ function stripCatalogToPublicPresetInMemory(catalog, presetsStore) {
   const stageCfg = isPublicActive
     ? catalog.stageConfig || snap.stageConfig || {}
     : snap.stageConfig || catalog.stageConfig || {};
+  const mutedCats = new Set(normalizeMutedCategories(stageCfg.mutedCategories));
+  if (mutedCats.size > 0) {
+    for (const v of catalog.videos || []) {
+      if (!v.deleted && mutedCats.has(String(v.category || 'other').toLowerCase())) {
+        disabledVideoIds.add(String(v.id));
+      }
+    }
+  }
   const versionStamp = isPublicActive
     ? catalog.updatedAt || publicPreset.updatedAt
     : publicPreset.updatedAt || catalog.updatedAt;
@@ -11463,6 +11707,7 @@ function stripCatalogToPublicPresetInMemory(catalog, presetsStore) {
   catalog.stageConfig = {
     ...(catalog.stageConfig || {}),
     ...stageCfg,
+    mutedCategories: [],
     stageShowVideo: false,
     stageBuildSound: true
   };
@@ -11525,6 +11770,9 @@ async function init() {
   midiPlayer.transposeOctaves = clampMidiTransposeOctaves(prefs.midiTransposeOctaves ?? 0);
   if (prefs.hasSavedDisabledVideos) {
     state.disabledVideoIds = new Set(prefs.disabledVideoIds);
+  }
+  if (prefs.hasSavedMutedCategories) {
+    state.mutedCategories = new Set(prefs.mutedCategories);
   }
   state.collapsedCategories = new Set(CATEGORY_ORDER);
   state.videoGainOverrides = prefs.videoGains || {};
@@ -11787,6 +12035,7 @@ async function init() {
   if (state.isLiteMode) {
     // Public Lite always defaults ALL culled instruments and samples to ON when opened
     state.disabledVideoIds = new Set();
+    state.mutedCategories = new Set();
     state.sliceToggleOverrides = {};
     for (const v of validVideos) {
       v.enabled = true;
@@ -11806,11 +12055,23 @@ async function init() {
     }
   } else if (state.isStaticMode && prefs.hasSavedDisabledVideos) {
     state.disabledVideoIds = new Set(prefs.disabledVideoIds.filter(id => validIdSet.has(id)));
+    state.mutedCategories = new Set(
+      (prefs.hasSavedMutedCategories
+        ? prefs.mutedCategories
+        : normalizeMutedCategories(state.catalog?.stageConfig?.mutedCategories)
+      ).filter(c => allCats.has(c))
+    );
     for (const v of validVideos) {
       v.enabled = !state.disabledVideoIds.has(v.id);
     }
   } else {
     state.disabledVideoIds = catalogDisabled;
+    state.mutedCategories = new Set(
+      (prefs.hasSavedMutedCategories
+        ? prefs.mutedCategories
+        : normalizeMutedCategories(state.catalog?.stageConfig?.mutedCategories)
+      ).filter(c => allCats.has(c))
+    );
     for (const v of validVideos) {
       v.enabled = !state.disabledVideoIds.has(v.id);
     }

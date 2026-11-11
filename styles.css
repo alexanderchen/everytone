@@ -893,6 +893,8 @@ body.static-mode .local-only-btn {
 }
 
 .stage-slot-video .slot-stage-video {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -2599,9 +2601,77 @@ body.static-mode .local-only-btn {
   color: #000000;
 }
 
-.explorer-cat-header.is-unsoloed-dim .explorer-cat-left,
+.explorer-cat-header.is-cat-muted .explorer-cat-name,
+.explorer-cat-header.is-cat-muted .explorer-cat-caret {
+  color: rgba(255, 255, 255, 0.32);
+}
+
+.explorer-video-row.is-cat-muted .explorer-video-label {
+  color: rgba(255, 255, 255, 0.30);
+}
+
+.explorer-cat-header.is-unsoloed-dim .explorer-cat-name,
+.explorer-cat-header.is-unsoloed-dim .explorer-cat-caret,
 .explorer-video-row.is-unsoloed-dim .explorer-video-label {
-  opacity: 0.36;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.explorer-cat-header.is-unsoloed-dim:hover .explorer-cat-name,
+.explorer-video-row.is-unsoloed-dim:hover .explorer-video-label,
+.explorer-video-row.is-cat-muted:hover .explorer-video-label {
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.explorer-video-row.is-unsoloed-dim .explorer-gain-tag,
+.explorer-video-row.is-unsoloed-dim .explorer-video-meta,
+.explorer-video-row.is-cat-muted .explorer-gain-tag,
+.explorer-video-row.is-cat-muted .explorer-video-meta {
+  opacity: 0.3;
+}
+
+.explorer-cat-header.is-unsoloed-dim .explorer-solo-btn:not(.is-active):not(.has-child-solo),
+.explorer-video-row.is-unsoloed-dim .explorer-solo-btn:not(.is-active) {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.015);
+  color: rgba(255, 255, 255, 0.20);
+}
+
+.explorer-cat-header.is-unsoloed-dim .ui-switch,
+.explorer-video-row.is-unsoloed-dim .ui-switch,
+.explorer-video-row.is-cat-muted .ui-switch {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
+.explorer-cat-header.is-unsoloed-dim .ui-switch::after,
+.explorer-video-row.is-unsoloed-dim .ui-switch::after,
+.explorer-video-row.is-cat-muted .ui-switch::after {
+  background: rgba(255, 255, 255, 0.20);
+}
+
+.explorer-cat-header.is-unsoloed-dim .ui-switch.is-on,
+.explorer-cat-header.is-partial-solo-cat .ui-switch.is-on,
+.explorer-video-row.is-unsoloed-dim .ui-switch.is-on,
+.explorer-video-row.is-cat-muted .ui-switch.is-on {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.explorer-cat-header.is-unsoloed-dim .ui-switch.is-on::after,
+.explorer-cat-header.is-partial-solo-cat .ui-switch.is-on::after,
+.explorer-video-row.is-unsoloed-dim .ui-switch.is-on::after,
+.explorer-video-row.is-cat-muted .ui-switch.is-on::after {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.explorer-cat-header.is-unsoloed-dim .ui-switch:hover,
+.explorer-cat-header.is-unsoloed-dim .ui-switch.is-on:hover,
+.explorer-cat-header.is-partial-solo-cat .ui-switch.is-on:hover,
+.explorer-video-row.is-unsoloed-dim .ui-switch:hover,
+.explorer-video-row.is-unsoloed-dim .ui-switch.is-on:hover,
+.explorer-video-row.is-cat-muted .ui-switch:hover,
+.explorer-video-row.is-cat-muted .ui-switch.is-on:hover {
+  border-color: rgba(255, 255, 255, 0.42);
 }
 
 .inspector-group-title {
